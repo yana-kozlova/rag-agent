@@ -1,21 +1,38 @@
 'use client';
 
-import { signIn } from "next-auth/react";
-import { Button } from "@/components/ui/button";
+import { signIn, useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { Button } from '@/components/ui/button';
 
-export function SignIn() {
+export default function SignInPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (status === 'authenticated') {
+      router.push('/');
+    }
+  }, [status, router]);
+
+  if (status === 'loading' || status === 'authenticated') {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center">
+    <div className="flex min-h-screen flex-col items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6 rounded-lg border p-6">
         <div className="space-y-2 text-center">
           <h1 className="text-2xl font-bold">Welcome back</h1>
-          <p className="text-gray-500 dark:text-gray-400">
-            Sign in to continue to your account
-          </p>
+          <p className="text-gray-500">Sign in to continue to your account</p>
         </div>
         <Button
           className="w-full"
-          onClick={() => signIn("google", { callbackUrl: "/" })}
+          onClick={() => signIn('google', { callbackUrl: '/' })}
           variant="outline"
         >
           <svg

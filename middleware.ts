@@ -1,25 +1,26 @@
 import { auth } from "@/app/api/auth/auth";
 import { NextResponse } from "next/server";
 
-export default auth((req) => {
-  const isLoggedIn = !!req.auth;
-  const isAuthPage = req.nextUrl.pathname.startsWith("/auth");
+const publicPaths = ['/signin', '/api/auth'];
 
-  if (isAuthPage) {
-    if (isLoggedIn) {
-      return NextResponse.redirect(new URL("/", req.nextUrl));
-    }
+export default auth((req) => {
+  const { pathname } = req.nextUrl;
+  
+  // Allow public paths
+  if (publicPaths.some(path => pathname.startsWith(path))) {
     return null;
   }
 
+  const isLoggedIn = !!req.auth;
+
+  // Redirect to sign-in if not logged in
   if (!isLoggedIn) {
-    return NextResponse.redirect(new URL("/auth/signin", req.nextUrl));
+    return NextResponse.redirect(new URL('/signin', req.url));
   }
 
   return null;
 });
 
-// Optionally, don't invoke Middleware on some paths
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
