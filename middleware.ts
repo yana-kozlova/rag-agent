@@ -1,6 +1,8 @@
 import { auth } from "@/app/api/auth/auth";
 import { NextResponse } from "next/server";
 
+export const runtime = 'nodejs';
+
 const publicPaths = ['/signin', '/api/auth'];
 
 export default auth((req) => {
