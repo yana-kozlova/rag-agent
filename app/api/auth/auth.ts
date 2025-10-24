@@ -3,6 +3,18 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { db } from "@/lib/db";
 import Google from "next-auth/providers/google";
 
+// Extend the built-in session types
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
+    };
+  }
+}
+
 export const {
   handlers: { GET, POST },
   auth,
@@ -22,10 +34,16 @@ export const {
   },
   callbacks: {
     async session({ session, token }) {
-      if (token) {
+      if (token?.sub && session.user) {
         session.user.id = token.sub;
       }
       return session;
+    },
+    async jwt({ token, user }) {
+      if (user) {
+        token.sub = user.id;
+      }
+      return token;
     },
   },
   pages: {
