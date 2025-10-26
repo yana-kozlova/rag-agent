@@ -5,3 +5,4 @@ export type { NewResourceParams } from "./resources";
 // Add other named exports from other schema files as needed
 export * from "./embeddings";
 export * from "./auth";
+export * from "./calendar";
