@@ -35,11 +35,11 @@ export function Nav() {
   };
 
   return (
-    <nav className="flex items-center justify-between p-4 border-b">
-      <Link href="/" className="text-xl font-bold">
-        AI SDK RAG
-      </Link>
-      <div className="flex items-center gap-4">
+    <nav className="navbar bg-base-100 border-b">
+      <div className="flex-1">
+        <Link href="/" className="btn btn-ghost text-xl">AI SDK RAG</Link>
+      </div>
+      <div className="flex-none flex items-center gap-2">
         <Button asChild variant="ghost">
           <Link href="/chat">Chat</Link>
         </Button>
@@ -48,26 +48,15 @@ export function Nav() {
             <span className="text-sm text-gray-600">
               {session.user?.name || session.user?.email}
             </span>
-            <Button 
-              variant="outline"
-              onClick={handleSync}
-              className="hover:bg-gray-100"
-              disabled={syncing}
-            >
+            <button className="btn btn-outline btn-sm" onClick={handleSync} disabled={syncing}>
               {syncing ? 'Syncing…' : 'Sync now'}
-            </Button>
-            <Button 
-              variant="outline" 
-              onClick={handleLogout}
-              className="hover:bg-gray-100"
-            >
+            </button>
+            <button className="btn btn-outline btn-sm" onClick={handleLogout}>
               Sign Out
-            </Button>
+            </button>
           </div>
         ) : (
-          <Button asChild variant="ghost">
-            <Link href="/signin">Sign In</Link>
-          </Button>
+          <Link href="/signin" className="btn btn-ghost btn-sm">Sign In</Link>
         )}
       </div>
     </nav>

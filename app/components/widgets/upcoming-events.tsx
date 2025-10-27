@@ -40,18 +40,8 @@ export default function UpcomingEvents() {
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xl font-semibold">Upcoming</h2>
         <div className="flex gap-2">
-          <button
-            onClick={() => { setRange('day'); refresh(); }}
-            className={`px-2 py-1 text-xs rounded border ${range === 'day' ? 'bg-gray-900 text-white' : 'hover:bg-gray-50'}`}
-          >
-            Day
-          </button>
-          <button
-            onClick={() => { setRange('week'); refresh(); }}
-            className={`px-2 py-1 text-xs rounded border ${range === 'week' ? 'bg-gray-900 text-white' : 'hover:bg-gray-50'}`}
-          >
-            Week
-          </button>
+          <button onClick={() => { setRange('day'); refresh(); }} className={`btn btn-xs ${range === 'day' ? 'btn-primary' : 'btn-outline'}`}>Day</button>
+          <button onClick={() => { setRange('week'); refresh(); }} className={`btn btn-xs ${range === 'week' ? 'btn-primary' : 'btn-outline'}`}>Week</button>
         </div>
       </div>
       {error ? (

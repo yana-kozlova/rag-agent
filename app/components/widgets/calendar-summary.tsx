@@ -26,14 +26,10 @@ export default function CalendarSummary() {
   const todayCount = todayEvents.length;
 
   return (
-    <section className="min-w-[280px] w-full max-w-md border rounded-lg p-4">
+    <section className="min-w-[280px] w-full max-w-md">
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-lg font-semibold">Today</h2>
-        <button
-          onClick={refresh}
-          className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
-          disabled={loading}
-        >
+        <button onClick={refresh} className="btn btn-xs btn-outline" disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>

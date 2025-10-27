@@ -9,15 +9,27 @@ export default function DashboardPage() {
       <header className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Dashboard</h1>
         <div className="flex gap-3">
-          <Link href="/chat" className="px-4 py-2 rounded-md border hover:bg-accent">Go to Chat</Link>
+          <Link href="/chat" className="btn btn-primary">Go to Chat</Link>
         </div>
       </header>
       <div className="flex gap-4">
-        <div className="flex flex-col gap-4">
-          <CalendarSummary />
-          <UpcomingEvents />
+        <div className="flex flex-col gap-4 w-full max-w-md">
+          <div className="card bg-base-100 shadow">
+            <div className="card-body">
+              <CalendarSummary />
+            </div>
+          </div>
+          <div className="card bg-base-100 shadow">
+            <div className="card-body">
+              <UpcomingEvents />
+            </div>
+          </div>
         </div>
-        <ChatSection />
+        <div className="card bg-base-100 shadow w-full">
+          <div className="card-body">
+            <ChatSection />
+          </div>
+        </div>
       </div>
     </div>
   );

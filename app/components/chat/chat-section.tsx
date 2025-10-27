@@ -43,7 +43,7 @@ export default function ChatSection() {
         }}
       >
         <input
-          className="fixed bottom-0 w-full max-w-md p-2 mb-8 border border-gray-300 rounded shadow-xl"
+          className="fixed bottom-0 w-full max-w-md p-2 mb-8 input input-bordered"
           value={input}
           placeholder="Say something..."
           onChange={(e) => setInput(e.currentTarget.value)}
