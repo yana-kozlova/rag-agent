@@ -22,6 +22,18 @@ EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
 --> statement-breakpoint
+DO $$ BEGIN
+ CREATE TYPE "public"."resource_source" AS ENUM('resource', 'calendar');
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ CREATE TYPE "public"."embedding_source" AS ENUM('resource', 'calendar');
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "account" (
 	"userId" uuid NOT NULL,
 	"type" text NOT NULL,
@@ -40,6 +52,10 @@ CREATE TABLE IF NOT EXISTS "account" (
 CREATE TABLE IF NOT EXISTS "resources" (
 	"id" varchar(191) PRIMARY KEY NOT NULL,
 	"content" text NOT NULL,
+	"source" "public"."resource_source" DEFAULT 'resource',
+	"google_event_id" text,
+	"metadata" jsonb,
+	"user_id" uuid,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
@@ -68,32 +84,14 @@ CREATE TABLE IF NOT EXISTS "verificationToken" (
 	CONSTRAINT "verificationToken_identifier_token_pk" PRIMARY KEY("identifier","token")
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "calendar_events" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"google_event_id" text,
-	"calendar_id" text NOT NULL,
-	"title" text NOT NULL,
-	"description" text,
-	"location" text,
-	"start" timestamp with time zone NOT NULL,
-	"end" timestamp with time zone NOT NULL,
-	"all_day" boolean DEFAULT false,
-	"attendees" jsonb DEFAULT '[]'::jsonb,
-	"recurrence" text,
-	"embedding" jsonb,
-	"analyzed_data" jsonb,
-	"sync_status" "sync_status" DEFAULT 'synced',
-	"last_synced" timestamp with time zone,
-	"created_at" timestamp with time zone DEFAULT now(),
-	"updated_at" timestamp with time zone DEFAULT now(),
-	CONSTRAINT "calendar_events_google_event_id_unique" UNIQUE("google_event_id")
-);
---> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "embeddings" (
 	"id" varchar(191) PRIMARY KEY NOT NULL,
 	"resource_id" varchar(191),
 	"content" text NOT NULL,
-	"embedding" vector(1536) NOT NULL
+	"embedding" vector(1536) NOT NULL,
+	"source" "public"."embedding_source" DEFAULT 'resource',
+	"google_event_id" text,
+	"metadata" jsonb
 );
 --> statement-breakpoint
 DO $$ BEGIN
@@ -114,4 +112,13 @@ EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
 --> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "resources" ADD CONSTRAINT "resources_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "embeddingIndex" ON "embeddings" USING hnsw ("embedding" vector_cosine_ops);
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "resources_google_event_idx" ON "resources" ("google_event_id");
+CREATE INDEX IF NOT EXISTS "resources_user_idx" ON "resources" ("user_id");

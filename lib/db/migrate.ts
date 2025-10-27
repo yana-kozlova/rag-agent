@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { env } from "@/lib/env.mjs";
   
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -20,7 +21,7 @@ const db = drizzle(connection);
 
   const start = Date.now();
 
-  await migrate(db, { migrationsFolder: 'lib/db/migrations' });
+  await migrate(db, { migrationsFolder: 'drizzle/migrations' });
 
   const end = Date.now();
 

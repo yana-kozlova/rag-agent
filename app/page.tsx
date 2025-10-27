@@ -1,54 +1,20 @@
-'use client';
+import Link from 'next/link';
+import ChatSection from '@/app/components/chat/chat-section';
+import UpcomingEvents from '@/app/components/widgets/upcoming-events';
 
-import { useChat } from '@ai-sdk/react';
-import { useState } from 'react';
-
-export default function Chat() {
-  const [input, setInput] = useState('');
-  const { messages, sendMessage } = useChat();
+export default function DashboardPage() {
   return (
-    <div className="flex flex-col w-full max-w-md py-24 mx-auto stretch">
-      <div className="space-y-4">
-        {messages.map(m => (
-          <div key={m.id} className="whitespace-pre-wrap">
-            <div>
-              <div className="font-bold">{m.role}</div>
-              {m.parts.map(part => {
-                switch (part.type) {
-                  case 'text':
-                    return <p>{part.text}</p>;
-                  case 'tool-addResource':
-                  case 'tool-getInformation':
-                    return (
-                      <p>
-                        call{part.state === 'output-available' ? 'ed' : 'ing'}{' '}
-                        tool: {part.type}
-                        <pre className="my-4 bg-zinc-100 p-2 rounded-sm">
-                          {JSON.stringify(part.input, null, 2)}
-                        </pre>
-                      </p>
-                    );
-                }
-              })}
-            </div>
-          </div>
-        ))}
+    <div className="container mx-auto p-6 space-y-8">
+      <header className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Dashboard</h1>
+        <div className="flex gap-3">
+          <Link href="/chat" className="px-4 py-2 rounded-md border hover:bg-accent">Go to Chat</Link>
+        </div>
+      </header>
+      <div className="flex gap-4">
+        <UpcomingEvents />
+        <ChatSection />
       </div>
-
-      <form
-        onSubmit={e => {
-          e.preventDefault();
-          sendMessage({ text: input });
-          setInput('');
-        }}
-      >
-        <input
-          className="fixed bottom-0 w-full max-w-md p-2 mb-8 border border-gray-300 rounded shadow-xl"
-          value={input}
-          placeholder="Say something..."
-          onChange={e => setInput(e.currentTarget.value)}
-        />
-      </form>
     </div>
   );
 }

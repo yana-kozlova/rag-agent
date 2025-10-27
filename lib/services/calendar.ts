@@ -1,6 +1,9 @@
 import { google, calendar_v3 } from 'googleapis';
 import { db } from '../db';
-import { calendarEvents } from '../db/schema/calendar';
+import { embeddings as embeddingsTable } from '../db/schema/embeddings';
+import { generateEmbeddings } from '../ai/embedding';
+import { and, eq } from 'drizzle-orm';
+import { resources } from '../db/schema/resources';
 
 interface Attendee {
   email: string;
@@ -11,14 +14,45 @@ interface Attendee {
 export class GoogleCalendarService {
   private calendar: calendar_v3.Calendar;
   private oauth2Client: any;
+  private userId: string;
 
-  constructor(accessToken: string) {
+  constructor(accessToken: string, userId: string) {
     this.oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET
     );
     this.oauth2Client.setCredentials({ access_token: accessToken });
     this.calendar = google.calendar({ version: 'v3', auth: this.oauth2Client });
+    this.userId = userId;
+  }
+
+  /**
+   * Fetch events from Google Calendar with optional filters. This does not write to the DB.
+   */
+  async fetchEvents(calendarId: string = 'primary', opts: {
+    timeMin?: string;
+    timeMax?: string;
+    maxResults?: number;
+    q?: string;
+    singleEvents?: boolean;
+    orderBy?: 'startTime' | 'updated';
+    pageToken?: string;
+  } = {}) {
+    const params: calendar_v3.Params$Resource$Events$List = {
+      calendarId,
+      timeMin: opts.timeMin,
+      timeMax: opts.timeMax,
+      maxResults: opts.maxResults ?? 100,
+      singleEvents: opts.singleEvents ?? true,
+      orderBy: opts.orderBy ?? 'startTime',
+      q: opts.q,
+      pageToken: opts.pageToken,
+    };
+    const res = await this.calendar.events.list(params as any, { timeout: 15000 });
+    return {
+      items: (res.data.items ?? []) as calendar_v3.Schema$Event[],
+      nextPageToken: res.data.nextPageToken as string | undefined,
+    };
   }
 
   async syncEvents(calendarId: string = 'primary') {
@@ -62,47 +96,97 @@ export class GoogleCalendarService {
       if (items.length === 0) return [];
       console.log(`Fetched ${items.length} events from Google Calendar (${pageCount} page(s)).`);
 
-      const savedEvents = await Promise.all(
+      await Promise.all(
         items.map(async (event) => {
           if (!event.id) return null;
-          
+
           const startStr = event.start?.dateTime || event.start?.date;
           const endStr = event.end?.dateTime || event.end?.date;
+          const title = event.summary || 'No Title';
+          const description = event.description || '';
+          const location = event.location || '';
+          const start = startStr ? new Date(startStr) : new Date();
+          const end = endStr ? new Date(endStr) : new Date();
+          const allDay = !!event.start?.date;
+          const attendees = (event.attendees || []).map(attendee => ({
+            email: attendee.email || '',
+            name: attendee.displayName,
+            responseStatus: attendee.responseStatus as Attendee['responseStatus'],
+          }));
 
-          const eventData = {
-            googleEventId: event.id,
-            calendarId,
-            title: event.summary || 'No Title',
-            description: event.description || '',
-            location: event.location || '',
-            start: startStr ? new Date(startStr) : new Date(),
-            end: endStr ? new Date(endStr) : new Date(),
-            allDay: !!event.start?.date,
-            attendees: (event.attendees || []).map(attendee => ({
-              email: attendee.email || '',
-              name: attendee.displayName,
-              responseStatus: attendee.responseStatus as Attendee['responseStatus'],
-            })),
-            recurrence: event.recurrence ? JSON.stringify(event.recurrence) : null,
-            syncStatus: 'synced' as const,
-            lastSynced: new Date(),
+          const humanStart = start.toISOString();
+          const humanEnd = end.toISOString();
+          const attendeeText = attendees
+            .map(a => `${a.name ?? ''}`.trim())
+            .filter(Boolean)
+            .join(', ');
+          const parts = [
+            `[Event] ${title}`,
+            description ? `${description}` : '',
+            location ? `Location: ${location}` : '',
+            `When: ${humanStart} - ${humanEnd}`,
+            attendeeText ? `Attendees: ${attendeeText}` : '',
+          ].filter(Boolean);
+          const summary = parts.join('. ');
+
+          // Upsert resource for this calendar event
+          const [existing] = await db
+            .select({ id: resources.id })
+            .from(resources)
+            .where(and(eq(resources.source, 'calendar'), eq(resources.googleEventId, event.id), eq(resources.userId, this.userId)));
+
+          const resourceValues = {
+            content: summary,
+            source: 'calendar' as const,
+            googleEventId: event.id as string,
+            userId: this.userId,
+            metadata: {
+              calendarId,
+              title,
+              description,
+              location,
+              start: start.toISOString(),
+              end: end.toISOString(),
+              allDay,
+              attendees,
+            } as any,
           };
 
-          // Upsert event
-          const [savedEvent] = await db
-            .insert(calendarEvents)
-            .values(eventData)
-            .onConflictDoUpdate({
-              target: calendarEvents.googleEventId,
-              set: { ...eventData, updatedAt: new Date() },
-            })
-            .returning();
+          let resourceId: string;
+          if (existing?.id) {
+            const [updated] = await db
+              .update(resources)
+              .set(resourceValues)
+              .where(eq(resources.id, existing.id))
+              .returning({ id: resources.id });
+            resourceId = updated.id;
+          } else {
+            const [inserted] = await db
+              .insert(resources)
+              .values(resourceValues)
+              .returning({ id: resources.id });
+            resourceId = inserted.id;
+          }
 
-          return savedEvent;
+          // Rebuild embeddings for this resource
+          await db.delete(embeddingsTable).where(eq(embeddingsTable.resourceId, resourceId));
+          const chunks = await generateEmbeddings(summary);
+          if (chunks.length > 0) {
+            await db.insert(embeddingsTable).values(
+              chunks.map(e => ({
+                resourceId,
+                source: 'calendar' as const,
+                content: e.content,
+                embedding: e.embedding,
+              }))
+            );
+          }
+
+          return null;
         })
       );
 
-      return savedEvents.filter(Boolean);
+      return items.length;
     } catch (error) {
       console.error('Error syncing calendar events:', error);
       throw error;
