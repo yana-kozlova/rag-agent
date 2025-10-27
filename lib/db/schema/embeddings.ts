@@ -25,5 +25,6 @@ export const embeddings = pgTable(
       'hnsw',
       table.embedding.op('vector_cosine_ops'),
     ),
+    embeddingsResourceIdIdx: index('embeddings_resource_id_idx').on(table.resourceId),
   }),
 );

@@ -62,12 +62,3 @@ export const verificationTokens = pgTable(
     compoundKey: primaryKey({ columns: [vt.identifier, vt.token] }),
   })
 );
-
-// Add user ID to your existing resources table
-export const resources = pgTable("resources", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  content: text("content").notNull(),
-  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});

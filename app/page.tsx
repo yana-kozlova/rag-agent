@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import ChatSection from '@/app/components/chat/chat-section';
 import UpcomingEvents from '@/app/components/widgets/upcoming-events';
+import CalendarSummary from '@/app/components/widgets/calendar-summary';
 
 export default function DashboardPage() {
   return (
@@ -12,7 +13,10 @@ export default function DashboardPage() {
         </div>
       </header>
       <div className="flex gap-4">
-        <UpcomingEvents />
+        <div className="flex flex-col gap-4">
+          <CalendarSummary />
+          <UpcomingEvents />
+        </div>
         <ChatSection />
       </div>
     </div>

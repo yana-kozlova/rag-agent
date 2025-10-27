@@ -1,74 +1,66 @@
-import { db } from "@/lib/db";
-import { resources } from "@/lib/db/schema/resources";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
-import { auth } from "@/app/api/auth/auth";
+"use client";
 
-export default async function UpcomingEvents() {
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return (
-        <section>
-          <h2 className="text-xl font-semibold mb-3">Upcoming Events</h2>
-          <p className="text-muted-foreground">Please sign in to view your upcoming events.</p>
-        </section>
-      );
+import { useCalendar } from "@/app/components/providers/calendar-context";
+
+export default function UpcomingEvents() {
+  const { events, loading, error, range, setRange, refresh } = useCalendar();
+  const filtered = events.filter((ev) => {
+    const now = new Date();
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const start = new Date(ev.start);
+    const end = new Date(ev.end);
+    if (range === 'week') {
+      const endOfWeek = new Date();
+      endOfWeek.setDate(endOfWeek.getDate() + 7);
+      endOfWeek.setHours(23, 59, 59, 999);
+      return end.getTime() >= now.getTime() && start.getTime() <= endOfWeek.getTime();
     }
-    // Select calendar resources with metadata and order by metadata.start
-    const nowIso = new Date().toISOString();
-    const rows = await db
-      .select({
-        id: resources.id,
-        metadata: resources.metadata,
-      })
-      .from(resources)
-      .where(
-        and(
-          eq(resources.source, 'calendar'),
-          eq(resources.userId, userId),
-          // metadata->>'start' > now
-          gt(sql`((${resources.metadata})::jsonb->>'start')::timestamptz`, nowIso as unknown as any)
-        )
-      )
-      .orderBy(asc(sql`((${resources.metadata})::jsonb->>'start')::timestamptz`));
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+    return end.getTime() >= now.getTime() && start.getTime() <= endOfDay.getTime() && end.getTime() >= startOfDay.getTime();
+  }).sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
-    const events = rows
-      .map(r => {
-        const meta = (r.metadata as any) || {};
-        const title = typeof meta.title === 'string' ? meta.title : undefined;
-        const start = typeof meta.start === 'string' ? meta.start : undefined;
-        const end = typeof meta.end === 'string' ? meta.end : undefined;
-        const location = typeof meta.location === 'string' ? meta.location : undefined;
-        return {
-          id: r.id,
-          title,
-          start,
-          end,
-          location,
-        };
-      })
-      .filter(e => e.title && e.start && e.end) as Array<{ id: string; title: string; start: string; end: string; location?: string }>;
-    
-    return (
-        <section>
-          <h2 className="text-xl font-semibold mb-3">Upcoming Events</h2>
-          {events.length === 0 ? (
-            <p className="text-muted-foreground">No events scheduled for nearest time.</p>
-          ) : (
-            <ul className="space-y-3">
-              {events.map((ev) => (
-                <li key={ev.id} className="border rounded-lg p-4">
-                  <div className="font-medium">{ev.title}</div>
-                  <div className="text-sm text-muted-foreground">
-                    {new Date(ev.start).toLocaleString()} – {new Date(ev.end).toLocaleString()}
-                  </div>
-                  {ev.location && (
-                    <div className="text-sm text-muted-foreground">{ev.location}</div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-    );
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-xl font-semibold">Upcoming</h2>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setRange('day'); refresh(); }}
+            className={`px-2 py-1 text-xs rounded border ${range === 'day' ? 'bg-gray-900 text-white' : 'hover:bg-gray-50'}`}
+          >
+            Day
+          </button>
+          <button
+            onClick={() => { setRange('week'); refresh(); }}
+            className={`px-2 py-1 text-xs rounded border ${range === 'week' ? 'bg-gray-900 text-white' : 'hover:bg-gray-50'}`}
+          >
+            Week
+          </button>
+        </div>
+      </div>
+      {error ? (
+        <p className="text-sm text-red-600">{error}</p>
+      ) : loading ? (
+        <p className="text-muted-foreground">Loading…</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-muted-foreground">{range === 'week' ? 'No events this week.' : 'No events for today.'}</p>
+      ) : (
+        <ul className="space-y-3">
+          {filtered.map((ev) => (
+            <li key={ev.id} className="border rounded-lg p-4">
+              <div className="font-medium">{ev.title}</div>
+              <div className="text-sm text-muted-foreground">
+                {new Date(ev.start).toLocaleString()} – {new Date(ev.end).toLocaleString()}
+              </div>
+              {ev.location && (
+                <div className="text-sm text-muted-foreground">{ev.location}</div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }

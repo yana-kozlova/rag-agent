@@ -9,6 +9,10 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col w-full max-w-md py-24 mx-auto stretch">
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-lg font-semibold">Chat</h1>
+      </div>
+      
       <div className="space-y-4">
         {messages.map((m) => (
           <div key={m.id} className="whitespace-pre-wrap">
