@@ -43,7 +43,6 @@ export default function CalendarSummary() {
         <>
           <div className="text-2xl font-bold">{todayCount}</div>
           <div className="mt-4">
-            <div className="text-sm font-medium mb-2">Upcoming today</div>
             {todayEvents.length === 0 ? (
               <p className="text-sm text-muted-foreground">No upcoming events.</p>
             ) : (
@@ -52,7 +51,7 @@ export default function CalendarSummary() {
                   <li key={ev.id} className="border rounded p-3">
                     <div className="font-medium">{ev.title}</div>
                     <div className="text-xs text-muted-foreground">
-                      {new Date(ev.start).toLocaleString()} – {new Date(ev.end).toLocaleString()}
+                      {new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </div>
                     {ev.location && (
                       <div className="text-xs text-muted-foreground">{ev.location}</div>

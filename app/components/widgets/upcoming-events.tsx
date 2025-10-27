@@ -21,6 +21,20 @@ export default function UpcomingEvents() {
     return end.getTime() >= now.getTime() && start.getTime() <= endOfDay.getTime() && end.getTime() >= startOfDay.getTime();
   }).sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
+  const groups = filtered.reduce<Record<string, typeof filtered>>((acc, ev) => {
+    const d = new Date(ev.start);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (!acc[key]) acc[key] = [] as typeof filtered;
+    acc[key].push(ev);
+    return acc;
+  }, {});
+
+  const orderedGroupKeys = Object.keys(groups).sort((a, b) => {
+    const da = new Date(a.replace(/-/g, '/')).getTime();
+    const db = new Date(b.replace(/-/g, '/')).getTime();
+    return da - db;
+  });
+
   return (
     <section>
       <div className="flex items-center justify-between mb-3">
@@ -47,19 +61,31 @@ export default function UpcomingEvents() {
       ) : filtered.length === 0 ? (
         <p className="text-muted-foreground">{range === 'week' ? 'No events this week.' : 'No events for today.'}</p>
       ) : (
-        <ul className="space-y-3">
-          {filtered.map((ev) => (
-            <li key={ev.id} className="border rounded-lg p-4">
-              <div className="font-medium">{ev.title}</div>
-              <div className="text-sm text-muted-foreground">
-                {new Date(ev.start).toLocaleString()} – {new Date(ev.end).toLocaleString()}
-              </div>
-              {ev.location && (
-                <div className="text-sm text-muted-foreground">{ev.location}</div>
-              )}
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-5">
+          {orderedGroupKeys.map((key) => {
+            const dayEvents = groups[key].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+            const labelDate = new Date(dayEvents[0].start);
+            const label = labelDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+            return (
+              <section key={key}>
+                <div className="text-sm font-semibold text-gray-700 mb-2">{label}</div>
+                <ul className="space-y-3">
+                  {dayEvents.map((ev) => (
+                    <li key={ev.id} className="border rounded-lg p-4">
+                      <div className="font-medium">{ev.title}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      {ev.location && (
+                        <div className="text-sm text-muted-foreground">{ev.location}</div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
       )}
     </section>
   );
