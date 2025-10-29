@@ -1,29 +1,5 @@
 DO $$ BEGIN
- CREATE TYPE "public"."energy_level" AS ENUM('low', 'medium', 'high');
-EXCEPTION
- WHEN duplicate_object THEN null;
-END $$;
---> statement-breakpoint
-DO $$ BEGIN
- CREATE TYPE "public"."event_type" AS ENUM('meeting', 'task', 'personal', 'travel', 'recurring');
-EXCEPTION
- WHEN duplicate_object THEN null;
-END $$;
---> statement-breakpoint
-DO $$ BEGIN
- CREATE TYPE "public"."response_status" AS ENUM('accepted', 'declined', 'tentative', 'needsAction');
-EXCEPTION
- WHEN duplicate_object THEN null;
-END $$;
---> statement-breakpoint
-DO $$ BEGIN
- CREATE TYPE "public"."sync_status" AS ENUM('synced', 'pending', 'conflict');
-EXCEPTION
- WHEN duplicate_object THEN null;
-END $$;
---> statement-breakpoint
-DO $$ BEGIN
- CREATE TYPE "public"."resource_source" AS ENUM('resource', 'calendar');
+ CREATE TYPE "public"."message_role" AS ENUM('user', 'assistant', 'system');
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
@@ -47,17 +23,6 @@ CREATE TABLE IF NOT EXISTS "account" (
 	"id_token" text,
 	"session_state" text,
 	CONSTRAINT "account_provider_providerAccountId_pk" PRIMARY KEY("provider","providerAccountId")
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "resources" (
-	"id" varchar(191) PRIMARY KEY NOT NULL,
-	"content" text NOT NULL,
-	"source" "public"."resource_source" DEFAULT 'resource',
-	"google_event_id" text,
-	"metadata" jsonb,
-	"user_id" uuid,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "session" (
@@ -84,14 +49,40 @@ CREATE TABLE IF NOT EXISTS "verificationToken" (
 	CONSTRAINT "verificationToken_identifier_token_pk" PRIMARY KEY("identifier","token")
 );
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "conversations" (
+	"id" varchar(191) PRIMARY KEY NOT NULL,
+	"user_id" uuid NOT NULL,
+	"title" text,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "messages" (
+	"id" varchar(191) PRIMARY KEY NOT NULL,
+	"conversation_id" varchar(191) NOT NULL,
+	"role" "message_role" NOT NULL,
+	"content" text NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "embeddings" (
 	"id" varchar(191) PRIMARY KEY NOT NULL,
 	"resource_id" varchar(191),
+	"source" "embedding_source" DEFAULT 'resource',
+	"google_event_id" text,
 	"content" text NOT NULL,
 	"embedding" vector(1536) NOT NULL,
-	"source" "public"."embedding_source" DEFAULT 'resource',
-	"google_event_id" text,
 	"metadata" jsonb
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "resources" (
+	"id" varchar(191) PRIMARY KEY NOT NULL,
+	"content" text NOT NULL,
+	"source" "resource_source" DEFAULT 'resource',
+	"google_event_id" text,
+	"metadata" jsonb,
+	"user_id" uuid NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 DO $$ BEGIN
@@ -102,6 +93,18 @@ END $$;
 --> statement-breakpoint
 DO $$ BEGIN
  ALTER TABLE "session" ADD CONSTRAINT "session_userId_user_id_fk" FOREIGN KEY ("userId") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "conversations" ADD CONSTRAINT "conversations_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "messages" ADD CONSTRAINT "messages_conversation_id_conversations_id_fk" FOREIGN KEY ("conversation_id") REFERENCES "public"."conversations"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
@@ -118,7 +121,9 @@ EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
 --> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "embeddingIndex" ON "embeddings" USING hnsw ("embedding" vector_cosine_ops);
---> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "resources_google_event_idx" ON "resources" ("google_event_id");
-CREATE INDEX IF NOT EXISTS "resources_user_idx" ON "resources" ("user_id");
+CREATE INDEX IF NOT EXISTS "messages_conversation_idx" ON "messages" USING btree ("conversation_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "messages_created_idx" ON "messages" USING btree ("created_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "embeddingIndex" ON "embeddings" USING hnsw ("embedding" vector_cosine_ops);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "embeddings_resource_id_idx" ON "embeddings" USING btree ("resource_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "resources_google_event_idx" ON "resources" USING btree ("google_event_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "resources_user_idx" ON "resources" USING btree ("user_id");

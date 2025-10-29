@@ -1,54 +1,30 @@
-'use client';
+import Link from 'next/link';
+import ChatSection from '@/app/components/chat/ChatSection';
+import UpcomingEvents from '@/app/components/widgets/upcoming-events';
+import CalendarSummary from '@/app/components/widgets/calendar-summary';
 
-import { useChat } from '@ai-sdk/react';
-import { useState } from 'react';
-
-export default function Chat() {
-  const [input, setInput] = useState('');
-  const { messages, sendMessage } = useChat();
+export default function DashboardPage() {
   return (
-    <div className="flex flex-col w-full max-w-md py-24 mx-auto stretch">
-      <div className="space-y-4">
-        {messages.map(m => (
-          <div key={m.id} className="whitespace-pre-wrap">
-            <div>
-              <div className="font-bold">{m.role}</div>
-              {m.parts.map(part => {
-                switch (part.type) {
-                  case 'text':
-                    return <p>{part.text}</p>;
-                  case 'tool-addResource':
-                  case 'tool-getInformation':
-                    return (
-                      <p>
-                        call{part.state === 'output-available' ? 'ed' : 'ing'}{' '}
-                        tool: {part.type}
-                        <pre className="my-4 bg-zinc-100 p-2 rounded-sm">
-                          {JSON.stringify(part.input, null, 2)}
-                        </pre>
-                      </p>
-                    );
-                }
-              })}
+    <div className="container mx-auto p-0 md:p-6 space-y-8">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
+        <div className="flex flex-col gap-4 w-full md:col-span-1 order-2 md:order-1">
+          <div className="card bg-base-100 shadow">
+            <div className="card-body p-4 md:p-6">
+              <CalendarSummary />
             </div>
           </div>
-        ))}
+          <div className="card bg-base-100 shadow">
+            <div className="card-body p-4 md:p-6">
+              <UpcomingEvents />
+            </div>
+          </div>
+        </div>
+        <div className="card bg-base-100 shadow w-full md:col-span-2 order-1 md:order-2">
+          <div className="card-body p-2 md:p-4">
+            <ChatSection />
+          </div>
+        </div>
       </div>
-
-      <form
-        onSubmit={e => {
-          e.preventDefault();
-          sendMessage({ text: input });
-          setInput('');
-        }}
-      >
-        <input
-          className="fixed bottom-0 w-full max-w-md p-2 mb-8 border border-gray-300 rounded shadow-xl"
-          value={input}
-          placeholder="Say something..."
-          onChange={e => setInput(e.currentTarget.value)}
-        />
-      </form>
     </div>
   );
 }

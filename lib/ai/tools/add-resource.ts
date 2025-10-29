@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createResource } from '@/lib/actions/resources';
+import { auth } from '../../../app/api/auth/auth';
 
 export const addResourceTool = {
   description: `Add a resource to your knowledge base.
@@ -8,6 +9,10 @@ export const addResourceTool = {
     content: z.string().describe('The content or resource to add to the knowledge base'),
   }),
   execute: async ({ content }: { content: string }) => {
-    return createResource({ content });
+    const session = await auth();
+    if (!session?.user?.id) {
+      throw new Error('Unauthorized');
+    }
+    return createResource({ content, userId: session.user.id });
   },
 } as const;

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { findRelevantContent } from '@/lib/ai/embedding';
+import { auth } from '../../../app/api/auth/auth';
 
 export const getInformationTool = {
   description: 'Get information from your knowledge base to answer questions.',
@@ -7,6 +8,9 @@ export const getInformationTool = {
     question: z.string().describe('The user\'s question'),
   }),
   execute: async ({ question }: { question: string }) => {
-    return findRelevantContent(question);
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) return [];
+    return findRelevantContent(question, userId);
   },
 } as const;

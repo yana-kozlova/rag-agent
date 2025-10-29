@@ -5,23 +5,31 @@ import {
   UIMessage,
   stepCountIs,
 } from 'ai';
-import { tools } from '@/app/api/tools';
+import { tools } from '@/lib/ai/tools';
+import { env } from '@/lib/env.mjs';
+import { SYSTEM_PROMPT } from '@/app/prompts/system';
 
-// Allow streaming responses up to 30 seconds
-export const maxDuration = 30;
+// Allow streaming responses up to 60 seconds
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
-  const { messages }: { messages: UIMessage[] } = await req.json();
+  try {
+    const { messages }: { messages: UIMessage[] } = await req.json();
 
-  const result = streamText({
-    model: openai('gpt-4o'),
-    messages: convertToModelMessages(messages),
-    stopWhen: stepCountIs(5),
-    system: `You are a helpful assistant. Check your knowledge base before answering any questions.
-    Only respond to questions using information from tool calls.
-    if no relevant information is found in the tool calls, respond, "Sorry, I don't know."`,
-    tools: tools,
-  });
+    const modelName = env.AI_CHAT_MODEL || 'gpt-4o-mini';
+    const toolSteps = env.AI_TOOL_STEPS ?? 5;
+    const result = streamText({
+      model: openai(modelName),
+      messages: convertToModelMessages(messages),
+      stopWhen: stepCountIs(toolSteps),
+      system: SYSTEM_PROMPT.replace('{TOOLS}', Object.values(tools).map(t => t.description).join('\n')).replace('{TODAY}', new Date().toLocaleDateString()),
+      tools,
+      abortSignal: (req as any).signal,
+    });
 
-  return result.toUIMessageStreamResponse();
+    return result.toUIMessageStreamResponse();
+  } catch (err) {
+    console.error(err);
+    return new Response('Internal Server Error', { status: 500 });
+  }
 }
