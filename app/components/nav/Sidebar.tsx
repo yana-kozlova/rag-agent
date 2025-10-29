@@ -26,6 +26,14 @@ export function Sidebar() {
             </Link>
           </label>
         </li>
+        <li className={pathname?.startsWith('/settings') ? 'active' : ''}>
+          <label htmlFor="app-drawer">
+            <Link href="/settings" className="flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.983 5.5a2.5 2.5 0 10.034 5 2.5 2.5 0 00-.034-5zM4 12a8 8 0 1116 0 8 8 0 01-16 0z"/></svg>
+              Profile & Settings
+            </Link>
+          </label>
+        </li>
       </ul>
     </aside>
   );
