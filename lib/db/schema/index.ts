@@ -6,3 +6,4 @@ export type { NewResourceParams } from "./resources";
 export * from "./embeddings";
 export * from "./auth";
 // calendar schema removed
+export * from "./chat";

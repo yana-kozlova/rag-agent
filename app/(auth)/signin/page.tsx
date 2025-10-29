@@ -3,7 +3,6 @@
 import { signIn, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { Button } from '@/components/ui/button';
 
 export default function SignInPage() {
   const { data: session, status } = useSession();
