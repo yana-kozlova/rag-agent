@@ -2,15 +2,20 @@ import { NextResponse } from 'next/server';
 import { auth } from '../../auth/auth';
 import { db } from '@/lib/db';
 import { conversations, messages } from '@/lib/db/schema/chat';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, lt } from 'drizzle-orm';
 
 export const runtime = 'nodejs';
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const session = await auth();
     const userId = session?.user?.id;
     if (!userId) return NextResponse.json({ messages: [] });
+
+    const url = new URL(req.url);
+    const limitParam = url.searchParams.get('limit');
+    const beforeParam = url.searchParams.get('before');
+    const limit = Math.min(Math.max(parseInt(limitParam || '15', 10) || 15, 1), 100);
 
     const convo = await db
       .select({ id: conversations.id })
@@ -20,12 +25,19 @@ export async function GET() {
 
     if (convo.length === 0) return NextResponse.json({ messages: [] });
 
-    const rows = await db
-      .select({ id: messages.id, role: messages.role, content: messages.content, createdAt: messages.createdAt })
-      .from(messages)
-      .where(eq(messages.conversationId, convo[0].id))
-      .orderBy(desc(messages.createdAt))
-      .limit(50);
+    const rows = beforeParam
+      ? await db
+          .select({ id: messages.id, role: messages.role, content: messages.content, createdAt: messages.createdAt })
+          .from(messages)
+          .where(and(eq(messages.conversationId, convo[0].id), lt(messages.createdAt, new Date(beforeParam))))
+          .orderBy(desc(messages.createdAt))
+          .limit(limit)
+      : await db
+          .select({ id: messages.id, role: messages.role, content: messages.content, createdAt: messages.createdAt })
+          .from(messages)
+          .where(eq(messages.conversationId, convo[0].id))
+          .orderBy(desc(messages.createdAt))
+          .limit(limit);
 
     return NextResponse.json({ messages: rows.reverse() });
   } catch (error: any) {
