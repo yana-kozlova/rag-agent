@@ -5,28 +5,22 @@ import CalendarSummary from '@/app/components/widgets/calendar-summary';
 
 export default function DashboardPage() {
   return (
-    <div className="container mx-auto p-6 space-y-8">
-      <header className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-        <div className="flex gap-3">
-          <Link href="/chat" className="btn btn-primary">Go to Chat</Link>
-        </div>
-      </header>
-      <div className="flex gap-4">
-        <div className="flex flex-col gap-4 w-full max-w-md">
+    <div className="container mx-auto p-0 md:p-6 space-y-8">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
+        <div className="flex flex-col gap-4 w-full md:col-span-1 order-2 md:order-1">
           <div className="card bg-base-100 shadow">
-            <div className="card-body">
+            <div className="card-body p-4 md:p-6">
               <CalendarSummary />
             </div>
           </div>
           <div className="card bg-base-100 shadow">
-            <div className="card-body">
+            <div className="card-body p-4 md:p-6">
               <UpcomingEvents />
             </div>
           </div>
         </div>
-        <div className="card bg-base-100 shadow w-full">
-          <div className="card-body">
+        <div className="card bg-base-100 shadow w-full md:col-span-2 order-1 md:order-2">
+          <div className="card-body p-2 md:p-4">
             <ChatSection />
           </div>
         </div>

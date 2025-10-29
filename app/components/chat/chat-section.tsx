@@ -25,6 +25,7 @@ export default function ChatSection() {
     id: `hist-${h.id}`,
     role: h.role,
     parts: [{ type: 'text', text: h.content }],
+    createdAt: h.createdAt,
   } as any));
 
   const [hasMore, setHasMore] = useState(true);
@@ -126,10 +127,10 @@ export default function ChatSection() {
   }, [messages.length]);
 
   return (
-    <section className="flex flex-col w-full max-w-sm py-24 mx-auto stretch">
+    <section className="flex flex-col w-full max-w-3xl mx-auto px-4 md:px-0">
       <div
         ref={listRef}
-        className="space-y-4 h-[70vh] overflow-y-auto"
+        className="space-y-3 overflow-y-auto rounded-lg bg-base-100 p-3 max-w-full h-[480px] sm:h-[560px] md:h-[800px]"
         onScroll={(e) => {
           const el = e.currentTarget;
           // load older when near top
@@ -149,35 +150,58 @@ export default function ChatSection() {
             Load older
           </button>
         )}
-        {[...historyUi, ...messages].map((m) => (
-          <div key={m.id} className="whitespace-pre-wrap">
-            <div>
-              <div className="font-bold">{m.role}</div>
-              {m.parts.map((part: any, idx: number) => {
-                switch (part.type) {
-                  case 'text':
-                    return <p key={`text-${idx}`}>{part.text}</p>;
-                  case 'tool-addResource':
-                  case 'tool-getInformation':
-                    return (
-                      <p key={`tool-${idx}`}>
-                        call{part.state === 'output-available' ? 'ed' : 'ing'} tool: {part.type}
-                        <pre className="my-4 bg-zinc-100 p-2 rounded-sm">{JSON.stringify(part.input, null, 2)}</pre>
-                      </p>
-                    );
-                  default:
+        {[...historyUi, ...messages].map((m) => {
+          const isUser = m.role === 'user';
+          const chatSide = isUser ? 'chat-end' : 'chat-start';
+          const textParts = Array.isArray(m.parts) ? m.parts.filter((p: any) => p?.type === 'text') : [];
+          const bubbleText = textParts.map((p: any) => p.text).join('\n');
+          const timeStr = m.createdAt ? new Date(m.createdAt as any).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined;
+          const avatarSrc = isUser
+            ? 'https://img.daisyui.com/images/profile/demo/anakeen@192.webp'
+            : 'https://img.daisyui.com/images/profile/demo/kenobee@192.webp';
+          return (
+            <div key={m.id} className={`chat ${chatSide} max-w-full`}>
+              <div className="chat-image avatar">
+                <div className="w-8 md:w-10 rounded-full">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img alt="avatar" src={avatarSrc} />
+                </div>
+              </div>
+              <div className="chat-header">
+                {isUser ? 'You' : 'Assistant'}
+                {timeStr && <time className="text-xs opacity-50 ml-2">{timeStr}</time>}
+              </div>
+              {bubbleText && (
+                <div className="chat-bubble whitespace-pre-wrap break-words text-sm md:text-base">{bubbleText}</div>
+              )}
+              {/* Render any tool calls as compact blocks below bubble */}
+              {Array.isArray(m.parts) && m.parts.some((p: any) => String(p?.type || '').startsWith('tool-')) && (
+                <div className="chat-footer opacity-70">
+                  {m.parts.map((part: any, idx: number) => {
+                    if (String(part?.type || '').startsWith('tool-')) {
+                      return (
+                        <div key={`tool-${idx}`} className="mt-1">
+                          <span className="text-xs">{part.type} {part.state === 'output-available' ? '(done)' : '(running)'}:</span>
+                          {part.input && (
+                            <pre className="text-[10px] bg-base-200 p-2 rounded mt-1 overflow-x-auto max-w-[260px]">{JSON.stringify(part.input, null, 2)}</pre>
+                          )}
+                        </div>
+                      );
+                    }
                     return null;
-                }
-              })}
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
         {loadingMore && (
           <div className="text-center text-xs text-neutral-500 py-2">Loading older messages…</div>
         )}
       </div>
 
       <form
+        className="mt-3"
         onSubmit={(e) => {
           e.preventDefault();
           // persist user message then send
@@ -187,12 +211,17 @@ export default function ChatSection() {
           setInput('');
         }}
       >
-        <input
-          className="fixed bottom-0 w-full max-w-md p-2 mb-8 input input-bordered"
-          value={input}
-          placeholder="Say something..."
-          onChange={(e) => setInput(e.currentTarget.value)}
-        />
+        <div className="flex items-center gap-2">
+          <input
+            className="input input-bordered w-full"
+            value={input}
+            placeholder="Say something..."
+            onChange={(e) => setInput(e.currentTarget.value)}
+          />
+          <button type="submit" className="btn btn-primary" disabled={!input.trim()}>
+            Send
+          </button>
+        </div>
       </form>
 
     </section>

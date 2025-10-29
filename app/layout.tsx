@@ -52,12 +52,6 @@ export default async function RootLayout({
                       Dashboard
                     </a>
                   </li>
-                  <li>
-                    <a href="/chat" className="flex items-center gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l.8-4A7.7 7.7 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
-                      Chat
-                    </a>
-                  </li>
                 </ul>
               </aside>
             </div>
