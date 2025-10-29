@@ -8,3 +8,4 @@ export interface ToolDefinition<TInput = any, TOutput = any> {
 
 export * from './addResource';
 export * from './getInformation';
+export * from './createEvent';
