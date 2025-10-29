@@ -63,11 +63,9 @@ export class GoogleCalendarService {
           location: eventData.location,
           start: {
             dateTime: typeof eventData.start === 'string' ? eventData.start : eventData.start.toISOString(),
-            timeZone: 'UTC',
           },
           end: {
             dateTime: typeof eventData.end === 'string' ? eventData.end : eventData.end.toISOString(),
-            timeZone: 'UTC',
           },
           attendees: eventData.attendees?.map(attendee => ({
             email: attendee.email,

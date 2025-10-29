@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { auth } from '../auth/auth';
+import { getSessionOrThrow } from './utils';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 
 // Helper to get time range based on range type
@@ -46,12 +46,9 @@ export const getEventsTool = {
   }),
   execute: async (input: { calendarId?: string; range?: 'day' | 'week' | 'month' | 'upcoming' }) => {
     try {
-      const session = await auth();
-      if (!session?.user?.id || !session.user.accessToken) {
-        throw new Error('Unauthorized: Missing user ID or access token');
-      }
+      const session = await getSessionOrThrow();
 
-      const calendarService = new GoogleCalendarService(session.user.accessToken, session.user.id);
+      const calendarService = new GoogleCalendarService(session.user.accessToken as string, session.user.id as string);
       const calendarId = input?.calendarId ?? 'primary';
       const range = input?.range ?? 'upcoming';
 

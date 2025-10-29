@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { createResource } from '@/lib/actions/resources';
-import { auth } from '../auth/auth';
+import { auth } from '../../../app/api/auth/auth';
 
 export const addResourceTool = {
   description: `Add a resource to your knowledge base.

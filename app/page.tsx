@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import ChatSection from '@/app/components/chat/chat-section';
+import ChatSection from '@/app/components/chat/chatSection';
 import UpcomingEvents from '@/app/components/widgets/upcoming-events';
 import CalendarSummary from '@/app/components/widgets/calendar-summary';
 

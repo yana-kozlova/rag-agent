@@ -1,7 +1,7 @@
-import { addResourceTool } from './addResource';
-import { getInformationTool } from './getInformation';
-import { getEventsTool } from './getEvents';
-import { createEventTool } from './createEvent';
+import { addResourceTool } from './add-resource';
+import { getInformationTool } from './get-information';
+import { getEventsTool } from './get-events';
+import { createEventTool } from './create-event';
 
 export const tools = {
   addResource: addResourceTool,

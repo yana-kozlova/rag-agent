@@ -1,13 +1,17 @@
 import { embed, embedMany } from 'ai';
 import { openai } from '@ai-sdk/openai';
+import { env } from '@/lib/env.mjs';
 import { db } from '../db';
 import { cosineDistance, sql } from 'drizzle-orm';
 import { embeddings } from '../db/schema/embeddings';
 import { resources } from '../db/schema/resources';
 
-const embeddingModel = openai.embedding('text-embedding-3-small');
+const embeddingModel = openai.embedding(env.AI_EMBED_MODEL || 'text-embedding-3-small');
 
-const generateChunks = (input: string, size = 800, overlap = 200): string[] => {
+const DEFAULT_CHUNK_SIZE = env.EMBED_CHUNK_SIZE ?? 800;
+const DEFAULT_CHUNK_OVERLAP = env.EMBED_CHUNK_OVERLAP ?? 200;
+
+const generateChunks = (input: string, size = DEFAULT_CHUNK_SIZE, overlap = DEFAULT_CHUNK_OVERLAP): string[] => {
   const normalized = input.replaceAll('\n', ' ').replace(/\s+/g, ' ').trim();
   if (normalized.length === 0) return [];
   if (normalized.length <= size) return [normalized];
@@ -58,6 +62,7 @@ export const findRelevantContent = async (userQuery: string, userId: string) => 
     userQueryEmbedded,
   )})`;
   const distance = sql<number>`(${embeddings.embedding}) <-> ${userQueryEmbedded}`;
+  const topK = env.RAG_TOP_K ?? 8;
   const rows = await db
     .select({
       content: embeddings.content,
@@ -71,6 +76,6 @@ export const findRelevantContent = async (userQuery: string, userId: string) => 
     .leftJoin(resources, sql`${resources.id} = ${embeddings.resourceId}`)
     .where(sql`${resources.userId} = ${userId}`)
     .orderBy(distance)
-    .limit(8);
+    .limit(topK);
   return rows;
 };

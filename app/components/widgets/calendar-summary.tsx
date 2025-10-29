@@ -1,26 +1,14 @@
 "use client";
 
-import { useCalendar } from "@/app/components/providers/calendar-context";
+import { useCalendar } from "@/app/components/providers/CalendarContext";
+import { isInRange } from "@/app/components/utils/calendar-utils";
+import type { CalendarEvent } from "@/types/calendar";
 
 export default function CalendarSummary() {
   const { events, loading, error, refresh } = useCalendar();
 
-  const now = new Date();
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date();
-  endOfDay.setHours(23, 59, 59, 999);
-
-  const overlapsTodayAndUpcoming = (start: Date, end: Date) => {
-    return end.getTime() >= now.getTime() && start.getTime() <= endOfDay.getTime() && end.getTime() >= startOfDay.getTime();
-  };
-
   const todayEvents = events
-    .filter(ev => {
-      const start = new Date(ev.start);
-      const end = new Date(ev.end);
-      return overlapsTodayAndUpcoming(start, end);
-    })
+    .filter((ev: CalendarEvent) => isInRange(ev, 'day'))
     .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
   const todayCount = todayEvents.length;

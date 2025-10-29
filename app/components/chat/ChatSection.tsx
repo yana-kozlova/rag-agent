@@ -3,7 +3,9 @@
 import { useChat } from '@ai-sdk/react';
 import { useEffect, useRef, useState } from 'react';
 import { renderSimpleMarkdown } from '@/app/components/utils/markdown';
-import { getLocalDateKey } from '@/app/components/utils/datetime';
+import { useAutoGreeting } from '@/app/components/chat/useAutoGreeting';
+import { ToolOutput } from '@/app/components/chat/ToolOutput';
+import type { ChatMessage } from '@/types/ai';
 
 export default function ChatSection() {
   const [input, setInput] = useState('');
@@ -30,7 +32,7 @@ export default function ChatSection() {
 
   const [history, setHistory] = useState<{ id: string; role: string; content: string; createdAt?: string | Date }[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
-  const historyUi = history.map((h) => ({
+  const historyUi: ChatMessage[] = history.map((h) => ({
     id: `hist-${h.id}`,
     role: h.role,
     parts: [{ type: 'text', text: h.content }],
@@ -40,7 +42,8 @@ export default function ChatSection() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const autoPromptRef = useRef<string | null>(null);
+  const autoGreetingHistory = history.map(h => ({ createdAt: h.createdAt, role: h.role as 'user' | 'assistant' | 'system' }));
+  const autoPrompt = useAutoGreeting({ history: autoGreetingHistory, historyLoaded, sendMessage });
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -108,31 +111,7 @@ export default function ChatSection() {
     return () => observer.disconnect();
   }, [listRef.current, topSentinelRef.current, hasMore, loadingMore, history.length]);
 
-  useEffect(() => {
-    try {
-      const todayKey = getLocalDateKey(new Date());
-
-      if (!historyLoaded) return;
-      // Determine if there were persisted messages today
-      const hasToday = history.some((m: any) => {
-        const c = m.createdAt ? new Date(m.createdAt as any) : undefined;
-        if (!c || isNaN(c.getTime())) return false;
-        return getLocalDateKey(c) === todayKey;
-      });
-
-      if (!hasToday) {
-        // Trigger a real AI greeting run for today
-        (async () => {
-          try {
-            const todayLabel = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-            const prompt = `Greet the user briefly and summarize today's (${todayLabel}) schedule. Provide life-affirming phrase on the basis of busyness of the day.`;
-            autoPromptRef.current = prompt;
-            sendMessage({ text: prompt });
-          } catch {}
-        })();
-      }
-    } catch {}
-  }, [historyLoaded]);
+  // auto greeting handled by hook above
 
   // auto-scroll to bottom on new live messages unless user scrolled up
   useEffect(() => {
@@ -173,10 +152,11 @@ export default function ChatSection() {
           const chatSide = isUser ? 'chat-end' : 'chat-start';
           const textParts = Array.isArray(m.parts) ? m.parts.filter((p: any) => p?.type === 'text') : [];
           const bubbleText = textParts.map((p: any) => p.text).join('\n');
-          if (isUser && autoPromptRef.current && bubbleText.trim() === autoPromptRef.current.trim()) {
+          if (isUser && autoPrompt && bubbleText.trim() === autoPrompt.trim()) {
             return null;
           }
-          const timeStr = m.createdAt ? new Date(m.createdAt as any).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined;
+          const created = (m as any).createdAt;
+          const timeStr = created ? new Date(created as any).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined;
           const avatarSrc = isUser
             ? 'https://img.daisyui.com/images/profile/demo/anakeen@192.webp'
             : 'https://img.daisyui.com/images/profile/demo/kenobee@192.webp';
@@ -197,45 +177,7 @@ export default function ChatSection() {
                   {renderSimpleMarkdown(bubbleText)}
                 </div>
               )}
-              {/* Render any tool calls as compact blocks below bubble */}
-              {Array.isArray(m.parts) && m.parts.some((p: any) => String(p?.type || '').startsWith('tool-')) && (
-                <div className="chat-footer opacity-80">
-                  {m.parts.map((part: any, idx: number) => {
-                    if (!String(part?.type || '').startsWith('tool-')) return null;
-                    const isDone = part.state === 'output-available';
-                    return (
-                      <div key={`tool-${idx}`} className="mt-1">
-                        <span className="text-xs">
-                          {part.type} {isDone ? '(done)' : '(running)'}
-                        </span>
-                        {/* Show input for transparency */}
-                        {part.input && (
-                          <pre className="text-[10px] bg-base-200 p-2 rounded mt-1 overflow-x-auto max-w-[260px]">{JSON.stringify(part.input, null, 2)}</pre>
-                        )}
-                        {/* Show output when ready */}
-                        {isDone && part.output && (
-                          <div className="mt-1">
-                            { part.type === 'tool-getInformation' && Array.isArray(part.output) ? (
-                              <ul className="text-[11px] bg-base-200 p-2 rounded max-w-[260px] space-y-1">
-                                {part.output.map((row: any, i: number) => (
-                                  <li key={`row-${i}`}>
-                                    <div className="font-medium break-words">{row.content}</div>
-                                    {row.metadata && (
-                                      <div className="opacity-70 break-words">{typeof row.metadata === 'string' ? row.metadata : JSON.stringify(row.metadata)}</div>
-                                    )}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <pre className="text-[10px] bg-base-200 p-2 rounded overflow-x-auto max-w-[260px]">{typeof part.output === 'string' ? part.output : JSON.stringify(part.output, null, 2)}</pre>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              <ToolOutput parts={(m.parts as any) || []} />
             </div>
           );
         })}
@@ -256,12 +198,12 @@ export default function ChatSection() {
         }}
       >
         <div className="flex items-center gap-2">
-          <input
+        <input
             className="input input-bordered w-full"
-            value={input}
-            placeholder="Say something..."
-            onChange={(e) => setInput(e.currentTarget.value)}
-          />
+          value={input}
+          placeholder="Say something..."
+          onChange={(e) => setInput(e.currentTarget.value)}
+        />
           <button type="submit" className="btn btn-primary" disabled={!input.trim()}>
             Send
           </button>

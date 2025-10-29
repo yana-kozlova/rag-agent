@@ -1,8 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-
-type CalendarEvent = { id: string; title: string; start: string; end: string; location?: string };
+import type { CalendarEvent } from '@/types/calendar';
 
 type CalendarState = {
   events: CalendarEvent[];

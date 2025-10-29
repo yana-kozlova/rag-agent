@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { auth } from '../auth/auth';
+import { getSessionOrThrow, parseInputOrThrow } from './utils';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 
 export const createEventTool = {
@@ -22,12 +22,11 @@ export const createEventTool = {
     description?: string;
     attendees?: Array<{ email: string; name?: string }>;
   }) => {
-    const session = await auth();
-    if (!session?.user?.id || !session.user.accessToken) {
-      throw new Error('Unauthorized: Missing user ID or access token');
-    }
+    // validate input and auth
+    input = parseInputOrThrow(createEventTool.inputSchema, input);
+    const session = await getSessionOrThrow();
 
-    const calendarService = new GoogleCalendarService(session.user.accessToken, session.user.id);
+    const calendarService = new GoogleCalendarService(session.user.accessToken as string, session.user.id as string);
     const calendarId = input.calendarId ?? 'primary';
 
     const created = await calendarService.createEvent(calendarId, {

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { findRelevantContent } from '@/lib/ai/embedding';
-import { auth } from '../auth/auth';
+import { auth } from '../../../app/api/auth/auth';
 
 export const getInformationTool = {
   description: 'Get information from your knowledge base to answer questions.',

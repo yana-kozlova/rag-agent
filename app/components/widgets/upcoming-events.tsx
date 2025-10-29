@@ -1,33 +1,15 @@
 "use client";
 
-import { useCalendar } from "@/app/components/providers/calendar-context";
+import { useCalendar } from "@/app/components/providers/CalendarContext";
+import { groupEventsByDay, isInRange } from '@/app/components/utils/calendar-utils';
 
 export default function UpcomingEvents() {
   const { events, loading, error, range, setRange, refresh } = useCalendar();
-  const filtered = events.filter((ev) => {
-    const now = new Date();
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const start = new Date(ev.start);
-    const end = new Date(ev.end);
-    if (range === 'week') {
-      const endOfWeek = new Date();
-      endOfWeek.setDate(endOfWeek.getDate() + 7);
-      endOfWeek.setHours(23, 59, 59, 999);
-      return end.getTime() >= now.getTime() && start.getTime() <= endOfWeek.getTime();
-    }
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-    return end.getTime() >= now.getTime() && start.getTime() <= endOfDay.getTime() && end.getTime() >= startOfDay.getTime();
-  }).sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+  const filtered = events
+    .filter((ev) => isInRange(ev, range))
+    .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
-  const groups = filtered.reduce<Record<string, typeof filtered>>((acc, ev) => {
-    const d = new Date(ev.start);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    if (!acc[key]) acc[key] = [] as typeof filtered;
-    acc[key].push(ev);
-    return acc;
-  }, {});
+  const groups = groupEventsByDay(filtered) as Record<string, typeof filtered>;
 
   const orderedGroupKeys = Object.keys(groups).sort((a, b) => {
     const da = new Date(a.replace(/-/g, '/')).getTime();
