@@ -2,6 +2,7 @@
 
 import { useChat } from '@ai-sdk/react';
 import { useEffect, useRef, useState } from 'react';
+import { renderSimpleMarkdown } from '@/app/components/utils/markdown';
 
 export default function ChatSection() {
   const [input, setInput] = useState('');
@@ -14,6 +15,12 @@ export default function ChatSection() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ role: 'assistant', content: messageText })
         });
+        // fire-and-forget user facts extraction
+        fetch('/api/chat/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: messageText })
+        }).catch(() => {});
       }
     }
   });
@@ -33,6 +40,7 @@ export default function ChatSection() {
   const listRef = useRef<HTMLDivElement | null>(null);
   const autoScrollRef = useRef(true);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
+
 
   useEffect(() => {
     fetch('/api/chat/history?limit=15')
@@ -172,23 +180,46 @@ export default function ChatSection() {
                 {timeStr && <time className="text-xs opacity-50 ml-2">{timeStr}</time>}
               </div>
               {bubbleText && (
-                <div className="chat-bubble whitespace-pre-wrap break-words text-sm md:text-base">{bubbleText}</div>
+                <div className={`chat-bubble whitespace-pre-wrap break-words text-sm md:text-base`}>
+                  {renderSimpleMarkdown(bubbleText)}
+                </div>
               )}
               {/* Render any tool calls as compact blocks below bubble */}
               {Array.isArray(m.parts) && m.parts.some((p: any) => String(p?.type || '').startsWith('tool-')) && (
-                <div className="chat-footer opacity-70">
+                <div className="chat-footer opacity-80">
                   {m.parts.map((part: any, idx: number) => {
-                    if (String(part?.type || '').startsWith('tool-')) {
-                      return (
-                        <div key={`tool-${idx}`} className="mt-1">
-                          <span className="text-xs">{part.type} {part.state === 'output-available' ? '(done)' : '(running)'}:</span>
-                          {part.input && (
-                            <pre className="text-[10px] bg-base-200 p-2 rounded mt-1 overflow-x-auto max-w-[260px]">{JSON.stringify(part.input, null, 2)}</pre>
-                          )}
-                        </div>
-                      );
-                    }
-                    return null;
+                    if (!String(part?.type || '').startsWith('tool-')) return null;
+                    const isDone = part.state === 'output-available';
+                    return (
+                      <div key={`tool-${idx}`} className="mt-1">
+                        <span className="text-xs">
+                          {part.type} {isDone ? '(done)' : '(running)'}
+                        </span>
+                        {/* Show input for transparency */}
+                        {part.input && (
+                          <pre className="text-[10px] bg-base-200 p-2 rounded mt-1 overflow-x-auto max-w-[260px]">{JSON.stringify(part.input, null, 2)}</pre>
+                        )}
+                        {/* Show output when ready */}
+                        {isDone && part.output && (
+                          <div className="mt-1">
+                            {part.type === 'tool-getInformation' && Array.isArray(part.output) ? (
+                              <ul className="text-[11px] bg-base-200 p-2 rounded max-w-[260px] space-y-1">
+                                {part.output.map((row: any, i: number) => (
+                                  <li key={`row-${i}`}>
+                                    <div className="font-medium break-words">{row.content}</div>
+                                    {row.metadata && (
+                                      <div className="opacity-70 break-words">{typeof row.metadata === 'string' ? row.metadata : JSON.stringify(row.metadata)}</div>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <pre className="text-[10px] bg-base-200 p-2 rounded overflow-x-auto max-w-[260px]">{typeof part.output === 'string' ? part.output : JSON.stringify(part.output, null, 2)}</pre>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
                   })}
                 </div>
               )}
