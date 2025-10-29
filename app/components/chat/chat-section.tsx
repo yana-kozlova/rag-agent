@@ -3,6 +3,7 @@
 import { useChat } from '@ai-sdk/react';
 import { useEffect, useRef, useState } from 'react';
 import { renderSimpleMarkdown } from '@/app/components/utils/markdown';
+import { getLocalDateKey } from '@/app/components/utils/datetime';
 
 export default function ChatSection() {
   const [input, setInput] = useState('');
@@ -28,6 +29,7 @@ export default function ChatSection() {
   // Rely on onFinish to persist assistant messages when fully available
 
   const [history, setHistory] = useState<{ id: string; role: string; content: string; createdAt?: string | Date }[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const historyUi = history.map((h) => ({
     id: `hist-${h.id}`,
     role: h.role,
@@ -38,9 +40,8 @@ export default function ChatSection() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const autoScrollRef = useRef(true);
+  const autoPromptRef = useRef<string | null>(null);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
-
 
   useEffect(() => {
     fetch('/api/chat/history?limit=15')
@@ -56,8 +57,9 @@ export default function ChatSection() {
             el.scrollTop = el.scrollHeight;
           }
         });
+        setHistoryLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => { setHistoryLoaded(true); });
   }, []);
 
   const loadMore = async () => {
@@ -108,21 +110,29 @@ export default function ChatSection() {
 
   useEffect(() => {
     try {
-      const key = 'chatStartupPingAt';
-      const params = new URLSearchParams(window.location.search);
-      const force = params.get('autoping') === '1';
-      const last = window.localStorage.getItem(key);
-      const now = Date.now();
-      const twelveHoursMs = 12 * 60 * 60 * 1000;
-      const shouldPing = force || !last || (now - parseInt(last, 10)) > twelveHoursMs;
-      if (shouldPing && (force || Math.random() < 0.3)) {
-        setTimeout(() => {
-          sendMessage({ text: 'Quick check-in: summarize my agenda for today in two lines.' });
-          window.localStorage.setItem(key, String(Date.now()));
-        }, 200);
+      const todayKey = getLocalDateKey(new Date());
+
+      if (!historyLoaded) return;
+      // Determine if there were persisted messages today
+      const hasToday = history.some((m: any) => {
+        const c = m.createdAt ? new Date(m.createdAt as any) : undefined;
+        if (!c || isNaN(c.getTime())) return false;
+        return getLocalDateKey(c) === todayKey;
+      });
+
+      if (!hasToday) {
+        // Trigger a real AI greeting run for today
+        (async () => {
+          try {
+            const todayLabel = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+            const prompt = `Greet the user briefly and summarize today's (${todayLabel}) schedule. Provide life-affirming phrase on the basis of busyness of the day.`;
+            autoPromptRef.current = prompt;
+            sendMessage({ text: prompt });
+          } catch {}
+        })();
       }
     } catch {}
-  }, [sendMessage]);
+  }, [historyLoaded]);
 
   // auto-scroll to bottom on new live messages unless user scrolled up
   useEffect(() => {
@@ -158,11 +168,14 @@ export default function ChatSection() {
             Load older
           </button>
         )}
-        {[...historyUi, ...messages].map((m) => {
+        {[...historyUi, ...messages].filter((m:any) => m.role !== 'system').map((m) => {
           const isUser = m.role === 'user';
           const chatSide = isUser ? 'chat-end' : 'chat-start';
           const textParts = Array.isArray(m.parts) ? m.parts.filter((p: any) => p?.type === 'text') : [];
           const bubbleText = textParts.map((p: any) => p.text).join('\n');
+          if (isUser && autoPromptRef.current && bubbleText.trim() === autoPromptRef.current.trim()) {
+            return null;
+          }
           const timeStr = m.createdAt ? new Date(m.createdAt as any).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined;
           const avatarSrc = isUser
             ? 'https://img.daisyui.com/images/profile/demo/anakeen@192.webp'
@@ -202,7 +215,7 @@ export default function ChatSection() {
                         {/* Show output when ready */}
                         {isDone && part.output && (
                           <div className="mt-1">
-                            {part.type === 'tool-getInformation' && Array.isArray(part.output) ? (
+                            { part.type === 'tool-getInformation' && Array.isArray(part.output) ? (
                               <ul className="text-[11px] bg-base-200 p-2 rounded max-w-[260px] space-y-1">
                                 {part.output.map((row: any, i: number) => (
                                   <li key={`row-${i}`}>

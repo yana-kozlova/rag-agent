@@ -2,26 +2,6 @@ import { z } from 'zod';
 import { auth } from '../auth/auth';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 
-// Helper functions for date handling
-const formatEventDate = (dateStr?: string | null): string | undefined => {
-  if (!dateStr) return undefined;
-  try {
-    const date = new Date(dateStr);
-    return date.toISOString();
-  } catch (error) {
-    console.error('Error formatting date:', error);
-    return undefined;
-  }
-};
-
-const createEventSummary = (title: string, start?: string, end?: string): string => {
-  const contentParts = [
-    `[Event] ${title}`,
-    start && end ? `When: ${start} - ${end}` : undefined,
-  ].filter(Boolean);
-  return contentParts.join('. ');
-};
-
 // Helper to get time range based on range type
 const getTimeRange = (rangeType: 'day' | 'week' | 'month' | 'upcoming') => {
   const now = new Date();
@@ -93,8 +73,8 @@ export const getEventsTool = {
 
       // Format and return events
       return events.map((event) => {
-        const start = formatEventDate(event.start?.dateTime || event.start?.date);
-        const end = formatEventDate(event.end?.dateTime || event.end?.date);
+        const start = (event.start?.dateTime ?? event.start?.date) as string | undefined;
+        const end = (event.end?.dateTime ?? event.end?.date) as string | undefined;
         const title = event.summary || 'No Title';
         const location = event.location;
         const description = event.description;
