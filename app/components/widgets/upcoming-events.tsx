@@ -33,14 +33,14 @@ export default function UpcomingEvents() {
       ) : filtered.length === 0 ? (
         <p className="text-muted-foreground">{range === 'week' ? 'No events this week.' : 'No events for today.'}</p>
       ) : (
-        <div className="space-y-5">
+        <div className="">
           {orderedGroupKeys.map((key) => {
             const dayEvents = groups[key].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
             const labelDate = new Date(dayEvents[0].start);
             const label = labelDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
             return (
               <section key={key}>
-                <ul className="list bg-base-200 rounded-box shadow-sm p-2">
+                <ul className="list py-2">
                   <li className="pb-2 text-md opacity-80 tracking-wide font-bold">{label}</li>
                   {dayEvents.map((ev) => {
                     const paletteBadge = ['badge-primary','badge-secondary','badge-accent','badge-info','badge-success','badge-warning','badge-error'];
@@ -55,7 +55,7 @@ export default function UpcomingEvents() {
                     return (
                       <li key={ev.id} className="list-row pb-1 border-l-2 pl-2">
                         <div className="flex items-center gap-2">
-                          <div className="bg-neutral rounded-box text-neutral-content flex flex-col p-2 min-w-16 text-center text-lg">
+                          <div className="bg-warning rounded-box text-base-content flex flex-col p-2 min-w-16 text-center text-lg">
                             {start}
                           </div>
                           <div>

@@ -32,7 +32,7 @@ export default function CalendarSummary() {
             {todayEvents.length === 0 ? (
               <p className="text-sm text-muted-foreground">No upcoming events.</p>
             ) : (
-              <ul className="list bg-base-200 rounded-box shadow-sm">
+              <ul className="list">
                 {todayEvents.slice(0, 5).map(ev => {
                   const paletteBadge = ['badge-primary','badge-secondary','badge-accent','badge-info','badge-success','badge-warning','badge-error'];
                   const paletteBg = ['bg-primary text-primary-content','bg-secondary text-secondary-content','bg-accent text-accent-content','bg-info text-info-content','bg-success text-success-content','bg-warning text-warning-content','bg-error text-error-content'];
@@ -45,21 +45,21 @@ export default function CalendarSummary() {
                   const end = new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                   return (
                     <li key={ev.id} className="list-row pb-1">
-                      <div className="flex items-center gap-2">
-                        <div className="bg-neutral rounded-box text-neutral-content flex flex-col p-2 min-w-16 text-center text-lg">
-                          {start}
+                    <div className="flex items-center gap-2">
+                      <div className="bg-success rounded-box text-base-content flex flex-col p-2 min-w-16 text-center text-lg">
+                        {start}
+                      </div>
+                      <div>
+                        <div className="min-w-0 flex items-center gap-2">
+                          <div className="font-bold text-sm md:text-md flex-1 min-w-0">{ev.title}</div>
+                          {ev.calendarId !== 'primary' && <div className={`badge badge-ghost badge-xs mr-1 ${badgeClass}`}>{ev.calendarId}</div>}
                         </div>
-                        <div>
-                          <div className="min-w-0 flex items-center gap-2">
-                            <div className="truncate text-md font-bold truncate">{ev.title}</div>
-                            {ev.calendarId !== 'primary' && <div className={`badge badge-ghost badge-xs mr-1 ${badgeClass}`}>{ev.calendarId}</div>}
-                          </div>
-                          <div className="text-[11px] uppercase font-semibold opacity-60 truncate">
-                            {start} – {end}{ev.location ? ` · ${ev.location}` : ''}
-                          </div>
+                        <div className="text-[11px] uppercase font-semibold opacity-60 truncate">
+                          {start} – {end}{ev.location ? ` · ${ev.location}` : ''}
                         </div>
                       </div>
-                    </li>
+                    </div>
+                  </li>
                   );
                 })}
               </ul>

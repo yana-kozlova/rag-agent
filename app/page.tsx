@@ -13,7 +13,7 @@ export default function DashboardPage() {
               <CalendarSummary />
             </div>
           </div>
-          <div className="card bg-base-100 shadow">
+          <div className="card shadow bg-base-200 rounded-box">
             <div className="card-body p-4 md:p-6">
               <UpcomingEvents />
             </div>
