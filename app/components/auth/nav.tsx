@@ -32,9 +32,15 @@ export function Nav() {
           <>
             <div className="dropdown dropdown-end">
               <div tabIndex={0} role="button" className="btn btn-ghost btn-circle avatar">
-                <div className="w-8 rounded-full">
+                <div className="w-10 h-10 rounded-full overflow-hidden">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={session.user?.image ?? ''} alt={session.user?.name ?? 'User'} />
+                  <img
+                    src={session.user?.image ?? ''}
+                    alt={session.user?.name ?? 'User'}
+                    referrerPolicy="no-referrer"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://img.daisyui.com/images/profile/demo/kenobee@192.webp'; }}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
               </div>
               <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
