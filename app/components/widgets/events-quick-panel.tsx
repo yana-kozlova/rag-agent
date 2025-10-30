@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useCalendar } from '@/app/components/providers/CalendarContext';
 
 function getStartOfWeek(date: Date) {
@@ -67,6 +67,26 @@ export default function EventsQuickPanel() {
 
   const duration = minutesBetween(featured?.start as string | undefined, featured?.end as string | undefined);
 
+  // countdown (to start if in future, otherwise to end if ongoing)
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => (t + 1) % 1_000_000), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const nowMs = Date.now();
+  const startMs = featured?.start ? new Date(featured.start).getTime() : undefined;
+  const endMs = featured?.end ? new Date(featured.end).getTime() : undefined;
+  let targetMs: number | undefined = undefined;
+  if (startMs && startMs > nowMs) targetMs = startMs;
+  else if (endMs && endMs > nowMs) targetMs = endMs;
+  let h = 0, m = 0, s = 0;
+  if (targetMs) {
+    const delta = Math.max(0, targetMs - nowMs);
+    h = Math.floor(delta / 3600000);
+    m = Math.floor((delta % 3600000) / 60000);
+    s = Math.floor((delta % 60000) / 1000);
+  }
+
   const dayLetters = ['S','M','T','W','T','F','S'];
 
   return (
@@ -109,7 +129,12 @@ export default function EventsQuickPanel() {
               </div>
             </div>
             <div className="shrink-0">
-              <span className="badge badge-sm badge-neutral">{duration ? (duration >= 60 ? `${Math.round(duration/60)}h` : `${duration}m`) : 'All day'}</span>
+              <span className="countdown font-mono text-2xl">
+                <span style={{ ['--value' as any]: h }} aria-live="polite" aria-label={String(h)}></span>
+                {' '}h{' '}
+                <span style={{ ['--value' as any]: m }} aria-live="polite" aria-label={String(m)}></span>
+                {' '}m{' '}
+              </span>
             </div>
           </div>
         )
