@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-const THEMES = ['silk', 'bumblebee', 'light', 'dark'] as const;
+const THEMES = ['silk', 'bumblebee', 'autumn', 'light', 'dark'] as const;
 type ThemeName = typeof THEMES[number] | 'system';
 
 function resolveSystemTheme(): ThemeName {
@@ -13,6 +13,7 @@ function resolveSystemTheme(): ThemeName {
 
 export function ThemeSwitcher() {
   const [theme, setTheme] = useState<ThemeName>('silk');
+  const ddRef = useRef<HTMLDetailsElement | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -29,21 +30,25 @@ export function ThemeSwitcher() {
     localStorage.setItem('theme', next);
     const effective = next === 'system' ? resolveSystemTheme() : next;
     document.documentElement.setAttribute('data-theme', effective);
+    // close dropdown
+    if (ddRef.current) ddRef.current.open = false;
   };
 
   return (
     <div className="form-control">
       <label className="label"><span className="label-text">Theme</span></label>
-      <select
-        className="select select-bordered"
-        value={theme}
-        onChange={(e) => applyTheme(e.currentTarget.value as ThemeName)}
-      >
-        <option value="system">system</option>
-        {THEMES.map((t) => (
-          <option key={t} value={t}>{t}</option>
-        ))}
-      </select>
+      <details className="dropdown" ref={ddRef}>
+        <summary className="btn btn-outline w-full justify-between">
+          <span className="truncate">{theme}</span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-4 w-4 opacity-70"><path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6"/></svg>
+        </summary>
+        <ul className="menu dropdown-content bg-base-100 rounded-box z-10 w-52 p-2 shadow-sm mt-2">
+          <li><button type="button" onClick={() => applyTheme('system')}>system</button></li>
+          {THEMES.map((t) => (
+            <li key={t}><button type="button" onClick={() => applyTheme(t)}>{t}</button></li>
+          ))}
+        </ul>
+      </details>
       <span className="label-text-alt mt-2">Changes apply immediately</span>
     </div>
   );
