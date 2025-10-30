@@ -2,6 +2,7 @@ import { auth } from '@/app/api/auth/auth';
 import Link from 'next/link';
 import { ThemeSwitcher } from '@/app/components/theme/ThemeSwitcher';
 import { NotificationsToggle } from '@/app/components/notifications/NotificationsToggle';
+import { CalendarsPanel } from './CalendarsPanel';
 
 export default async function SettingsPage() {
   const session = await auth();
@@ -50,6 +51,8 @@ export default async function SettingsPage() {
           </div>
         </section>
       </div>
+
+      <CalendarsPanel />
     </div>
   );
 }

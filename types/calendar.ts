@@ -4,6 +4,8 @@ export type CalendarEvent = {
   start: string;
   end: string;
   location?: string;
+  calendarId?: string;
+  calendarLabel?: string | null;
 };
 
 

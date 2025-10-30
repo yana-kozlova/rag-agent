@@ -6,6 +6,7 @@ import {
   integer,
   uuid,
   boolean,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { type AdapterAccount } from "@auth/core/adapters";
 
@@ -15,6 +16,7 @@ export const users = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: timestamp("emailVerified", { mode: "date" }),
   image: text("image"),
+  followedCalendars: jsonb("followed_calendars").$type<Array<{ calendarId: string; summary?: string }>>().notNull().default([] as any),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

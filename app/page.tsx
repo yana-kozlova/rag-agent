@@ -21,7 +21,7 @@ export default function DashboardPage() {
         </div>
         <div className="card bg-base-100 shadow w-full md:col-span-2 order-1 md:order-2">
           <div className="card-body p-2 md:p-4">
-            <ChatSection />
+        <ChatSection />
           </div>
         </div>
       </div>

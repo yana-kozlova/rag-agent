@@ -42,17 +42,29 @@ export default function UpcomingEvents() {
               <section key={key}>
                 <div className="text-sm font-semibold text-gray-700 mb-2">{label}</div>
                 <ul className="space-y-3">
-                  {dayEvents.map((ev) => (
-                    <li key={ev.id} className="border rounded-lg p-4">
-                      <div className="font-medium">{ev.title}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                      {ev.location && (
-                        <div className="text-sm text-muted-foreground">{ev.location}</div>
-                      )}
-                    </li>
-                  ))}
+                  {dayEvents.map((ev) => {
+                    const palette = ['badge-primary','badge-secondary','badge-accent','badge-info','badge-success','badge-warning','badge-error'];
+                    const key = (ev.calendarId || '').toLowerCase();
+                    let idx = 0;
+                    for (let i = 0; i < key.length; i++) idx = (idx * 31 + key.charCodeAt(i)) % palette.length;
+                    const badgeClass = palette[idx];
+                    return (
+                      <li key={ev.id} className="border rounded-lg p-4">
+                        <div className="flex items-center gap-2">
+                          {ev.calendarId && (
+                            <span className={`badge ${badgeClass}`}>{ev.calendarLabel || ev.calendarId}</span>
+                          )}
+                          <div className="font-medium">{ev.title}</div>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                        {ev.location && (
+                          <div className="text-sm text-muted-foreground">{ev.location}</div>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             );

@@ -31,17 +31,29 @@ export default function CalendarSummary() {
               <p className="text-sm text-muted-foreground">No upcoming events.</p>
             ) : (
               <ul className="space-y-3">
-                {todayEvents.slice(0, 5).map(ev => (
-                  <li key={ev.id} className="border rounded p-3">
-                    <div className="font-medium">{ev.title}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                    {ev.location && (
-                      <div className="text-xs text-muted-foreground">{ev.location}</div>
-                    )}
-                  </li>
-                ))}
+                {todayEvents.slice(0, 5).map(ev => {
+                  const palette = ['badge-primary', 'badge-accent', 'badge-secondary', 'badge-info','badge-success','badge-warning','badge-error'];
+                  const key = (ev.calendarId || '').toLowerCase();
+                  let idx = 0;
+                  for (let i = 0; i < key.length; i++) idx = (idx * 31 + key.charCodeAt(i)) % palette.length;
+                  const badgeClass = palette[idx];
+                  return (
+                    <li key={ev.id} className="border rounded p-3">
+                      <div className="flex items-center gap-2">
+                        {ev.calendarId && (
+                          <span className={`badge ${badgeClass}`}>{ev.calendarLabel || ev.calendarId}</span>
+                        )}
+                        <div className="font-medium">{ev.title}</div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      {ev.location && (
+                        <div className="text-xs text-muted-foreground">{ev.location}</div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
