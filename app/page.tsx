@@ -1,7 +1,8 @@
-import Link from 'next/link';
+// import Link from 'next/link';
 import ChatSection from '@/app/components/chat/ChatSection';
-import UpcomingEvents from '@/app/components/widgets/upcoming-events';
+// import UpcomingEvents from '@/app/components/widgets/upcoming-events';
 import CalendarSummary from '@/app/components/widgets/calendar-summary';
+import EventsQuickPanel from '@/app/components/widgets/events-quick-panel';
 
 export default function DashboardPage() {
   return (
@@ -13,11 +14,7 @@ export default function DashboardPage() {
               <CalendarSummary />
             </div>
           </div>
-          <div className="card shadow bg-base-200 rounded-box">
-            <div className="card-body p-4 md:p-6">
-              <UpcomingEvents />
-            </div>
-          </div>
+          <EventsQuickPanel />
         </div>
         <div className="card bg-base-100 shadow w-full md:col-span-2 order-1 md:order-2">
           <div className="card-body p-2 md:p-4">

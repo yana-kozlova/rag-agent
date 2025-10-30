@@ -23,7 +23,7 @@ export default function UpcomingEvents() {
         <h2 className="text-xl font-semibold">Upcoming</h2>
         <div className="flex gap-2">
           <button onClick={() => { setRange('day'); refresh(); }} className={`btn btn-xs ${range === 'day' ? 'btn-primary' : 'btn-outline'}`}>Day</button>
-          <button onClick={() => { setRange('week'); refresh(); }} className={`btn btn-xs ${range === 'week' ? 'btn-primary' : 'btn-outline'}`}>Week</button>
+          <button onClick={() => { setRange('week'); refresh(); }} className={`btn btn-xs ${range === 'week' ? 'btn-primary' : 'btn-outline'}`}>7 days</button>
         </div>
       </div>
       {error ? (
@@ -31,7 +31,7 @@ export default function UpcomingEvents() {
       ) : loading ? (
         <p className="text-muted-foreground">Loading…</p>
       ) : filtered.length === 0 ? (
-        <p className="text-muted-foreground">{range === 'week' ? 'No events this week.' : 'No events for today.'}</p>
+        <p className="text-muted-foreground">{range === 'week' ? 'No events for next 7 days' : 'No events for today.'}</p>
       ) : (
         <div className="">
           {orderedGroupKeys.map((key) => {
