@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { auth } from "./api/auth/auth";
 import { Nav } from "./components/auth/nav";
@@ -7,7 +7,7 @@ import { Providers } from "./providers";
 import { Sidebar } from "./components/nav/Sidebar";
 import { ServiceWorkerRegister } from "./components/notifications/ServiceWorkerRegister";
 
-const inter = Inter({ subsets: ["latin"] });
+const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
   title: "AI SDK RAG",
@@ -23,7 +23,7 @@ export default async function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning data-theme="silk">
-      <body className={`${inter.className} min-h-screen`} suppressHydrationWarning>
+      <body className={`${mono.className} min-h-screen`} suppressHydrationWarning>
         <Providers session={session}>
           {/* Background */}
           <div className="fixed inset-0 -z-10 bg-gradient-to-br from-base-200/80 via-base-100 to-base-200" />
