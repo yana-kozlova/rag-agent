@@ -1,14 +1,114 @@
-# Vercel AI SDK RAG Guide Starter Project
+# AI SDK RAG
 
-This is the starter project for the Vercel AI SDK [Retrieval-Augmented Generation (RAG) guide](https://sdk.vercel.ai/docs/guides/rag-chatbot).
+## Table of Contents
+1. [Project Overview](#project-overview)
+2. [Requirements](#requirements)
+3. [Technology Stack](#technology-stack)
+4. [Installation](#installation)
+5. [Configuration](#configuration)
+6. [Usage](#usage)
+7. [Running Tests](#running-tests)
+8. [Deployment](#deployment)
 
-In this project, you will build a chatbot that will only respond with information that it has within its knowledge base. The chatbot will be able to both store and retrieve information. This project has many interesting use cases from customer support through to building your own second brain!
+## Project Overview
+A Next.js (App Router) application showcasing a chat assistant powered by the Vercel AI SDK with tools, Google Calendar integration, and a modern UI using Tailwind + DaisyUI. Key features:
+- Chat with streaming answers, tool calling, and message history persisted to Postgres (with progressive loading and an auto-greeting).
+- Google Calendar integration: fetch live events across primary and followed calendars; create events via a tool.
+- Followed calendars stored directly on the user record (`user.followed_calendars` jsonb) with a settings panel to add/remove.
+- Calendar widgets: Today summary, Upcoming events (grouped by day, per-calendar badges), and an Events Quick Panel (week strip, filters, featured event with countdown).
+- Theming with DaisyUI (custom themes: silk, bumblebee, autumn) and a dropdown theme switcher.
+- Authentication via NextAuth (Google OAuth); sessions used for tools and API routes.
 
-This project will use the following stack:
+## Requirements
+- **Operating System:** macOS, Linux, or Windows
+- **Node.js:** 18+ (recommended 20+)
+- **Package Manager:** pnpm (recommended) or npm/yarn
+- **Database:** PostgreSQL 14+
+- Additional tools: Git
 
-- [Next.js](https://nextjs.org) 14 (App Router)
-- [Vercel AI SDK](https://sdk.vercel.ai/docs)
-- [OpenAI](https://openai.com)
-- [Drizzle ORM](https://orm.drizzle.team)
-- [Postgres](https://www.postgresql.org/) with [ pgvector ](https://github.com/pgvector/pgvector)
-- [shadcn-ui](https://ui.shadcn.com) and [TailwindCSS](https://tailwindcss.com) for styling
+## Technology Stack
+- **Framework:** Next.js 14 (App Router)
+- **Auth:** NextAuth (Google OAuth)
+- **AI:** Vercel AI SDK, OpenAI provider
+- **ORM:** Drizzle ORM
+- **Database:** PostgreSQL
+- **Styling:** Tailwind CSS + DaisyUI
+- **Testing:** Vitest
+
+## Installation
+1. Clone the repository:
+    ```sh
+    git clone https://github.com/your-org/ai-sdk-rag.git
+    cd ai-sdk-rag
+    ```
+
+2. Install dependencies:
+    ```sh
+    pnpm install
+    # or: npm install / yarn install
+    ```
+
+3. Set up the database (create the database in Postgres if needed), then run migrations:
+    ```sh
+    pnpm db:migrate
+    ```
+
+## Configuration
+Create a `.env` file in the root:
+```sh
+cp .env.example .env
+```
+Fill in values (example):
+```env
+# NextAuth
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your_long_random_secret
+
+# Google OAuth
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+
+# Database
+DATABASE_URL=postgres://user:pass@localhost:5432/ai_sdk_rag
+
+# AI models and settings (optional overrides)
+AI_CHAT_MODEL=gpt-4o-mini
+AI_EMBED_MODEL=text-embedding-3-small
+AI_TOOL_STEPS=5
+EMBED_CHUNK_SIZE=800
+EMBED_CHUNK_OVERLAP=100
+RAG_TOP_K=5
+```
+
+## Usage
+1. Start the dev server:
+    ```sh
+    pnpm dev
+    ```
+2. Open the app:
+    - App: `http://localhost:3000`
+    - Sign in with Google (NextAuth)
+3. Explore:
+    - Dashboard widgets (Today, Events Quick Panel, Upcoming)
+    - Settings → Followed Calendars and Theme switcher
+    - Chat with assistant (saves history; tools for events)
+
+## Running Tests
+Vitest is configured (Vite resolves the `@` alias).
+```sh
+pnpm test
+```
+This runs unit tests and integration-style tests for API route handlers (mocked DB/auth/services).
+
+## Deployment
+- Ensure all environment variables are set (NextAuth, Google OAuth, Database, AI models).
+- Run migrations as part of release:
+    ```sh
+    pnpm db:migrate
+    ```
+- Build and start:
+    ```sh
+    pnpm build
+    pnpm start
+    ```
+- Update OAuth callback URLs in Google Cloud Console to match your deployed domain.
