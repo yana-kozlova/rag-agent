@@ -154,6 +154,10 @@ All endpoints are under the Next.js App Router and typically require an authenti
   - Extracts schedule-like items heuristically, saves content into `resources` and generates embeddings.
   - Response: `{ ok: true, resourceId, items?: [{ title, time? }] }` or `{ ok: false, error }`.
 
+- DELETE `/api/resources/clear`
+  - Auth required. Removes all stored resources and related embeddings for the current user.
+  - Response: `{ ok: true, deletedResources: number, deletedEmbeddings: number }`
+
 Notes:
 - Tools available to the assistant include fetching/creating events; see `lib/ai/tools` for definitions.
 - Errors are returned with appropriate status codes (401 unauthorized, 400 bad input, 500 server).
