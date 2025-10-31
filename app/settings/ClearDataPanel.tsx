@@ -35,8 +35,8 @@ export default function ClearDataPanel() {
       <div className="card-body gap-3">
         <h2 className="card-title">Privacy & Data</h2>
         <p className="text-sm opacity-70">Remove all stored resources and embeddings associated with your account.</p>
-        <div className="card-actions">
-          <button type="button" className="btn btn-error" onClick={open}>Delete my stored data</button>
+        <div className="card-actions justify-end">
+          <button type="button" className="btn btn-primary" onClick={open}>Delete my stored data</button>
         </div>
       </div>
 

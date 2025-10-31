@@ -51,10 +51,9 @@ export default async function SettingsPage() {
             <div className="card-actions justify-end" />
           </div>
         </section>
+        <CalendarsPanel />
+        <ClearDataPanel />
       </div>
-
-      <CalendarsPanel />
-      <ClearDataPanel />
     </div>
   );
 }

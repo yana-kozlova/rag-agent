@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 type Followed = { calendarId: string; summary: string | null };
 
@@ -11,6 +11,9 @@ export function CalendarsPanel() {
   const [inputId, setInputId] = useState('');
   const [inputSummary, setInputSummary] = useState('');
   const [query, setQuery] = useState('');
+  const addDialogRef = useRef<HTMLDialogElement | null>(null);
+  const openAdd = () => addDialogRef.current?.showModal();
+  const closeAdd = () => addDialogRef.current?.close();
 
   const load = async () => {
     setLoading(true);
@@ -41,6 +44,7 @@ export function CalendarsPanel() {
         setInputId('');
         setInputSummary('');
         await load();
+        closeAdd();
       }
     } finally {
       setAdding(false);
@@ -62,28 +66,6 @@ export function CalendarsPanel() {
   });
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <section className="card bg-base-100 shadow">
-        <div className="card-body gap-3">
-          <h2 className="card-title">Add calendar to follow</h2>
-          <input
-            className="input input-bordered w-full"
-            placeholder="Calendar ID (e.g., someone@example.com)"
-            value={inputId}
-            onChange={(e) => setInputId(e.currentTarget.value)}
-          />
-          <input
-            className="input input-bordered w-full"
-            placeholder="Optional label"
-            value={inputSummary}
-            onChange={(e) => setInputSummary(e.currentTarget.value)}
-          />
-          <div className="card-actions justify-end">
-            <button className="btn btn-primary" onClick={add} disabled={adding || !inputId.trim()}>Add</button>
-          </div>
-        </div>
-      </section>
-
       <section className="card bg-base-100 shadow">
         <div className="card-body gap-3">
           <div className="flex items-center justify-between gap-2">
@@ -113,9 +95,41 @@ export function CalendarsPanel() {
               ))}
             </div>
           )}
+          <div className="card-actions justify-end">
+            <button className="btn btn-primary" onClick={openAdd}>Add calendar</button>
+          </div>
         </div>
+        <dialog ref={addDialogRef} className="modal">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg">Add calendar</h3>
+            <div className="py-2 flex flex-col gap-3">
+              <input
+                className="input input-bordered w-full"
+                placeholder="Calendar ID (e.g., someone@example.com)"
+                value={inputId}
+                onChange={(e) => setInputId(e.currentTarget.value)}
+                disabled={adding}
+              />
+              <input
+                className="input input-bordered w-full"
+                placeholder="Optional label"
+                value={inputSummary}
+                onChange={(e) => setInputSummary(e.currentTarget.value)}
+                disabled={adding}
+              />
+            </div>
+            <div className="modal-action">
+              <button className="btn btn-ghost" onClick={closeAdd} disabled={adding}>Cancel</button>
+              <button className={`btn btn-primary ${adding ? 'loading' : ''}`} onClick={add} disabled={adding || !inputId.trim()}>
+                {adding ? 'Adding…' : 'Add'}
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button>close</button>
+          </form>
+        </dialog>
       </section>
-    </div>
   );
 }
 
