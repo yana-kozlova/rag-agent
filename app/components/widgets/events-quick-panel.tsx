@@ -139,9 +139,8 @@ export default function EventsQuickPanel() {
           </div>
         )
         : showAllDay ? 
-          filtered.dayEvents.map((ev) => {
-            return (
-                <div className="flex items-center gap-2 py-2 px-4">
+          filtered.dayEvents.map((ev) => (
+            <div key={ev.id} className="flex items-center gap-2 py-2 px-4">
                 <div className="grow min-w-0">
                   <div className="text-sm font-medium truncate">{ev.title}</div>
                   <div className="text-xs opacity-60 truncate">
@@ -152,8 +151,7 @@ export default function EventsQuickPanel() {
                   </div>
                 </div>
               </div>
-            );
-          })
+          ))
          : (
           <div className="p-4 text-xs opacity-60">No events for this day</div>
         )}

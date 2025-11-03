@@ -2,6 +2,7 @@
 
 import { signOut, useSession } from 'next-auth/react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 export function Nav() {
   const { data: session } = useSession();
@@ -33,12 +34,13 @@ export function Nav() {
             <div className="dropdown dropdown-end">
               <div tabIndex={0} role="button" className="btn btn-ghost btn-circle avatar">
                 <div className="w-10 h-10 rounded-full overflow-hidden">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={session.user?.image ?? ''}
+                  <Image
+                    src={session.user?.image ?? 'https://img.daisyui.com/images/profile/demo/kenobee@192.webp'}
                     alt={session.user?.name ?? 'User'}
                     referrerPolicy="no-referrer"
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://img.daisyui.com/images/profile/demo/kenobee@192.webp'; }}
+                    width={40}
+                    height={40}
+                    sizes="40px"
                     className="w-full h-full object-cover"
                   />
                 </div>

@@ -3,7 +3,13 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  // Use clients.claim() carefully to avoid bfcache issues
+  event.waitUntil(
+    self.clients.matchAll().then((clientList) => {
+      // Only claim if necessary, don't block bfcache
+      return Promise.resolve();
+    })
+  );
 });
 
 // Optional: handle notification clicks

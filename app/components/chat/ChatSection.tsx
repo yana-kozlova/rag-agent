@@ -1,11 +1,12 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { renderSimpleMarkdown } from '@/app/components/utils/markdown';
 import { useAutoGreeting } from '@/app/components/chat/useAutoGreeting';
 import { ToolOutput } from '@/app/components/chat/ToolOutput';
 import { useSession } from 'next-auth/react';
+import Image from 'next/image';
 
 export default function ChatSection() {
   const [input, setInput] = useState('');
@@ -46,22 +47,32 @@ export default function ChatSection() {
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    fetch('/api/chat/history?limit=15')
-      .then(r => r.json())
-      .then(d => {
-        const arr = Array.isArray(d.messages) ? d.messages : [];
-        setHistory(arr);
-        setHasMore(arr.length === 15);
-        requestAnimationFrame(() => {
-          const el = listRef.current;
-          if (el) el.scrollTop = el.scrollHeight;
-        });
-        setHistoryLoaded(true);
-      })
-      .catch(() => { setHistoryLoaded(true); });
+    // Defer history load to avoid blocking initial render/LCP
+    const loadHistory = () => {
+      fetch('/api/chat/history?limit=15')
+        .then(r => r.json())
+        .then(d => {
+          const arr = Array.isArray(d.messages) ? d.messages : [];
+          setHistory(arr);
+          setHasMore(arr.length === 15);
+          requestAnimationFrame(() => {
+            const el = listRef.current;
+            if (el) el.scrollTop = el.scrollHeight;
+          });
+          setHistoryLoaded(true);
+        })
+        .catch(() => { setHistoryLoaded(true); });
+    };
+    
+    // Use requestIdleCallback if available, otherwise setTimeout
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(loadHistory, { timeout: 1000 });
+    } else {
+      setTimeout(loadHistory, 100);
+    }
   }, []);
 
-  const loadMore = async () => {
+  const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore || history.length === 0) return;
     try {
       setLoadingMore(true);
@@ -85,7 +96,7 @@ export default function ChatSection() {
       setHasMore(arr.length === 15);
     } catch {}
     finally { setLoadingMore(false); }
-  };
+  }, [loadingMore, hasMore, history.length]);
 
   useEffect(() => {
     const root = listRef.current;
@@ -96,7 +107,7 @@ export default function ChatSection() {
     }, { root, rootMargin: '0px', threshold: 0.1 });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [listRef.current, topSentinelRef.current, hasMore, loadingMore, history.length]);
+  }, [loadMore]);
 
   useEffect(() => {
     const el = listRef.current;
@@ -128,9 +139,8 @@ export default function ChatSection() {
           return (
             <div key={m.id} className={`chat ${chatSide} max-w-full`}>
               <div className="chat-image avatar">
-                <div className="w-8 md:w-10 rounded-full overflow-hidden">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img alt="avatar" src={avatarSrc} className="w-full h-full object-cover" />
+                <div className="w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden">
+                  <Image alt="avatar" src={avatarSrc} width={40} height={40} sizes="40px" className="w-full h-full object-cover" />
                 </div>
               </div>
               <div className="chat-header">

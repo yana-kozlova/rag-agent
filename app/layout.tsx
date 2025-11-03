@@ -6,12 +6,21 @@ import { Nav } from "./components/auth/nav";
 import { Providers } from "./providers";
 import { Sidebar } from "./components/nav/Sidebar";
 import { ServiceWorkerRegister } from "./components/notifications/ServiceWorkerRegister";
+import { PreconnectLinks } from "./components/head/PreconnectLinks";
 
-const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
+const mono = JetBrains_Mono({ 
+  subsets: ["latin"], 
+  variable: "--font-mono",
+  display: 'swap', // Reduce layout shift from font loading
+  preload: true,
+});
 
 export const metadata: Metadata = {
   title: "AI SDK RAG",
   description: "AI-powered RAG application",
+  other: {
+    'format-detection': 'telephone=no',
+  },
 };
 
 export default async function RootLayout({
@@ -24,6 +33,7 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning data-theme="silk">
       <body className={`${mono.className} min-h-screen`} suppressHydrationWarning>
+        <PreconnectLinks />
         <Providers session={session}>
           {/* Background */}
           <div className="fixed inset-0 -z-10 bg-gradient-to-br from-base-200/80 via-base-100 to-base-200" />

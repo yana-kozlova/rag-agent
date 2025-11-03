@@ -34,11 +34,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, []);
 
-  // persist to localStorage
+  // persist to localStorage (defer to avoid blocking bfcache)
   useEffect(() => {
-    try {
-      localStorage.setItem('app.prefs', JSON.stringify({ showAllDayEvents, selectedDate: selectedDate.toISOString() }));
-    } catch {}
+    const save = () => {
+      try {
+        localStorage.setItem('app.prefs', JSON.stringify({ showAllDayEvents, selectedDate: selectedDate.toISOString() }));
+      } catch {}
+    };
+    
+    // Use requestIdleCallback to defer writes and avoid blocking bfcache
+    if ('requestIdleCallback' in window) {
+      const id = requestIdleCallback(save, { timeout: 1000 });
+      return () => cancelIdleCallback(id);
+    } else {
+      const id = setTimeout(save, 100);
+      return () => clearTimeout(id);
+    }
   }, [showAllDayEvents, selectedDate]);
 
   const value = useMemo<AppState>(

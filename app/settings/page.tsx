@@ -4,6 +4,7 @@ import { ThemeSwitcher } from '@/app/components/theme/ThemeSwitcher';
 import { NotificationsToggle } from '@/app/components/notifications/NotificationsToggle';
 import { CalendarsPanel } from './CalendarsPanel';
 import ClearDataPanel from './ClearDataPanel';
+import Image from 'next/image';
 
 export default async function SettingsPage() {
   const session = await auth();
@@ -19,9 +20,8 @@ export default async function SettingsPage() {
             <h2 className="card-title">Profile</h2>
             <div className="flex items-center gap-3">
               <div className="avatar">
-                <div className="w-12 rounded-full">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img alt="avatar" src={user?.image || 'https://img.daisyui.com/images/profile/demo/kenobee@192.webp'} />
+                <div className="w-12 h-12 rounded-full overflow-hidden">
+                  <Image alt="avatar" src={user?.image || 'https://img.daisyui.com/images/profile/demo/kenobee@192.webp'} width={48} height={48} sizes="48px" />
                 </div>
               </div>
               <div>
