@@ -21,11 +21,6 @@ export default function ChatSection() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ role: 'assistant', content: messageText })
         });
-        fetch('/api/chat/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: messageText })
-        }).catch(() => {});
       }
     }
   });
@@ -167,6 +162,7 @@ export default function ChatSection() {
           e.preventDefault();
           const content = input;
           fetch('/api/chat/history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'user', content }) }).catch(() => {});
+          // Saving to RAG is now handled automatically by middleware in /api/chat route
           sendMessage({ text: content });
           setInput('');
         }}
