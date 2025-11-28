@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/app/api/auth/auth';
 import { db } from '@/lib/db';
 import { resources } from '@/lib/db/schema/resources';
-import { eq, desc, sql, and } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 
 export const runtime = 'nodejs';
 
@@ -25,11 +25,10 @@ export async function GET(req: Request) {
 
     // Build where conditions
     const conditions = [eq(resources.userId, userId as any)];
-    if (typeParam) {
-      conditions.push(sql`${resources.metadata}->>'type' = ${typeParam}`);
-    }
 
-    const rows = await db
+    // Get all resources for the user first, then filter by type if needed
+    // This avoids issues with JSONB parameterization in Drizzle
+    let rows = await db
       .select({
         id: resources.id,
         title: resources.title,
@@ -41,24 +40,28 @@ export async function GET(req: Request) {
       })
       .from(resources)
       .where(and(...conditions))
-      .orderBy(desc(resources.createdAt))
-      .limit(limit)
-      .offset(offset);
+      .orderBy(desc(resources.createdAt));
 
-    // Get total count for pagination
-    const [{ count: totalCount }] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(resources)
-      .where(and(...conditions));
+    // Filter by type in JavaScript if typeParam is provided
+    if (typeParam) {
+      rows = rows.filter(row => {
+        const meta = row.metadata as any;
+        return meta?.type === typeParam;
+      });
+    }
+
+    // Apply pagination after filtering
+    const paginatedRows = rows.slice(offset, offset + limit);
+    const totalCount = rows.length;
 
     return NextResponse.json({
       ok: true,
-      resources: rows,
+      resources: paginatedRows,
       pagination: {
         limit,
         offset,
-        total: Number(totalCount),
-        hasMore: offset + rows.length < Number(totalCount),
+        total: totalCount,
+        hasMore: offset + paginatedRows.length < totalCount,
       },
     });
   } catch (err: any) {

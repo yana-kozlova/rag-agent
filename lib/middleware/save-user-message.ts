@@ -145,13 +145,56 @@ export async function saveUserMessageIfImportant(content: string): Promise<{ sav
     // Save to resources and create embeddings
     const items = extractScheduleItems(content);
     
-    // For large texts, add metadata about size
+    // Classify content type using AI for better categorization
+    let contentType = 'note';
     const isLargeText = content.length > 5000;
+    
+    if (items.length > 0) {
+      contentType = 'schedule';
+    } else if (isLargeText) {
+      contentType = 'document';
+    } else if (content.length <= MAX_CLASSIFICATION_LENGTH) {
+      // Try to classify content type for smaller texts
+      try {
+        const typeClassificationSchema = z.object({
+          type: z.enum(['note', 'document', 'schedule', 'person', 'project', 'skill', 'event', 'learning', 'other']).describe('Content type'),
+          confidence: z.number().describe('Confidence level 0-1'),
+        });
+        
+        const typeResult = await generateObject({
+          model: openai(modelName),
+          schema: typeClassificationSchema,
+          prompt: `Classify the following content into one of these types:
+- note: general notes, thoughts, ideas
+- document: long-form content, articles, documents
+- schedule: schedules, appointments, events with times
+- person: information about a person (name, relationship, details)
+- project: project information, goals, tasks
+- skill: skills, abilities, learning topics
+- event: specific events, experiences, memories
+- learning: learning progress, study notes, educational content
+- other: anything else
+
+Content: "${content.substring(0, 1000)}"
+
+Return the most appropriate type.`,
+          temperature: 0.1,
+        });
+        
+        if (typeResult.object.confidence > 0.5) {
+          contentType = typeResult.object.type;
+        }
+      } catch (error) {
+        // Fallback to note if classification fails
+        console.error('[saveUserMessage] Error classifying content type:', error);
+      }
+    }
+    
     const metadata: any = items.length > 0 
-      ? { type: 'schedule', items } 
+      ? { type: contentType, items } 
       : isLargeText 
-        ? { type: 'document', size: content.length, chunks: Math.ceil(content.length / 800) }
-        : { type: 'note' };
+        ? { type: contentType, size: content.length, chunks: Math.ceil(content.length / 800) }
+        : { type: contentType };
     
     // Try to extract a title from content (first line or first sentence)
     const firstLine = content.split('\n')[0]?.trim();

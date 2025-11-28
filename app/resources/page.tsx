@@ -24,6 +24,7 @@ export default function ResourcesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
+  const [editType, setEditType] = useState<'note' | 'document' | 'person' | 'project' | 'skill' | 'learning' | 'schedule' | 'event' | 'other'>('note');
 
   const loadResources = async (reset = false) => {
     try {
@@ -41,12 +42,12 @@ export default function ResourcesPage() {
       if (data.ok) {
         if (reset) {
           setResources(data.resources);
+          setOffset(data.resources.length);
         } else {
           setResources(prev => [...prev, ...data.resources]);
+          setOffset(prev => prev + data.resources.length);
         }
         setHasMore(data.pagination.hasMore);
-        if (reset) setOffset(20);
-        else setOffset(prev => prev + 20);
       }
     } catch (error) {
       console.error('Error loading resources:', error);
@@ -56,6 +57,7 @@ export default function ResourcesPage() {
   };
 
   useEffect(() => {
+    setOffset(0);
     loadResources(true);
   }, [typeFilter]);
 
@@ -74,23 +76,33 @@ export default function ResourcesPage() {
     setEditingId(resource.id);
     setEditTitle(resource.title || '');
     setEditContent(resource.content);
+    const currentType = getTypeLabel(resource.metadata);
+    setEditType(currentType as 'note' | 'document' | 'person' | 'project' | 'skill' | 'learning' | 'schedule' | 'event' | 'other');
   };
 
   const handleSave = async (id: string) => {
     const result = await updateResource(id, {
       title: editTitle || undefined,
       content: editContent,
+      metadata: { type: editType },
     });
     
     if (result.success) {
       setResources(prev => prev.map(r => 
         r.id === id 
-          ? { ...r, title: editTitle || null, content: editContent, updatedAt: new Date() }
+          ? { 
+              ...r, 
+              title: editTitle || null, 
+              content: editContent, 
+              metadata: { ...r.metadata, type: editType },
+              updatedAt: new Date() 
+            }
           : r
       ));
       setEditingId(null);
       setEditTitle('');
       setEditContent('');
+      setEditType('note');
     } else {
       alert(result.message || 'Failed to update resource');
     }
@@ -100,10 +112,12 @@ export default function ResourcesPage() {
     setEditingId(null);
     setEditTitle('');
     setEditContent('');
+    setEditType('note');
   };
 
+  // Client-side search filter (only filters by text, type is already filtered on backend)
   const filteredResources = resources.filter(r => {
-    if (!searchQuery) return true;
+    if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
     return (
       (r.title?.toLowerCase().includes(query)) ||
@@ -183,6 +197,21 @@ export default function ResourcesPage() {
                         value={editTitle}
                         onChange={(e) => setEditTitle(e.target.value)}
                       />
+                      <select
+                        className="select select-bordered w-full"
+                        value={editType}
+                        onChange={(e) => setEditType(e.target.value as typeof editType)}
+                      >
+                        <option value="note">Note</option>
+                        <option value="document">Document</option>
+                        <option value="person">Person</option>
+                        <option value="project">Project</option>
+                        <option value="skill">Skill</option>
+                        <option value="learning">Learning</option>
+                        <option value="schedule">Schedule</option>
+                        <option value="event">Event</option>
+                        <option value="other">Other</option>
+                      </select>
                       <textarea
                         className="textarea textarea-bordered w-full min-h-[200px]"
                         value={editContent}
