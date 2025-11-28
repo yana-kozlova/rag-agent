@@ -33,6 +33,15 @@ export default function ChatSection() {
     parts: [{ type: 'text', text: h.content }],
     createdAt: h.createdAt,
   } as any));
+  
+  // Ensure messages from useChat have unique IDs to avoid conflicts with history
+  const historyIds = new Set(historyUi.map(h => h.id));
+  const messagesWithUniqueIds = messages.map((m: any, idx: number) => ({
+    ...m,
+    id: m.id && !historyIds.has(`hist-${m.id}`) && !historyIds.has(m.id) 
+      ? `msg-${m.id}` 
+      : `msg-${m.id || `temp-${idx}`}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+  }));
 
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -119,7 +128,7 @@ export default function ChatSection() {
         onScroll={(e) => { if (e.currentTarget.scrollTop < 16) loadMore(); }}
       >
         <div ref={topSentinelRef} />
-        {[...historyUi, ...messages].filter((m:any) => m.role !== 'system').map((m) => {
+        {[...historyUi, ...messagesWithUniqueIds].filter((m:any) => m.role !== 'system').map((m) => {
           const isUser = m.role === 'user';
           const chatSide = isUser ? 'chat-end' : 'chat-start';
           const textParts = Array.isArray(m.parts) ? m.parts.filter((p: any) => p?.type === 'text') : [];
