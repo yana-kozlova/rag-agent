@@ -166,7 +166,30 @@ export default function ChatSection() {
           const bubbleText = textParts.map((p: any) => p.text).join('\n');
           if (isUser && autoPrompt && bubbleText.trim() === autoPrompt.trim()) return null;
           const created = (m as any).createdAt;
-          const timeStr = created ? new Date(created as any).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined;
+          const createdDate = created ? new Date(created as any) : null;
+          
+          // Format date and time
+          let dateTimeStr: string | undefined;
+          if (createdDate) {
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const messageDate = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate());
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            
+            const timeStr = createdDate.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+            
+            if (messageDate.getTime() === today.getTime()) {
+              // Today - show only time
+              dateTimeStr = timeStr;
+            } else if (messageDate.getTime() === yesterday.getTime()) {
+              dateTimeStr = `yesterday, ${timeStr}`;
+            } else {
+              // Older - show full date and time
+              const dateStr = createdDate.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
+              dateTimeStr = `${dateStr} о ${timeStr}`;
+            }
+          }
           const avatarSrc = isUser
             ? (session?.user?.image ?? '')
             : '/avatars/bot.svg';
@@ -180,7 +203,7 @@ export default function ChatSection() {
               </div>
               <div className="chat-header">
                 {isUser ? 'You' : 'Assistant'}
-                {timeStr && <time className="text-xs opacity-50 ml-2">{timeStr}</time>}
+                {dateTimeStr && <time className="text-xs opacity-50 ml-2">{dateTimeStr}</time>}
               </div>
               {bubbleText && (
                 <div className={`chat-bubble whitespace-pre-wrap break-words text-sm md:text-base`}>
