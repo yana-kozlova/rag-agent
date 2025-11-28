@@ -34,14 +34,28 @@ export default function ChatSection() {
     createdAt: h.createdAt,
   } as any));
   
-  // Ensure messages from useChat have unique IDs to avoid conflicts with history
-  const historyIds = new Set(historyUi.map(h => h.id));
-  const messagesWithUniqueIds = messages.map((m: any, idx: number) => ({
-    ...m,
-    id: m.id && !historyIds.has(`hist-${m.id}`) && !historyIds.has(m.id) 
-      ? `msg-${m.id}` 
-      : `msg-${m.id || `temp-${idx}`}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-  }));
+  // Deduplicate messages: if a message from useChat matches history by content and role, exclude it
+  // Create a set of history message signatures (role + content) for fast lookup
+  const historySignatures = new Set(
+    historyUi.map((h: any) => {
+      const textParts = Array.isArray(h.parts) ? h.parts.filter((p: any) => p?.type === 'text') : [];
+      const content = textParts.map((p: any) => p.text).join('\n');
+      return `${h.role}:${content}`;
+    })
+  );
+  
+  // Filter out messages that are already in history
+  const messagesWithUniqueIds = messages
+    .filter((m: any) => {
+      const textParts = Array.isArray(m.parts) ? m.parts.filter((p: any) => p?.type === 'text') : [];
+      const content = textParts.map((p: any) => p.text).join('\n');
+      const signature = `${m.role}:${content}`;
+      return !historySignatures.has(signature);
+    })
+    .map((m: any, idx: number) => ({
+      ...m,
+      id: `msg-${m.id || `temp-${idx}`}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    }));
 
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -85,33 +99,46 @@ export default function ChatSection() {
       const res = await fetch(`/api/chat/history?limit=15&before=${encodeURIComponent(oldestISO)}`);
       const data = await res.json();
       const arr = Array.isArray(data.messages) ? data.messages : [];
-      if (arr.length > 0) {
+      
+      // Deduplicate: filter out messages that already exist in history
+      const existingIds = new Set(history.map(h => h.id));
+      const newMessages = arr.filter(m => !existingIds.has(m.id));
+      
+      if (newMessages.length > 0) {
         const el = listRef.current;
         const prevHeight = el ? el.scrollHeight : 0;
         const prevScroll = el ? el.scrollTop : 0;
-        setHistory(prev => [...arr, ...prev]);
+        setHistory(prev => [...newMessages, ...prev]);
         requestAnimationFrame(() => {
           if (el) {
             const newHeight = el.scrollHeight;
             el.scrollTop = newHeight - prevHeight + prevScroll;
           }
         });
+        // Only set hasMore to true if we got the full limit (15) and there were new messages
+        setHasMore(arr.length === 15 && newMessages.length > 0);
+      } else {
+        // No new messages means we've reached the end
+        setHasMore(false);
       }
-      setHasMore(arr.length === 15);
     } catch {}
     finally { setLoadingMore(false); }
-  }, [loadingMore, hasMore, history.length]);
+  }, [loadingMore, hasMore, history]);
 
   useEffect(() => {
     const root = listRef.current;
     const sentinel = topSentinelRef.current;
-    if (!root || !sentinel) return;
+    if (!root || !sentinel || !hasMore) return;
     const observer = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => { if (entry.isIntersecting) loadMore(); });
-    }, { root, rootMargin: '0px', threshold: 0.1 });
+      entries.forEach((entry) => { 
+        if (entry.isIntersecting && !loadingMore && hasMore) {
+          loadMore();
+        }
+      });
+    }, { root, rootMargin: '100px', threshold: 0.1 });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loadMore]);
+  }, [loadMore, hasMore, loadingMore]);
 
   useEffect(() => {
     const el = listRef.current;
@@ -125,7 +152,11 @@ export default function ChatSection() {
       <div
         ref={listRef}
         className="space-y-3 overflow-y-auto rounded-lg bg-base-100 p-3 max-w-full h-[480px] sm:h-[560px] md:h-[800px]"
-        onScroll={(e) => { if (e.currentTarget.scrollTop < 16) loadMore(); }}
+        onScroll={(e) => { 
+          if (e.currentTarget.scrollTop < 16 && !loadingMore && hasMore) {
+            loadMore();
+          }
+        }}
       >
         <div ref={topSentinelRef} />
         {[...historyUi, ...messagesWithUniqueIds].filter((m:any) => m.role !== 'system').map((m) => {
