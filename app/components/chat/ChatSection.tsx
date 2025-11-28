@@ -177,7 +177,7 @@ export default function ChatSection() {
             const yesterday = new Date(today);
             yesterday.setDate(yesterday.getDate() - 1);
             
-            const timeStr = createdDate.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+            const timeStr = createdDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
             
             if (messageDate.getTime() === today.getTime()) {
               // Today - show only time
@@ -186,8 +186,8 @@ export default function ChatSection() {
               dateTimeStr = `yesterday, ${timeStr}`;
             } else {
               // Older - show full date and time
-              const dateStr = createdDate.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
-              dateTimeStr = `${dateStr} о ${timeStr}`;
+              const dateStr = createdDate.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+              dateTimeStr = `${dateStr} at ${timeStr}`;
             }
           }
           const avatarSrc = isUser
