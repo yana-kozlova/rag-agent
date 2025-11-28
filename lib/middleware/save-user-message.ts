@@ -102,7 +102,7 @@ Message to analyze: "${content}"`,
  * Saves information about user's life: personal facts, people, learning, projects, experiences
  * Call this after receiving a user message but before processing
  */
-export async function saveUserMessageIfImportant(content: string): Promise<{ saved: boolean; reason?: string; chunks?: number; isLargeText?: boolean }> {
+export async function saveUserMessageIfImportant(content: string): Promise<{ saved: boolean; reason?: string; chunks?: number; isLargeText?: boolean; resourceId?: string }> {
   try {
     const session = await auth();
     const userId = session?.user?.id;
@@ -188,10 +188,11 @@ export async function saveUserMessageIfImportant(content: string): Promise<{ sav
     return { 
       saved: true,
       chunks: chunks.length,
-      isLargeText 
+      isLargeText,
+      resourceId: resRow.id,
     };
   } catch (error: any) {
-    console.error('Error saving user message:', error);
+    console.error('[saveUserMessage] Error saving user message:', error);
     return { saved: false, reason: error?.message ?? 'Unknown error' };
   }
 }

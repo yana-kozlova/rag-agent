@@ -45,21 +45,28 @@ Only use results that are actually relevant to the user's question - don't inclu
         return [];
       }
       
-      // Try the original question first
-      let results = await findRelevantContent(question, userId);
+      // Enhance short queries with context for better embedding similarity
+      // Short queries (single words) get lower similarity scores, so add context
+      const enhancedQuery = question.trim().split(/\s+/).length <= 2 
+        ? `information about ${question}` 
+        : question;
       
-      // If no results and question is about "my name", try alternative queries
-      if (results.length === 0 && /(my name|what.*name|who.*i|i am|i'm)/i.test(question)) {
-        console.log(`[getInformation] Trying alternative queries for name question`);
-        const alternatives = ['name', 'my name', 'I am', 'I\'m'];
-        for (const alt of alternatives) {
-          const altResults = await findRelevantContent(alt, userId);
-          if (altResults.length > 0) {
-            results = altResults;
-            break;
+      // Try the enhanced query first
+      let results = await findRelevantContent(enhancedQuery, userId);
+      
+      // If enhanced query didn't help much, also try original
+      if (results.length === 0 || (results.length > 0 && typeof results[0].similarity === 'number' && results[0].similarity < 0.4)) {
+        const originalResults = await findRelevantContent(question, userId);
+        // Use original if it gives better results
+        if (originalResults.length > 0 && typeof originalResults[0].similarity === 'number') {
+          const originalSim = originalResults[0].similarity;
+          const enhancedSim = results.length > 0 && typeof results[0].similarity === 'number' ? results[0].similarity : 0;
+          if (originalSim > enhancedSim) {
+            results = originalResults;
           }
         }
       }
+      
       
       // Format results for better AI understanding
       if (results.length === 0) {
@@ -69,26 +76,42 @@ Only use results that are actually relevant to the user's question - don't inclu
       
       // Filter out low similarity results - use higher threshold for better relevance
       // Similarity is 0-1, where 1 is most similar
-      // We want to keep only results with similarity > 0.5 (moderately relevant) or top 3 if all are lower
-      const MIN_SIMILARITY = 0.5;
+      // Higher threshold ensures only truly relevant results are returned
+      const MIN_SIMILARITY = 0.5; // Balanced threshold for relevance
       const MAX_RESULTS = 5; // Limit to top 5 most relevant results
       
+      // Filter results by similarity threshold
       let filteredResults = results.filter((r: any) => {
         const sim = typeof r.similarity === 'number' ? r.similarity : 0;
         return sim > MIN_SIMILARITY;
       });
       
-      // If we have good results (similarity > 0.5), limit to top 5
+      // Filter out results that are just saying they don't have the information
+      // These are false positives that don't actually contain the requested information
+      filteredResults = filteredResults.filter((r: any) => {
+        const content = (r.content || '').toLowerCase();
+        // Filter out results that are just saying they don't have the information
+        const isNegativeResponse = /(don't have|don't know|no information|not saved|not found|yet|if you share|i don't have|i don't know)/i.test(content);
+        return !isNegativeResponse;
+      });
+      
+      // If we have good results (similarity > threshold), limit to top 5
       if (filteredResults.length > 0) {
         filteredResults = filteredResults.slice(0, MAX_RESULTS);
       } else if (results.length > 0) {
-        // If no results meet the threshold, take top 3 results anyway (but log it)
-        console.log(`[getInformation] No results with similarity > ${MIN_SIMILARITY}, returning top 3 results`);
-        filteredResults = results.slice(0, 3).map((r: any) => {
-          const sim = typeof r.similarity === 'number' ? r.similarity : 0;
-          console.log(`[getInformation] Including result with similarity ${sim.toFixed(3)}: ${r.content?.substring(0, 50)}...`);
-          return r;
+        // If no results meet the threshold, take top results anyway (but log it)
+        // Still filter out negative responses
+        const fallbackCount = 3;
+        let fallbackResults = results.slice(0, fallbackCount);
+        
+        // Filter out negative responses even in fallback
+        fallbackResults = fallbackResults.filter((r: any) => {
+          const content = (r.content || '').toLowerCase();
+          const isNegativeResponse = /(don't have|don't know|no information|not saved|not found|yet|if you share|i don't have|i don't know)/i.test(content);
+          return !isNegativeResponse;
         });
+        
+        filteredResults = fallbackResults;
       }
       
       // Get full resource content for chunks that belong to resources

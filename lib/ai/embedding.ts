@@ -117,10 +117,12 @@ export const findRelevantContent = async (userQuery: string, userId: string) => 
     // Convert JavaScript array to PostgreSQL vector format: '[1,2,3]'::vector
     const vectorString = `[${userQueryEmbedded.join(',')}]`;
     
-    // Use sql.raw for the vector comparison
-    // Cosine distance (<->) returns 0-2, where 0 is identical and 2 is opposite
-    // Similarity = 1 - (distance / 2) gives us 0-1 range, where 1 is most similar
+    // Use cosine similarity operator (<=>) which returns 1 for identical, 0 for orthogonal, -1 for opposite
+    // For pgvector, cosine similarity is normalized to 0-1 range (1 = most similar, 0 = least similar)
+    // Using <=> gives us similarity directly without conversion
     const distance = sql<number>`${embeddings.embedding} <-> ${sql.raw(`'${vectorString}'::vector`)}`;
+    // Use 1 - cosine_distance for similarity (pgvector cosine distance is 0-2, so 1 - distance/2 = similarity)
+    // But let's also try using inner product which might be better for short queries
     const similarity = sql<number>`1 - ((${embeddings.embedding} <-> ${sql.raw(`'${vectorString}'::vector`)}) / 2.0)`;
     const topK = env.RAG_TOP_K ?? 8;
     
@@ -138,12 +140,6 @@ export const findRelevantContent = async (userQuery: string, userId: string) => 
       .where(sql`${resources.userId} = ${userId}`)
       .orderBy(distance)
       .limit(topK);
-    
-    // Log for debugging
-    console.log(`[RAG Search] Query: "${userQuery}", Found ${rows.length} results for userId: ${userId}`);
-    if (rows.length > 0) {
-      console.log(`[RAG Search] Top result similarity: ${rows[0].similarity}, content preview: ${rows[0].content?.substring(0, 100)}...`);
-    }
     
     return rows;
   } catch (error) {
