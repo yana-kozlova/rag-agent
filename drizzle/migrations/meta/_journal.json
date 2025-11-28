@@ -8,6 +8,13 @@
       "when": 1761694121385,
       "tag": "0000_sparkling_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1764289760973,
+      "tag": "0001_awesome_electro",
+      "breakpoints": true
     }
   ]
 }

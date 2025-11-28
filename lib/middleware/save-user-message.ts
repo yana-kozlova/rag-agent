@@ -153,10 +153,17 @@ export async function saveUserMessageIfImportant(content: string): Promise<{ sav
         ? { type: 'document', size: content.length, chunks: Math.ceil(content.length / 800) }
         : { type: 'note' };
     
+    // Try to extract a title from content (first line or first sentence)
+    const firstLine = content.split('\n')[0]?.trim();
+    const title = firstLine && firstLine.length > 0 && firstLine.length < 200 
+      ? firstLine 
+      : null;
+    
     const [resRow] = await db.insert(resources).values({
       content,
       userId: userId as any,
       source: 'resource',
+      title: title || null,
       metadata,
     }).returning({ id: resources.id });
 
