@@ -2,7 +2,7 @@
 export { resources } from "./resources";
 export type { NewResourceParams } from "./resources";
 
-// Add other named exports from other schema files as needed
+export * from './user-tables';
 export * from "./embeddings";
 export * from "./auth";
 export * from "./chat";
