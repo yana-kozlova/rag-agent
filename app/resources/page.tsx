@@ -19,20 +19,22 @@ export default function ResourcesPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('');
-  const [offset, setOffset] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const limit = 20;
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
   const [editType, setEditType] = useState<'note' | 'document' | 'person' | 'project' | 'skill' | 'learning' | 'schedule' | 'event' | 'other'>('note');
 
-  const loadResources = async (reset = false) => {
+  const loadResources = async (page: number = currentPage) => {
     try {
       setLoading(true);
-      const currentOffset = reset ? 0 : offset;
+      const offset = (page - 1) * limit;
       const params = new URLSearchParams({
-        limit: '20',
-        offset: currentOffset.toString(),
+        limit: limit.toString(),
+        offset: offset.toString(),
       });
       if (typeFilter) params.append('type', typeFilter);
       
@@ -40,14 +42,10 @@ export default function ResourcesPage() {
       const data = await res.json();
       
       if (data.ok) {
-        if (reset) {
-          setResources(data.resources);
-          setOffset(data.resources.length);
-        } else {
-          setResources(prev => [...prev, ...data.resources]);
-          setOffset(prev => prev + data.resources.length);
-        }
+        setResources(data.resources);
+        setTotalCount(data.pagination.total);
         setHasMore(data.pagination.hasMore);
+        setCurrentPage(page);
       }
     } catch (error) {
       console.error('Error loading resources:', error);
@@ -57,8 +55,9 @@ export default function ResourcesPage() {
   };
 
   useEffect(() => {
-    setOffset(0);
-    loadResources(true);
+    setCurrentPage(1);
+    loadResources(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typeFilter]);
 
   const handleDelete = async (id: string) => {
@@ -67,6 +66,15 @@ export default function ResourcesPage() {
     const result = await deleteResource(id);
     if (result.success) {
       setResources(prev => prev.filter(r => r.id !== id));
+      setTotalCount(prev => Math.max(0, prev - 1));
+      
+      // If current page becomes empty and not first page, go to previous page
+      if (resources.length === 1 && currentPage > 1) {
+        loadResources(currentPage - 1);
+      } else if (resources.length === 1) {
+        // Reload current page if it becomes empty
+        loadResources(currentPage);
+      }
     } else {
       alert(result.message || 'Failed to delete resource');
     }
@@ -277,15 +285,109 @@ export default function ResourcesPage() {
             ))}
           </div>
 
-          {hasMore && !searchQuery && (
-            <div className="text-center">
-              <button
-                className="btn btn-outline"
-                onClick={() => loadResources(false)}
-                disabled={loading}
-              >
-                {loading ? 'Loading...' : 'Load More'}
-              </button>
+          {!searchQuery && (
+            <div className="flex flex-col items-center justify-center gap-4 mt-6">
+              {(() => {
+                const totalPages = Math.ceil(totalCount / limit);
+                
+                // Show pagination buttons only if more than 1 page
+                if (totalPages > 1) {
+                  return (
+                    <div className="join">
+                      <button
+                        className="join-item btn btn-sm btn-outline"
+                        onClick={() => loadResources(currentPage - 1)}
+                        disabled={loading || currentPage === 1}
+                      >
+                        Previous
+                      </button>
+                      
+                      {(() => {
+                        const maxVisiblePages = 10;
+                        const pages: (number | string)[] = [];
+                        
+                        if (totalPages <= maxVisiblePages) {
+                          // Show all pages
+                          return Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                            <button
+                              key={page}
+                              className={`join-item btn btn-sm ${currentPage === page ? 'btn-active' : ''}`}
+                              onClick={() => loadResources(page)}
+                              disabled={loading}
+                            >
+                              {page}
+                            </button>
+                          ));
+                        }
+                        
+                        // Smart pagination with ellipsis for more than 10 pages
+                        // Always show first page
+                        pages.push(1);
+                        
+                        // Show ellipsis if needed
+                        if (currentPage > 4) {
+                          pages.push('...');
+                        }
+                        
+                        // Show pages around current page (2 on each side)
+                        const start = Math.max(2, currentPage - 2);
+                        const end = Math.min(totalPages - 1, currentPage + 2);
+                        
+                        for (let i = start; i <= end; i++) {
+                          if (i !== 1 && i !== totalPages) {
+                            pages.push(i);
+                          }
+                        }
+                        
+                        // Show ellipsis if needed
+                        if (currentPage < totalPages - 3) {
+                          pages.push('...');
+                        }
+                        
+                        // Always show last page
+                        pages.push(totalPages);
+                        
+                        return pages.map((page, idx) => {
+                          if (page === '...') {
+                            return (
+                              <button
+                                key={`ellipsis-${idx}`}
+                                className="join-item btn btn-sm btn-disabled"
+                                disabled
+                              >
+                                ...
+                              </button>
+                            );
+                          }
+                          return (
+                            <button
+                              key={page}
+                              className={`join-item btn btn-sm ${currentPage === page ? 'btn-active' : ''}`}
+                              onClick={() => loadResources(page as number)}
+                              disabled={loading}
+                            >
+                              {page}
+                            </button>
+                          );
+                        });
+                      })()}
+                      
+                      <button
+                        className="join-item btn btn-sm btn-outline"
+                        onClick={() => loadResources(currentPage + 1)}
+                        disabled={loading || !hasMore}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              
+              <span className="text-sm text-base-content/70">
+                Showing {totalCount === 0 ? 0 : ((currentPage - 1) * limit) + 1}-{Math.min(currentPage * limit, totalCount)} of {totalCount}
+              </span>
             </div>
           )}
         </>
