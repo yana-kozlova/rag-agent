@@ -219,7 +219,7 @@ Return the most appropriate type.`,
         const batch = chunks.slice(i, i + BATCH_SIZE);
         await db.insert(embeddingsTable).values(
           batch.map(e => ({
-            resourceId: resRow.id,
+            sourceId: resRow.id,
             source: 'resource' as const,
             content: e.content,
             embedding: e.embedding,

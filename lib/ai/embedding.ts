@@ -2,9 +2,10 @@ import { embed, embedMany } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { env } from '@/lib/env.mjs';
 import { db } from '../db';
-import { cosineDistance, sql } from 'drizzle-orm';
+import { cosineDistance, sql, eq, and, or } from 'drizzle-orm';
 import { embeddings } from '../db/schema/embeddings';
 import { resources } from '../db/schema/resources';
+import { userTablesData, userTables } from '../db/schema/user-tables';
 
 const embeddingModel = openai.embedding(env.AI_EMBED_MODEL || 'text-embedding-3-small');
 
@@ -131,17 +132,33 @@ export const findRelevantContent = async (userQuery: string, userId: string) => 
         content: embeddings.content,
         similarity,
         source: embeddings.source,
-        resourceId: embeddings.resourceId,
+        sourceId: embeddings.sourceId,
         googleEventId: resources.googleEventId,
-        metadata: resources.metadata,
+        resourceMetadata: resources.metadata,
+        embeddingMetadata: embeddings.metadata,
       })
       .from(embeddings)
-      .leftJoin(resources, sql`${resources.id} = ${embeddings.resourceId}`)
-      .where(sql`${resources.userId} = ${userId}`)
+      .leftJoin(resources, sql`${resources.id} = ${embeddings.sourceId} AND ${embeddings.source} IN ('resource', 'calendar')`)
+      .leftJoin(userTablesData, sql`${userTablesData.id} = ${embeddings.sourceId} AND ${embeddings.source} = 'table'`)
+      .leftJoin(userTables, sql`${userTables.id} = ${userTablesData.userTableId}`)
+      .where(
+        sql`(
+          (${embeddings.source} IN ('resource', 'calendar') AND ${resources.userId} = ${userId}) OR
+          (${embeddings.source} = 'table' AND ${userTables.userId} = ${userId})
+        )`
+      )
       .orderBy(distance)
       .limit(topK);
     
-    return rows;
+    // Format results to match expected structure
+    return rows.map(row => ({
+      content: row.content,
+      similarity: row.similarity,
+      source: row.source,
+      sourceId: row.sourceId,
+      googleEventId: row.googleEventId,
+      metadata: row.embeddingMetadata || row.resourceMetadata || null,
+    }));
   } catch (error) {
     console.error('[RAG Search] Error finding relevant content:', error);
     return [];

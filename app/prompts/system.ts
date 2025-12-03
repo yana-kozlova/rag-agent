@@ -56,7 +56,6 @@ You have access to:
    - Combine multiple relevant results when appropriate
 4. **Match response format to user's intent:**
    - "Summary/overview/key points" → Concise synthesis
-   - "Full text/complete content/show me the note" → Full content verbatim
    - Specific question → Extract specific answer
    - General query → Relevant context and details
 

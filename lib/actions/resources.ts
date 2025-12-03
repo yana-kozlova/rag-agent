@@ -39,8 +39,10 @@ export const createResource = async (input: NewResourceParams) => {
     if (embeddings.length > 0) {
       await db.insert(embeddingsTable).values(
         embeddings.map(embedding => ({
-          resourceId: resource.id,
-          ...embedding,
+          sourceId: resource.id,
+          source: 'resource' as const,
+          content: embedding.content,
+          embedding: embedding.embedding,
         })),
       );
     }
@@ -109,15 +111,17 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
       // Delete old embeddings
       await db
         .delete(embeddingsTable)
-        .where(eq(embeddingsTable.resourceId, resourceId));
+        .where(eq(embeddingsTable.sourceId, resourceId));
 
       // Generate new embeddings
       const embeddings = await generateEmbeddings(parsed.content);
       if (embeddings.length > 0) {
         await db.insert(embeddingsTable).values(
           embeddings.map(embedding => ({
-            resourceId: resourceId,
-            ...embedding,
+            sourceId: resourceId,
+            source: 'resource' as const,
+            content: embedding.content,
+            embedding: embedding.embedding,
           })),
         );
       }
@@ -157,9 +161,9 @@ export const deleteResource = async (resourceId: string) => {
     }
 
     // Delete embeddings (cascade should handle this, but being explicit)
-    await db
-      .delete(embeddingsTable)
-      .where(eq(embeddingsTable.resourceId, resourceId));
+      await db
+        .delete(embeddingsTable)
+        .where(eq(embeddingsTable.sourceId, resourceId));
 
     // Delete resource
     await db

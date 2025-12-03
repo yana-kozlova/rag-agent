@@ -56,11 +56,16 @@ IMPORTANT:
         };
       }
 
-      // Get unique resource IDs
-      const resourceIds = [...new Set(relevantResults.map((r: any) => r.resourceId).filter(Boolean))];
+      // Get unique source IDs for resources only (not tables - they need separate handling)
+      const resourceSourceIds = [...new Set(
+        relevantResults
+          .filter((r: any) => r.source === 'resource' || r.source === 'calendar')
+          .map((r: any) => r.sourceId)
+          .filter(Boolean)
+      )];
       
       // Limit to top 10 resources to avoid accidental mass deletion
-      const idsToDelete = resourceIds.slice(0, 10);
+      const idsToDelete = resourceSourceIds.slice(0, 10);
       
       // Verify resources belong to user and get their titles for reporting
       const resourcesToDelete = await db

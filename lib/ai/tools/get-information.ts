@@ -25,13 +25,12 @@ Use this tool when:
 
 IMPORTANT: After getting results from this tool, adapt your response based on what the user asked for:
 - If user asks for SUMMARY/OVERVIEW/KEY POINTS → synthesize a brief summary of the main points
-- If user asks for FULL TEXT/COMPLETE CONTENT → provide the complete text from the search results
 - If user asks a specific question → extract the specific answer from the content
 - The relevance score (0-1) indicates how relevant each result is - ONLY use results with relevance > 0.5 unless there are no better options
 - The rank indicates the order (1 = most relevant)
 - If a result has low relevance (< 0.5) and doesn't directly answer the question, IGNORE it
 
-The tool searches using semantic similarity and returns the most relevant content chunks (max 5 results). Each chunk may be part of a larger document or note.
+The tool searches using semantic similarity and returns the most relevant content (max 5 results). For resources: returns relevant chunks. For tables: returns full row data as text.
 Only use results that are actually relevant to the user's question - don't include unrelated information.`,
   inputSchema: z.object({
     question: z.string().describe('The question or query to search for in the knowledge base. Can be a question or keywords.'),
@@ -114,54 +113,31 @@ Only use results that are actually relevant to the user's question - don't inclu
         filteredResults = fallbackResults;
       }
       
-      // Get full resource content for chunks that belong to resources
-      // This allows AI to provide full text when requested
-      const resourceIds = [...new Set(filteredResults.map((r: any) => r.resourceId).filter(Boolean))];
-      let fullResources: Record<string, any> = {};
-      
-      if (resourceIds.length > 0) {
-        try {
-          const { db } = await import('@/lib/db');
-          const { resources } = await import('@/lib/db/schema/resources');
-          const { inArray } = await import('drizzle-orm');
-          
-          const fullRes = await db
-            .select({
-              id: resources.id,
-              content: resources.content,
-              metadata: resources.metadata,
-            })
-            .from(resources)
-            .where(inArray(resources.id, resourceIds));
-          
-          fullRes.forEach((res: any) => {
-            fullResources[res.id] = res;
-          });
-        } catch (err) {
-          console.error('[getInformation] Error fetching full resources:', err);
-        }
-      }
-      
       // Return results formatted for AI analysis
-      // Include both chunk content and full resource content when available
+      // All content comes from vector database (embeddings table)
       return filteredResults.map((r: any, index: number) => {
         const sim = typeof r.similarity === 'number' ? r.similarity : null;
-        const fullResource = r.resourceId ? fullResources[r.resourceId] : null;
+        
+        // Extract table info from metadata if source is table
+        const tableInfo = r.source === 'table' && r.metadata ? {
+          tableId: r.metadata.tableId,
+          tableTitle: r.metadata.tableTitle,
+        } : null;
         
         return {
-          // Chunk content (what matched the search)
-          chunkContent: r.content,
-          // Full resource content (if this chunk is part of a larger resource)
-          fullContent: fullResource?.content || null,
+          // Content from vector database (chunks for resources, full row text for tables)
+          content: r.content,
           // Relevance score (0-1, higher is more relevant)
           relevance: sim,
           // Rank in search results (1 = most relevant)
           rank: index + 1,
-          // Resource ID to identify if multiple chunks belong to same resource
-          resourceId: r.resourceId || null,
+          // Source ID (unified ID for resource/table/calendar)
+          sourceId: r.sourceId || null,
+          // Table metadata if from a table (from embeddings.metadata)
+          tableInfo: tableInfo,
           // Additional context
           source: r.source,
-          metadata: r.metadata || fullResource?.metadata || null,
+          metadata: r.metadata || null,
         };
       });
     } catch (error) {
