@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { findRelevantContent } from '@/lib/ai/embedding';
-import { auth } from '../../../app/api/auth/auth';
+import { auth } from '@/app/api/auth/auth';
 
 export const getInformationTool = {
   description: `Search the user's comprehensive knowledge base (RAG) to find relevant information for answering their questions.
@@ -146,3 +146,4 @@ Only use results that are actually relevant to the user's question - don't inclu
     }
   },
 } as const;
+

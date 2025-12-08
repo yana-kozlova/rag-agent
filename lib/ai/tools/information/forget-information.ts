@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { deleteResource } from '@/lib/actions/resources';
 import { findRelevantContent } from '@/lib/ai/embedding';
-import { auth } from '../../../app/api/auth/auth';
+import { auth } from '@/app/api/auth/auth';
 import { db } from '@/lib/db';
 import { resources } from '@/lib/db/schema/resources';
 import { eq, and, inArray } from 'drizzle-orm';

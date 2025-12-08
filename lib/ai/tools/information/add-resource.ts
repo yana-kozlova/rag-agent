@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { createResource } from '@/lib/actions/resources';
-import { auth } from '../../../app/api/auth/auth';
+import { auth } from '@/app/api/auth/auth';
 import { generateObject } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { env } from '@/lib/env.mjs';
@@ -80,3 +80,4 @@ Return the most appropriate type.`,
     });
   },
 } as const;
+

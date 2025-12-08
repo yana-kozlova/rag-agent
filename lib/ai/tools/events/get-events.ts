@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getSessionOrThrow } from './utils';
+import { getSessionOrThrow } from '../utils';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
@@ -87,3 +87,4 @@ export const getEventsTool = {
     }
   },
 } as const;
+
