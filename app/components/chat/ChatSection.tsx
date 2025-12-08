@@ -190,16 +190,40 @@ export default function ChatSection() {
               dateTimeStr = `${dateStr} at ${timeStr}`;
             }
           }
-          const avatarSrc = isUser
-            ? (session?.user?.image ?? '')
-            : '/avatars/bot.svg';
+          // Get user initials for placeholder
+          const getUserInitials = (name?: string | null) => {
+            if (!name) return 'U';
+            const parts = name.trim().split(/\s+/);
+            if (parts.length >= 2) {
+              return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+            }
+            return name[0]?.toUpperCase() || 'U';
+          };
+
+          const userImage = session?.user?.image;
+          const userName = session?.user?.name;
+          const userInitials = getUserInitials(userName);
 
           return (
             <div key={m.id} className={`chat ${chatSide} max-w-full`}>
               <div className="chat-image avatar">
-                <div className="w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden">
-                  <Image alt="avatar" src={avatarSrc} width={40} height={40} sizes="40px" className="w-full h-full object-cover" />
-                </div>
+                {isUser ? (
+                  userImage ? (
+                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden">
+                      <Image alt="avatar" src={userImage} width={40} height={40} sizes="40px" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </div>
+                  ) : (
+                    <div className="avatar placeholder">
+                      <div className="bg-neutral text-neutral-content w-8 h-8 md:w-10 md:h-10 rounded-full">
+                        <span className="text-xs md:text-sm">{userInitials}</span>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <div className="w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden">
+                    <Image alt="avatar" src="/avatars/bot.svg" width={40} height={40} sizes="40px" className="w-full h-full object-cover" />
+                  </div>
+                )}
               </div>
               <div className="chat-header">
                 {isUser ? 'You' : 'Assistant'}

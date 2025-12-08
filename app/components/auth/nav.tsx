@@ -33,17 +33,35 @@ export function Nav() {
           <>
             <div className="dropdown dropdown-end">
               <div tabIndex={0} role="button" className="btn btn-ghost btn-circle avatar">
-                <div className="w-10 h-10 rounded-full overflow-hidden">
-                  <Image
-                    src={session.user?.image ?? 'https://img.daisyui.com/images/profile/demo/kenobee@192.webp'}
-                    alt={session.user?.name ?? 'User'}
-                    referrerPolicy="no-referrer"
-                    width={40}
-                    height={40}
-                    sizes="40px"
-                    className="w-full h-full object-cover"
-                  />
-                </div>
+                {session.user?.image ? (
+                  <div className="w-10 h-10 rounded-full overflow-hidden">
+                    <Image
+                      src={session.user.image}
+                      alt={session.user?.name ?? 'User'}
+                      referrerPolicy="no-referrer"
+                      width={40}
+                      height={40}
+                      sizes="40px"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="avatar placeholder">
+                    <div className="bg-neutral text-neutral-content w-10 h-10 rounded-full">
+                      <span className="text-sm">
+                        {(() => {
+                          const name = session.user?.name;
+                          if (!name) return 'U';
+                          const parts = name.trim().split(/\s+/);
+                          if (parts.length >= 2) {
+                            return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+                          }
+                          return name[0]?.toUpperCase() || 'U';
+                        })()}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
               <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
                 <li>
