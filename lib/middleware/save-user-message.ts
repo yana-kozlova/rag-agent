@@ -156,6 +156,7 @@ export async function saveUserMessageIfImportant(content: string): Promise<{ sav
     } else if (content.length <= MAX_CLASSIFICATION_LENGTH) {
       // Try to classify content type for smaller texts
       try {
+        const modelName = env.AI_CHAT_MODEL || 'gpt-4o-mini';
         const typeClassificationSchema = z.object({
           type: z.enum(['note', 'document', 'schedule', 'person', 'project', 'skill', 'event', 'learning', 'other']).describe('Content type'),
           confidence: z.number().describe('Confidence level 0-1'),

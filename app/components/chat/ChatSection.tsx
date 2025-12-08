@@ -115,12 +115,12 @@ export default function ChatSection() {
             el.scrollTop = newHeight - prevHeight + prevScroll;
           }
         });
-        // Only set hasMore to true if we got the full limit (15) and there were new messages
-        setHasMore(arr.length === 15 && newMessages.length > 0);
-      } else {
-        // No new messages means we've reached the end
-        setHasMore(false);
       }
+      
+      // Set hasMore based on whether we got a full page (15 messages)
+      // If we got 15 messages, there might be more pages, regardless of duplicates
+      // Only set to false if we got fewer than 15 (meaning we've reached the end)
+      setHasMore(arr.length === 15);
     } catch {}
     finally { setLoadingMore(false); }
   }, [loadingMore, hasMore, history]);
