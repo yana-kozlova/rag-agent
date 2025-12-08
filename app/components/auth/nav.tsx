@@ -3,6 +3,7 @@
 import { signOut, useSession } from 'next-auth/react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { getUserInitials } from '@/lib/utils';
 
 export function Nav() {
   const { data: session } = useSession();
@@ -48,17 +49,7 @@ export function Nav() {
                 ) : (
                   <div className="avatar placeholder">
                     <div className="bg-neutral text-neutral-content w-10 h-10 rounded-full">
-                      <span className="text-sm">
-                        {(() => {
-                          const name = session.user?.name;
-                          if (!name) return 'U';
-                          const parts = name.trim().split(/\s+/);
-                          if (parts.length >= 2) {
-                            return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-                          }
-                          return name[0]?.toUpperCase() || 'U';
-                        })()}
-                      </span>
+                      <span className="text-sm">{getUserInitials(session.user?.name)}</span>
                     </div>
                   </div>
                 )}
