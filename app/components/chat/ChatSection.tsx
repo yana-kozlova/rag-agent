@@ -7,6 +7,7 @@ import { useAutoGreeting } from '@/app/components/chat/useAutoGreeting';
 import { ToolOutput } from '@/app/components/chat/ToolOutput';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
+import { getUserInitials } from '@/lib/utils';
 
 export default function ChatSection() {
   const [input, setInput] = useState('');
@@ -60,9 +61,15 @@ export default function ChatSection() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const historyRef = useRef(history);
   const autoGreetingHistory = history.map(h => ({ createdAt: h.createdAt, role: h.role as 'user' | 'assistant' | 'system' }));
   const autoPrompt = useAutoGreeting({ history: autoGreetingHistory, historyLoaded, sendMessage });
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep historyRef in sync with history state
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
 
   useEffect(() => {
     // Defer history load to avoid blocking initial render/LCP
@@ -91,31 +98,35 @@ export default function ChatSection() {
   }, []);
 
   const loadMore = useCallback(async () => {
-    if (loadingMore || !hasMore || history.length === 0) return;
+    if (loadingMore || !hasMore || historyRef.current.length === 0) return;
     try {
       setLoadingMore(true);
-      const oldest = history[0]?.createdAt;
+      const oldest = historyRef.current[0]?.createdAt;
       const oldestISO = typeof oldest === 'string' ? oldest : oldest instanceof Date ? oldest.toISOString() : '';
       const res = await fetch(`/api/chat/history?limit=15&before=${encodeURIComponent(oldestISO)}`);
       const data = await res.json();
       const arr = Array.isArray(data.messages) ? data.messages : [];
       
       // Deduplicate: filter out messages that already exist in history
-      const existingIds = new Set(history.map(h => h.id));
-      const newMessages = arr.filter(m => !existingIds.has(m.id));
-      
-      if (newMessages.length > 0) {
-        const el = listRef.current;
-        const prevHeight = el ? el.scrollHeight : 0;
-        const prevScroll = el ? el.scrollTop : 0;
-        setHistory(prev => [...newMessages, ...prev]);
-        requestAnimationFrame(() => {
-          if (el) {
-            const newHeight = el.scrollHeight;
-            el.scrollTop = newHeight - prevHeight + prevScroll;
-          }
-        });
-      }
+      // Use functional update to get the latest state
+      setHistory(prev => {
+        const existingIds = new Set(prev.map(h => h.id));
+        const newMessages = arr.filter(m => !existingIds.has(m.id));
+        
+        if (newMessages.length > 0) {
+          const el = listRef.current;
+          const prevHeight = el ? el.scrollHeight : 0;
+          const prevScroll = el ? el.scrollTop : 0;
+          requestAnimationFrame(() => {
+            if (el) {
+              const newHeight = el.scrollHeight;
+              el.scrollTop = newHeight - prevHeight + prevScroll;
+            }
+          });
+          return [...newMessages, ...prev];
+        }
+        return prev;
+      });
       
       // Set hasMore based on whether we got a full page (15 messages)
       // If we got 15 messages, there might be more pages, regardless of duplicates
@@ -123,7 +134,7 @@ export default function ChatSection() {
       setHasMore(arr.length === 15);
     } catch {}
     finally { setLoadingMore(false); }
-  }, [loadingMore, hasMore, history]);
+  }, [loadingMore, hasMore]);
 
   useEffect(() => {
     const root = listRef.current;
@@ -190,16 +201,6 @@ export default function ChatSection() {
               dateTimeStr = `${dateStr} at ${timeStr}`;
             }
           }
-          // Get user initials for placeholder
-          const getUserInitials = (name?: string | null) => {
-            if (!name) return 'U';
-            const parts = name.trim().split(/\s+/);
-            if (parts.length >= 2) {
-              return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-            }
-            return name[0]?.toUpperCase() || 'U';
-          };
-
           const userImage = session?.user?.image;
           const userName = session?.user?.name;
           const userInitials = getUserInitials(userName);

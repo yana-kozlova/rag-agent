@@ -51,13 +51,16 @@ export async function GET() {
       if (c?.calendarId) labelMap.set(c.calendarId, c.summary || c.calendarId);
     }
 
-    const events = merged.map(({ cid, event }) => {
-      const start = event.start?.dateTime || event.start?.date || undefined;
-      const end = event.end?.dateTime || event.end?.date || undefined;
-      const title = event.summary || 'No Title';
-      const location = event.location || undefined;
-      return { id: `${cid}:${event.id!}`, title, start, end, location, calendarId: cid, calendarLabel: labelMap.get(cid) };
-    }).filter(e => e.id && e.start && e.end);
+    const events = merged
+      .filter(({ event }) => event.id) // Filter out events without valid IDs first
+      .map(({ cid, event }) => {
+        const start = event.start?.dateTime || event.start?.date || undefined;
+        const end = event.end?.dateTime || event.end?.date || undefined;
+        const title = event.summary || 'No Title';
+        const location = event.location || undefined;
+        return { id: `${cid}:${event.id}`, title, start, end, location, calendarId: cid, calendarLabel: labelMap.get(cid) };
+      })
+      .filter(e => e.id && e.start && e.end);
 
     // Return all fetched events; count is total returned
     const count = events.length;
