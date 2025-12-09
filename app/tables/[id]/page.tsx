@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { updateUserTable } from '@/lib/actions/user-tables';
 import Link from 'next/link';
@@ -36,13 +36,7 @@ export default function EditTablePage() {
     }
   }, [toast]);
 
-  useEffect(() => {
-    if (tableId) {
-      loadTable();
-    }
-  }, [tableId]);
-
-  const loadTable = async () => {
+  const loadTable = useCallback(async () => {
     try {
       setLoading(true);
       // Load table metadata
@@ -80,7 +74,13 @@ export default function EditTablePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [tableId, router]);
+
+  useEffect(() => {
+    if (tableId) {
+      loadTable();
+    }
+  }, [tableId, loadTable]);
 
   const handleSave = async () => {
     if (!table) return;

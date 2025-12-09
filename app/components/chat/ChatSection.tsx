@@ -26,7 +26,8 @@ export default function ChatSection() {
     }
   });
 
-  const [history, setHistory] = useState<{ id: string; role: string; content: string; createdAt?: string | Date }[]>([]);
+  type HistoryMessage = { id: string; role: string; content: string; createdAt?: string | Date };
+  const [history, setHistory] = useState<HistoryMessage[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const historyUi = history.map((h) => ({
     id: `hist-${h.id}`,
@@ -110,13 +111,13 @@ export default function ChatSection() {
       const oldestISO = typeof oldest === 'string' ? oldest : oldest instanceof Date ? oldest.toISOString() : '';
       const res = await fetch(`/api/chat/history?limit=15&before=${encodeURIComponent(oldestISO)}`);
       const data = await res.json();
-      const arr = Array.isArray(data.messages) ? data.messages : [];
+      const arr: HistoryMessage[] = Array.isArray(data.messages) ? (data.messages as HistoryMessage[]) : [];
       
       // Deduplicate: filter out messages that already exist in history
       // Use functional update to get the latest state
       setHistory(prev => {
         const existingIds = new Set(prev.map(h => h.id));
-        const newMessages = arr.filter(m => !existingIds.has(m.id));
+        const newMessages = arr.filter((m: HistoryMessage) => !existingIds.has(m.id));
         
         if (newMessages.length > 0) {
           const el = listRef.current;

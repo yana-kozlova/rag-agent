@@ -3,7 +3,7 @@ import { auth } from '@/app/api/auth/auth';
 import { db } from '@/lib/db';
 import { resources } from '@/lib/db/schema/resources';
 import { embeddings as embeddingsTable } from '@/lib/db/schema/embeddings';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, and } from 'drizzle-orm';
 
 export const runtime = 'nodejs';
 
@@ -24,12 +24,23 @@ export async function DELETE() {
     }
 
     // count embeddings first (for reporting)
+    // Filter by sourceId matching resource IDs and source type 'resource'
     const embRows = await db
       .select({ id: embeddingsTable.id })
       .from(embeddingsTable)
-      .where(inArray(embeddingsTable.resourceId, ids));
+      .where(
+        and(
+          inArray(embeddingsTable.sourceId, ids),
+          eq(embeddingsTable.source, 'resource')
+        )
+      );
 
-    await db.delete(embeddingsTable).where(inArray(embeddingsTable.resourceId, ids));
+    await db.delete(embeddingsTable).where(
+      and(
+        inArray(embeddingsTable.sourceId, ids),
+        eq(embeddingsTable.source, 'resource')
+      )
+    );
     await db.delete(resources).where(eq(resources.userId, userId as any));
 
     return NextResponse.json({ ok: true, deletedResources: ids.length, deletedEmbeddings: embRows.length });

@@ -29,7 +29,8 @@ export const addResourceTool = {
     }
     
     // Classify content type
-    let contentType = 'note';
+    type ContentType = 'note' | 'document' | 'schedule' | 'person' | 'project' | 'skill' | 'event' | 'learning' | 'other';
+    let contentType: ContentType = 'note';
     const isLargeText = content.length > 5000;
     
     if (isLargeText) {

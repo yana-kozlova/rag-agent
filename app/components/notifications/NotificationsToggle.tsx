@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
 export function NotificationsToggle() {
   const [enabled, setEnabled] = useState<boolean>(false);
@@ -11,7 +11,7 @@ export function NotificationsToggle() {
   const [subscribing, setSubscribing] = useState<boolean>(false);
   const [nextScheduled, setNextScheduled] = useState<string | null>(null);
 
-  const fetchNextScheduled = async () => {
+  const fetchNextScheduled = useCallback(async () => {
     try {
       const res = await fetch('/api/push/next-scheduled');
       if (res.ok) {
@@ -21,37 +21,18 @@ export function NotificationsToggle() {
     } catch (e) {
       // Ignore errors
     }
-  };
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const isSupported = 'Notification' in window;
-    setSupported(isSupported);
-    setSecure(window.isSecureContext === true);
-    
-    // Check Push API support
-    const isPushSupported = 'serviceWorker' in navigator && 'PushManager' in window;
-    setPushSupported(isPushSupported);
-    
-    if (!isSupported) return;
-    try {
-      const stored = localStorage.getItem('notifications.enabled');
-      setEnabled(stored === 'true');
-    } catch {}
-    setPermission(Notification.permission);
-
-    // Check if we already have a subscription
-    if (isPushSupported) {
-      checkSubscription();
-    }
-
-    // Fetch next scheduled time
-    fetchNextScheduled();
-    const interval = setInterval(fetchNextScheduled, 60000); // Update every minute
-    return () => clearInterval(interval);
   }, []);
 
-  const checkSubscription = async () => {
+  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  };
+
+  const checkSubscription = useCallback(async () => {
     try {
       const reg = await navigator.serviceWorker.getRegistration();
       if (!reg) return;
@@ -82,16 +63,35 @@ export function NotificationsToggle() {
     } catch (e) {
       console.error('[NotificationsToggle] Error checking subscription:', e);
     }
-  };
+  }, []);
 
-  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isSupported = 'Notification' in window;
+    setSupported(isSupported);
+    setSecure(window.isSecureContext === true);
+    
+    // Check Push API support
+    const isPushSupported = 'serviceWorker' in navigator && 'PushManager' in window;
+    setPushSupported(isPushSupported);
+    
+    if (!isSupported) return;
+    try {
+      const stored = localStorage.getItem('notifications.enabled');
+      setEnabled(stored === 'true');
+    } catch {}
+    setPermission(Notification.permission);
+
+    // Check if we already have a subscription
+    if (isPushSupported) {
+      checkSubscription();
     }
-    return btoa(binary);
-  };
+
+    // Fetch next scheduled time
+    fetchNextScheduled();
+    const interval = setInterval(fetchNextScheduled, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, [checkSubscription, fetchNextScheduled]);
 
   const requestPermission = async (): Promise<NotificationPermission> => {
     if (!supported) return 'denied';
@@ -314,7 +314,7 @@ export function NotificationsToggle() {
       )}
       {pushSupported && enabled && (
         <div className="space-y-1">
-          <div className="text-sm text-success">✓ Push notifications enabled. You'll receive alerts even when the tab is closed.</div>
+          <div className="text-sm text-success">✓ Push notifications enabled. You&apos;ll receive alerts even when the tab is closed.</div>
           {nextScheduled && (
             <div className="text-xs text-muted-foreground">
               Next reminder: {nextScheduled}

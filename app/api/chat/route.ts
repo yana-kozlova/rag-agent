@@ -22,9 +22,17 @@ export async function POST(req: Request) {
       .filter(m => m.role === 'user')
       .pop();
     if (lastUserMessage) {
-      const textContent = typeof lastUserMessage.content === 'string' 
-        ? lastUserMessage.content 
-        : lastUserMessage.content?.find((p: any) => p?.type === 'text')?.text;
+      // UIMessage can have content as string or parts array
+      let textContent: string | undefined;
+      if (typeof (lastUserMessage as any).content === 'string') {
+        textContent = (lastUserMessage as any).content;
+      } else if (Array.isArray((lastUserMessage as any).parts)) {
+        const textPart = (lastUserMessage as any).parts.find((p: any) => p?.type === 'text');
+        textContent = textPart?.text;
+      } else if (typeof (lastUserMessage as any).text === 'string') {
+        textContent = (lastUserMessage as any).text;
+      }
+      
       if (textContent) {
         // Fire and forget - don't block the response
         saveUserMessageIfImportant(textContent).catch(err => {
