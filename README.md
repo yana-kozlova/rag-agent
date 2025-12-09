@@ -79,6 +79,13 @@ AI_TOOL_STEPS=5
 EMBED_CHUNK_SIZE=800
 EMBED_CHUNK_OVERLAP=100
 RAG_TOP_K=5
+
+# Push Notifications (optional)
+VAPID_PUBLIC_KEY=...
+VAPID_PRIVATE_KEY=...
+VAPID_SUBJECT=mailto:your-email@example.com
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=...
+CRON_SECRET=... # Optional, for scheduled notifications
 ```
 
 ## Usage
@@ -93,6 +100,32 @@ RAG_TOP_K=5
     - Dashboard widgets (Today, Events Quick Panel, Upcoming)
     - Settings → Followed Calendars and Theme switcher
     - Chat with assistant (saves history; tools for events)
+
+## Push Notifications
+
+Browser push notifications work even when the tab is closed.
+
+**Setup:**
+1. Generate VAPID keys: `npx web-push generate-vapid-keys`
+2. Add to `.env`:
+   ```env
+   VAPID_PUBLIC_KEY=...
+   VAPID_PRIVATE_KEY=...
+   VAPID_SUBJECT=mailto:your-email@example.com
+   NEXT_PUBLIC_VAPID_PUBLIC_KEY=...
+   CRON_SECRET=... # Optional, for scheduled notifications
+   ```
+3. Enable in Settings → Toggle "Enable notifications"
+
+**Scheduled notifications:**
+- **Production (Vercel):** Автоматично працює через `vercel.json` - додайте `CRON_SECRET` в Vercel Environment Variables
+- **Development:** Run `pnpm cron:dev` в окремому терміналі
+- **Test:** `pnpm test:push`
+
+**Важливо:** На Vercel не потрібно запускати `cron:dev` - Vercel сам викликає endpoint за розкладом. Див. [docs/VERCEL_CRON_SETUP.md](docs/VERCEL_CRON_SETUP.md)
+
+**Note:** Requires HTTPS (or localhost) and modern browser with Service Worker support.
+
 
 ## Running Tests
 Vitest is configured (Vite resolves the `@` alias).

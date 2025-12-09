@@ -62,14 +62,19 @@ export default function ChatSection() {
   const [loadingMore, setLoadingMore] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const historyRef = useRef(history);
+  const loadingMoreRef = useRef(loadingMore);
   const autoGreetingHistory = history.map(h => ({ createdAt: h.createdAt, role: h.role as 'user' | 'assistant' | 'system' }));
   const autoPrompt = useAutoGreeting({ history: autoGreetingHistory, historyLoaded, sendMessage });
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
 
-  // Keep historyRef in sync with history state
+  // Keep refs in sync with state
   useEffect(() => {
     historyRef.current = history;
   }, [history]);
+
+  useEffect(() => {
+    loadingMoreRef.current = loadingMore;
+  }, [loadingMore]);
 
   useEffect(() => {
     // Defer history load to avoid blocking initial render/LCP
@@ -98,7 +103,7 @@ export default function ChatSection() {
   }, []);
 
   const loadMore = useCallback(async () => {
-    if (loadingMore || !hasMore || historyRef.current.length === 0) return;
+    if (loadingMoreRef.current || !hasMore || historyRef.current.length === 0) return;
     try {
       setLoadingMore(true);
       const oldest = historyRef.current[0]?.createdAt;
@@ -134,7 +139,7 @@ export default function ChatSection() {
       setHasMore(arr.length === 15);
     } catch {}
     finally { setLoadingMore(false); }
-  }, [loadingMore, hasMore]);
+  }, [hasMore]);
 
   useEffect(() => {
     const root = listRef.current;
@@ -142,14 +147,14 @@ export default function ChatSection() {
     if (!root || !sentinel || !hasMore) return;
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => { 
-        if (entry.isIntersecting && !loadingMore && hasMore) {
+        if (entry.isIntersecting && hasMore) {
           loadMore();
         }
       });
     }, { root, rootMargin: '100px', threshold: 0.1 });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loadMore, hasMore, loadingMore]);
+  }, [loadMore, hasMore]);
 
   useEffect(() => {
     const el = listRef.current;
