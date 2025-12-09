@@ -8,6 +8,7 @@ import {
 import { tools } from '@/lib/ai/tools';
 import { env } from '@/lib/env.mjs';
 import { SYSTEM_PROMPT } from '@/app/prompts/system';
+import { saveUserMessageIfImportant } from '@/lib/middleware/save-user-message';
 
 // Allow streaming responses up to 60 seconds
 export const maxDuration = 60;
@@ -15,6 +16,30 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   try {
     const { messages }: { messages: UIMessage[] } = await req.json();
+
+    // Middleware: Automatically save the last user message if it contains important information
+    const lastUserMessage = messages
+      .filter(m => m.role === 'user')
+      .pop();
+    if (lastUserMessage) {
+      // UIMessage can have content as string or parts array
+      let textContent: string | undefined;
+      if (typeof (lastUserMessage as any).content === 'string') {
+        textContent = (lastUserMessage as any).content;
+      } else if (Array.isArray((lastUserMessage as any).parts)) {
+        const textPart = (lastUserMessage as any).parts.find((p: any) => p?.type === 'text');
+        textContent = textPart?.text;
+      } else if (typeof (lastUserMessage as any).text === 'string') {
+        textContent = (lastUserMessage as any).text;
+      }
+      
+      if (textContent) {
+        // Fire and forget - don't block the response
+        saveUserMessageIfImportant(textContent).catch(err => {
+          console.error('Failed to save user message:', err);
+        });
+      }
+    }
 
     const modelName = env.AI_CHAT_MODEL || 'gpt-4o-mini';
     const toolSteps = env.AI_TOOL_STEPS ?? 5;

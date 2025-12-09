@@ -3,6 +3,7 @@
 import { Session } from 'next-auth';
 import { SessionProvider as NextAuthProvider } from 'next-auth/react';
 import { CalendarProvider } from './components/providers/CalendarContext';
+import { AppProvider } from './components/providers/AppContext';
 
 export function Providers({
   children,
@@ -13,9 +14,11 @@ export function Providers({
 }) {
   return (
     <NextAuthProvider session={session} refetchOnWindowFocus={false} refetchInterval={0}>
-      <CalendarProvider>
-        {children}
-      </CalendarProvider>
+      <AppProvider>
+        <CalendarProvider>
+          {children}
+        </CalendarProvider>
+      </AppProvider>
     </NextAuthProvider>
   );
 }

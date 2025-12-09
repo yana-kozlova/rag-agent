@@ -8,6 +8,48 @@
       "when": 1761694121385,
       "tag": "0000_sparkling_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1764289760973,
+      "tag": "0001_awesome_electro",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1764377801890,
+      "tag": "0002_loose_dormammu",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1764378651928,
+      "tag": "0003_mute_ogun",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1764380097032,
+      "tag": "0004_wise_payback",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1764382000000,
+      "tag": "0005_unified_source_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1764500000000,
+      "tag": "0006_push_subscriptions",
+      "breakpoints": true
     }
   ]
 }

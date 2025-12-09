@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getSessionOrThrow, parseInputOrThrow } from './utils';
+import { getSessionOrThrow, parseInputOrThrow } from '../utils';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 
 export const createEventTool = {
@@ -54,5 +54,4 @@ export const createEventTool = {
     };
   },
 } as const;
-
 

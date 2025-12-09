@@ -2,6 +2,8 @@
 
 import { signOut, useSession } from 'next-auth/react';
 import Link from 'next/link';
+import Image from 'next/image';
+import { getUserInitials } from '@/lib/utils';
 
 export function Nav() {
   const { data: session } = useSession();
@@ -32,17 +34,29 @@ export function Nav() {
           <>
             <div className="dropdown dropdown-end">
               <div tabIndex={0} role="button" className="btn btn-ghost btn-circle avatar">
-                <div className="w-8 rounded-full">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={session.user?.image ?? ''} alt={session.user?.name ?? 'User'} />
-                </div>
+                {session.user?.image ? (
+                  <div className="w-10 h-10 rounded-full overflow-hidden">
+                    <Image
+                      src={session.user.image}
+                      alt={session.user?.name ?? 'User'}
+                      referrerPolicy="no-referrer"
+                      width={40}
+                      height={40}
+                      sizes="40px"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="avatar placeholder">
+                    <div className="bg-neutral text-neutral-content w-10 h-10 rounded-full">
+                      <span className="text-sm">{getUserInitials(session.user?.name)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
               <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
                 <li>
-                  <Link href="/profile">Profile</Link>
-                </li>
-                <li>
-                  <Link href="/settings">Settings</Link>
+                  <Link href="/settings">Profile & Settings</Link>
                 </li>
                 <li>
                   <button onClick={handleLogout} className="justify-between">

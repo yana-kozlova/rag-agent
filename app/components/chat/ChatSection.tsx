@@ -1,13 +1,18 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { renderSimpleMarkdown } from '@/app/components/utils/markdown';
 import { useAutoGreeting } from '@/app/components/chat/useAutoGreeting';
 import { ToolOutput } from '@/app/components/chat/ToolOutput';
+import { useSession } from 'next-auth/react';
+import Image from 'next/image';
+import { getUserInitials } from '@/lib/utils';
 
 export default function ChatSection() {
   const [input, setInput] = useState('');
+  const { data: session } = useSession();
+  
   const { messages, sendMessage } = useChat({
     onFinish: async (message: any) => {
       const messageText = message.message?.parts?.find((p: any) => p?.type === 'text')?.text;
@@ -17,16 +22,12 @@ export default function ChatSection() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ role: 'assistant', content: messageText })
         });
-        fetch('/api/chat/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: messageText })
-        }).catch(() => {});
       }
     }
   });
 
-  const [history, setHistory] = useState<{ id: string; role: string; content: string; createdAt?: string | Date }[]>([]);
+  type HistoryMessage = { id: string; role: string; content: string; createdAt?: string | Date };
+  const [history, setHistory] = useState<HistoryMessage[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const historyUi = history.map((h) => ({
     id: `hist-${h.id}`,
@@ -34,66 +35,127 @@ export default function ChatSection() {
     parts: [{ type: 'text', text: h.content }],
     createdAt: h.createdAt,
   } as any));
+  
+  // Deduplicate messages: if a message from useChat matches history by content and role, exclude it
+  // Create a set of history message signatures (role + content) for fast lookup
+  const historySignatures = new Set(
+    historyUi.map((h: any) => {
+      const textParts = Array.isArray(h.parts) ? h.parts.filter((p: any) => p?.type === 'text') : [];
+      const content = textParts.map((p: any) => p.text).join('\n');
+      return `${h.role}:${content}`;
+    })
+  );
+  
+  // Filter out messages that are already in history
+  const messagesWithUniqueIds = messages
+    .filter((m: any) => {
+      const textParts = Array.isArray(m.parts) ? m.parts.filter((p: any) => p?.type === 'text') : [];
+      const content = textParts.map((p: any) => p.text).join('\n');
+      const signature = `${m.role}:${content}`;
+      return !historySignatures.has(signature);
+    })
+    .map((m: any, idx: number) => ({
+      ...m,
+      id: `msg-${m.id || `temp-${idx}`}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    }));
 
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const historyRef = useRef(history);
+  const loadingMoreRef = useRef(loadingMore);
   const autoGreetingHistory = history.map(h => ({ createdAt: h.createdAt, role: h.role as 'user' | 'assistant' | 'system' }));
   const autoPrompt = useAutoGreeting({ history: autoGreetingHistory, historyLoaded, sendMessage });
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
 
+  // Keep refs in sync with state
   useEffect(() => {
-    fetch('/api/chat/history?limit=15')
-      .then(r => r.json())
-      .then(d => {
-        const arr = Array.isArray(d.messages) ? d.messages : [];
-        setHistory(arr);
-        setHasMore(arr.length === 15);
-        requestAnimationFrame(() => {
-          const el = listRef.current;
-          if (el) el.scrollTop = el.scrollHeight;
-        });
-        setHistoryLoaded(true);
-      })
-      .catch(() => { setHistoryLoaded(true); });
+    historyRef.current = history;
+  }, [history]);
+
+  useEffect(() => {
+    loadingMoreRef.current = loadingMore;
+  }, [loadingMore]);
+
+  useEffect(() => {
+    // Defer history load to avoid blocking initial render/LCP
+    const loadHistory = () => {
+      fetch('/api/chat/history?limit=15')
+        .then(r => r.json())
+        .then(d => {
+          const arr = Array.isArray(d.messages) ? d.messages : [];
+          setHistory(arr);
+          setHasMore(arr.length === 15);
+          requestAnimationFrame(() => {
+            const el = listRef.current;
+            if (el) el.scrollTop = el.scrollHeight;
+          });
+          setHistoryLoaded(true);
+        })
+        .catch(() => { setHistoryLoaded(true); });
+    };
+    
+    // Use requestIdleCallback if available, otherwise setTimeout
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(loadHistory, { timeout: 1000 });
+    } else {
+      setTimeout(loadHistory, 100);
+    }
   }, []);
 
-  const loadMore = async () => {
-    if (loadingMore || !hasMore || history.length === 0) return;
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current || !hasMore || historyRef.current.length === 0) return;
     try {
       setLoadingMore(true);
-      const oldest = history[0]?.createdAt;
+      const oldest = historyRef.current[0]?.createdAt;
       const oldestISO = typeof oldest === 'string' ? oldest : oldest instanceof Date ? oldest.toISOString() : '';
       const res = await fetch(`/api/chat/history?limit=15&before=${encodeURIComponent(oldestISO)}`);
       const data = await res.json();
-      const arr = Array.isArray(data.messages) ? data.messages : [];
-      if (arr.length > 0) {
-        const el = listRef.current;
-        const prevHeight = el ? el.scrollHeight : 0;
-        const prevScroll = el ? el.scrollTop : 0;
-        setHistory(prev => [...arr, ...prev]);
-        requestAnimationFrame(() => {
-          if (el) {
-            const newHeight = el.scrollHeight;
-            el.scrollTop = newHeight - prevHeight + prevScroll;
-          }
-        });
-      }
+      const arr: HistoryMessage[] = Array.isArray(data.messages) ? (data.messages as HistoryMessage[]) : [];
+      
+      // Deduplicate: filter out messages that already exist in history
+      // Use functional update to get the latest state
+      setHistory(prev => {
+        const existingIds = new Set(prev.map(h => h.id));
+        const newMessages = arr.filter((m: HistoryMessage) => !existingIds.has(m.id));
+        
+        if (newMessages.length > 0) {
+          const el = listRef.current;
+          const prevHeight = el ? el.scrollHeight : 0;
+          const prevScroll = el ? el.scrollTop : 0;
+          requestAnimationFrame(() => {
+            if (el) {
+              const newHeight = el.scrollHeight;
+              el.scrollTop = newHeight - prevHeight + prevScroll;
+            }
+          });
+          return [...newMessages, ...prev];
+        }
+        return prev;
+      });
+      
+      // Set hasMore based on whether we got a full page (15 messages)
+      // If we got 15 messages, there might be more pages, regardless of duplicates
+      // Only set to false if we got fewer than 15 (meaning we've reached the end)
       setHasMore(arr.length === 15);
     } catch {}
     finally { setLoadingMore(false); }
-  };
+  }, [hasMore]);
 
   useEffect(() => {
     const root = listRef.current;
     const sentinel = topSentinelRef.current;
-    if (!root || !sentinel) return;
+    if (!root || !sentinel || !hasMore) return;
     const observer = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => { if (entry.isIntersecting) loadMore(); });
-    }, { root, rootMargin: '0px', threshold: 0.1 });
+      entries.forEach((entry) => { 
+        if (entry.isIntersecting && hasMore) {
+          loadMore();
+        }
+      });
+    }, { root, rootMargin: '100px', threshold: 0.1 });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [listRef.current, topSentinelRef.current, hasMore, loadingMore, history.length]);
+  }, [loadMore, hasMore]);
 
   useEffect(() => {
     const el = listRef.current;
@@ -107,36 +169,72 @@ export default function ChatSection() {
       <div
         ref={listRef}
         className="space-y-3 overflow-y-auto rounded-lg bg-base-100 p-3 max-w-full h-[480px] sm:h-[560px] md:h-[800px]"
-        onScroll={(e) => { if (e.currentTarget.scrollTop < 16) loadMore(); }}
+        onScroll={(e) => { 
+          if (e.currentTarget.scrollTop < 16 && !loadingMore && hasMore) {
+            loadMore();
+          }
+        }}
       >
         <div ref={topSentinelRef} />
-        {hasMore && !loadingMore && (
-          <button type="button" className="btn btn-xs btn-outline mx-auto block" onClick={loadMore}>
-            Load older
-          </button>
-        )}
-        {[...historyUi, ...messages].filter((m:any) => m.role !== 'system').map((m) => {
+        {[...historyUi, ...messagesWithUniqueIds].filter((m:any) => m.role !== 'system').map((m) => {
           const isUser = m.role === 'user';
           const chatSide = isUser ? 'chat-end' : 'chat-start';
           const textParts = Array.isArray(m.parts) ? m.parts.filter((p: any) => p?.type === 'text') : [];
           const bubbleText = textParts.map((p: any) => p.text).join('\n');
           if (isUser && autoPrompt && bubbleText.trim() === autoPrompt.trim()) return null;
           const created = (m as any).createdAt;
-          const timeStr = created ? new Date(created as any).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined;
-          const avatarSrc = isUser
-            ? 'https://img.daisyui.com/images/profile/demo/anakeen@192.webp'
-            : 'https://img.daisyui.com/images/profile/demo/kenobee@192.webp';
+          const createdDate = created ? new Date(created as any) : null;
+          
+          // Format date and time
+          let dateTimeStr: string | undefined;
+          if (createdDate) {
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const messageDate = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate());
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            
+            const timeStr = createdDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            
+            if (messageDate.getTime() === today.getTime()) {
+              // Today - show only time
+              dateTimeStr = timeStr;
+            } else if (messageDate.getTime() === yesterday.getTime()) {
+              dateTimeStr = `yesterday, ${timeStr}`;
+            } else {
+              // Older - show full date and time
+              const dateStr = createdDate.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+              dateTimeStr = `${dateStr} at ${timeStr}`;
+            }
+          }
+          const userImage = session?.user?.image;
+          const userName = session?.user?.name;
+          const userInitials = getUserInitials(userName);
+
           return (
             <div key={m.id} className={`chat ${chatSide} max-w-full`}>
               <div className="chat-image avatar">
-                <div className="w-8 md:w-10 rounded-full">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img alt="avatar" src={avatarSrc} />
-                </div>
+                {isUser ? (
+                  userImage ? (
+                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden">
+                      <Image alt="avatar" src={userImage} width={40} height={40} sizes="40px" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </div>
+                  ) : (
+                    <div className="avatar placeholder">
+                      <div className="bg-neutral text-neutral-content w-8 h-8 md:w-10 md:h-10 rounded-full">
+                        <span className="text-xs md:text-sm">{userInitials}</span>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <div className="w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden">
+                    <Image alt="avatar" src="/avatars/bot.svg" width={40} height={40} sizes="40px" className="w-full h-full object-cover" />
+                  </div>
+                )}
               </div>
               <div className="chat-header">
                 {isUser ? 'You' : 'Assistant'}
-                {timeStr && <time className="text-xs opacity-50 ml-2">{timeStr}</time>}
+                {dateTimeStr && <time className="text-xs opacity-50 ml-2">{dateTimeStr}</time>}
               </div>
               {bubbleText && (
                 <div className={`chat-bubble whitespace-pre-wrap break-words text-sm md:text-base`}>
@@ -158,17 +256,18 @@ export default function ChatSection() {
           e.preventDefault();
           const content = input;
           fetch('/api/chat/history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'user', content }) }).catch(() => {});
+          // Saving to RAG is now handled automatically by middleware in /api/chat route
           sendMessage({ text: content });
           setInput('');
         }}
       >
         <div className="flex items-center gap-2">
-          <input
+        <input
             className="input input-bordered w-full"
-            value={input}
-            placeholder="Say something..."
-            onChange={(e) => setInput(e.currentTarget.value)}
-          />
+          value={input}
+          placeholder="Say something..."
+          onChange={(e) => setInput(e.currentTarget.value)}
+        />
           <button type="submit" className="btn btn-primary" disabled={!input.trim()}>
             Send
           </button>
@@ -178,4 +277,3 @@ export default function ChatSection() {
   );
 }
 
- 

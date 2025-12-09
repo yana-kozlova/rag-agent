@@ -2,8 +2,9 @@
 export { resources } from "./resources";
 export type { NewResourceParams } from "./resources";
 
-// Add other named exports from other schema files as needed
+export * from './user-tables';
 export * from "./embeddings";
 export * from "./auth";
-// calendar schema removed
 export * from "./chat";
+export * from "./push-subscriptions";
+// calendar schema removed; calendars stored on users.followed_calendars
