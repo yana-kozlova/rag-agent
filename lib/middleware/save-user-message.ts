@@ -229,6 +229,16 @@ Return the most appropriate type.`,
       }
     }
 
+    // Send push notification if important info was saved
+    try {
+      const { notifyImportantInfoSaved } = await import('@/lib/push/helpers');
+      await notifyImportantInfoSaved(userId, content).catch((err) => {
+        console.error('[saveUserMessage] Failed to send notification:', err);
+      });
+    } catch (err) {
+      // Ignore notification errors - don't fail the save operation
+    }
+
     return { 
       saved: true,
       chunks: chunks.length,
