@@ -17,7 +17,10 @@ export default async function middleware(req: NextRequest) {
 
   // Redirect to sign-in if not logged in
   if (!isLoggedIn) {
-    return NextResponse.redirect(new URL('/signin', req.url));
+    const signInUrl = new URL('/signin', req.url);
+    // Preserve the original URL as callback
+    signInUrl.searchParams.set('callbackUrl', req.url);
+    return NextResponse.redirect(signInUrl);
   }
 
   return NextResponse.next();

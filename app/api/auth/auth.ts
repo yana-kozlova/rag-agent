@@ -71,6 +71,7 @@ const authOptions: NextAuthConfig = {
     }),
   ],
   secret: process.env.NEXTAUTH_SECRET,
+  trustHost: true, // Trust the host header in production (Vercel, etc.)
   session: {
     strategy: "jwt",
   },
