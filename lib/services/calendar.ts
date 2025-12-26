@@ -80,4 +80,57 @@ export class GoogleCalendarService {
       throw error;
     }
   }
+
+  /**
+   * Update (patch) an existing event's fields, typically used to move/reschedule an event.
+   * Note: Works only if the authenticated user has write access to the calendar/event.
+   */
+  async patchEvent(calendarId: string, eventId: string, patch: {
+    title?: string;
+    description?: string;
+    location?: string;
+    start?: string | Date;
+    end?: string | Date;
+  }) {
+    try {
+      const requestBody: calendar_v3.Schema$Event = {
+        summary: patch.title,
+        description: patch.description,
+        location: patch.location,
+        start: patch.start
+          ? { dateTime: typeof patch.start === 'string' ? patch.start : patch.start.toISOString() }
+          : undefined,
+        end: patch.end
+          ? { dateTime: typeof patch.end === 'string' ? patch.end : patch.end.toISOString() }
+          : undefined,
+      };
+
+      const res = await this.calendar.events.patch({
+        calendarId,
+        eventId,
+        requestBody,
+      } as any);
+
+      return res.data;
+    } catch (error) {
+      console.error('Error patching calendar event:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete an event from a calendar.
+   */
+  async deleteEvent(calendarId: string, eventId: string) {
+    try {
+      await this.calendar.events.delete({
+        calendarId,
+        eventId,
+      } as any);
+      return { success: true as const };
+    } catch (error) {
+      console.error('Error deleting calendar event:', error);
+      throw error;
+    }
+  }
 }

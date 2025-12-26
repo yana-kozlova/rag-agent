@@ -9,6 +9,7 @@ import { generateObject } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { env } from '@/lib/env.mjs';
 import { z } from 'zod';
+import { looksLikeCalendarCommandOrScheduleOperation } from '@/lib/privacy/schedule-privacy';
 
 // Schema for message classification
 const messageClassificationSchema = z.object({
@@ -52,6 +53,11 @@ SAVE if message contains ANY of:
 - Context about places, organizations, or entities related to the user
 - Any factual information that provides context (even if it seems minor)
 - Information that might be useful for future conversations
+
+IMPORTANT PRIVACY RULE:
+- DO NOT save operational calendar commands or short schedule management messages, e.g. "add an event tomorrow at 19:00", "delete the lesson on Saturday", "move meeting to 3pm".
+- These should be executed via calendar tools, but not stored in the long-term knowledge base.
+- Only save schedule information if the user explicitly asks you to remember it as a preference/pattern (e.g. "I always have therapy every Saturday, please remember this routine").
 
 ONLY SKIP if message is clearly:
 - A pure greeting without content ("Hi", "Hello", "Hey")
@@ -122,6 +128,11 @@ export async function saveUserMessageIfImportant(content: string): Promise<{ sav
       return { saved: false, reason: 'Too short or common greeting' };
     }
 
+    // Privacy: do NOT store calendar operations / schedule commands in the knowledge base.
+    if (looksLikeCalendarCommandOrScheduleOperation(content)) {
+      return { saved: false, reason: 'Calendar operation / schedule command - not stored for privacy' };
+    }
+
     // For very large texts, skip AI classification (expensive) and save directly
     // Large texts are likely important documents/articles that should be saved
     const MAX_CLASSIFICATION_LENGTH = 2000; // characters
@@ -149,8 +160,10 @@ export async function saveUserMessageIfImportant(content: string): Promise<{ sav
     let contentType = 'note';
     const isLargeText = content.length > 5000;
     
+    // Do not store schedule entries in long-term memory by default (privacy).
+    // Schedule should be managed via calendar tools; store only explicit user preferences/patterns.
     if (items.length > 0) {
-      contentType = 'schedule';
+      return { saved: false, reason: 'Detected schedule-like content - not stored by default for privacy' };
     } else if (isLargeText) {
       contentType = 'document';
     } else if (content.length <= MAX_CLASSIFICATION_LENGTH) {

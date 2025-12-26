@@ -5,14 +5,18 @@ import { forgetInformationTool } from './information/forget-information';
 
 // Calendar/Events tools
 import { getEventsTool } from './events/get-events';
-import { createEventTool } from './events/create-event';
+import { optimizeScheduleTool } from './events/optimize-schedule';
+import { deleteEventTool } from './events/delete-event';
+import { scheduleEventTool } from './events/schedule-event';
 
 export const tools = {
   addResource: addResourceTool,
   getInformation: getInformationTool,
   forgetInformation: forgetInformationTool,
   getEvents: getEventsTool,
-  createEvent: createEventTool,
+  scheduleEvent: scheduleEventTool,
+  optimizeSchedule: optimizeScheduleTool,
+  deleteEvent: deleteEventTool,
 } as const;
 
 export type { ToolDefinition } from './types';

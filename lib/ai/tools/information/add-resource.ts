@@ -4,6 +4,7 @@ import { auth } from '@/app/api/auth/auth';
 import { generateObject } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { env } from '@/lib/env.mjs';
+import { looksLikeCalendarCommandOrScheduleOperation } from '@/lib/privacy/schedule-privacy';
 
 export const addResourceTool = {
   description: `Add a resource to your knowledge base.
@@ -17,6 +18,15 @@ export const addResourceTool = {
     const session = await auth();
     if (!session?.user?.id) {
       throw new Error('Unauthorized');
+    }
+
+    // Privacy: do not store operational calendar/schedule commands in long-term memory.
+    // These should be handled via calendar tools, not via RAG storage.
+    if (looksLikeCalendarCommandOrScheduleOperation(content) || (title && looksLikeCalendarCommandOrScheduleOperation(title))) {
+      return {
+        success: false,
+        message: 'Skipped saving: looks like a calendar operation / schedule command (privacy rule).',
+      };
     }
     
     // If title not provided, try to extract from first line
@@ -50,7 +60,7 @@ export const addResourceTool = {
           prompt: `Classify the following content into one of these types:
 - note: general notes, thoughts, ideas
 - document: long-form content, articles, documents
-- schedule: schedules, appointments, events with times
+- schedule: insights about the user's schedule, patterns, events, not explicitly saved as events
 - person: information about a person (name, relationship, details)
 - project: project information, goals, tasks
 - skill: skills, abilities, learning topics

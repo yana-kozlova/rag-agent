@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { auth } from '../../../app/api/auth/auth';
+import { auth } from '@/app/api/auth/auth';
 
 export async function getSessionOrThrow() {
   const session = await auth();
@@ -16,5 +16,4 @@ export function parseInputOrThrow<T>(schema: z.ZodType<T>, input: unknown): T {
   }
   return parsed.data as T;
 }
-
 

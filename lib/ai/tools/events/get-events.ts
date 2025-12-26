@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getSessionOrThrow } from '../utils';
+import { getSessionOrThrow } from '@/lib/utils/auth';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
