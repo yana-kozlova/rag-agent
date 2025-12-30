@@ -2,6 +2,99 @@ import { z } from 'zod';
 import { findRelevantContent } from '@/lib/ai/embedding';
 import { auth } from '@/app/api/auth/auth';
 
+// Configuration constants
+const MIN_SIMILARITY = 0.5; // Balanced threshold for relevance
+const MAX_RESULTS = 5; // Limit to top 5 most relevant results
+const MAX_QUERY_VARIATIONS = 4; // Maximum number of query variations to try
+
+// Helper function to generate query variations
+function generateQueryVariations(question: string): string[] {
+  const trimmed = question.trim();
+  const words = trimmed.split(/\s+/).filter(w => w.length > 0);
+  const variations: string[] = [trimmed]; // Always include original
+  
+  // If it's a short query (1-2 words), add context
+  if (words.length <= 2) {
+    variations.push(`information about ${trimmed}`);
+    variations.push(`details about ${trimmed}`);
+  }
+  
+  // If it's a question, try as a statement
+  if (trimmed.endsWith('?')) {
+    const statement = trimmed.slice(0, -1).trim();
+    variations.push(statement);
+    variations.push(`information about ${statement}`);
+  }
+  
+  // Extract key terms (remove common words)
+  const commonWords = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'when', 'where', 'who', 'why', 'how', 'about', 'my', 'me', 'i']);
+  const keyTerms = words
+    .filter(w => !commonWords.has(w.toLowerCase()))
+    .slice(0, 3); // Take up to 3 key terms
+  
+  if (keyTerms.length > 0) {
+    variations.push(keyTerms.join(' '));
+  }
+  
+  // Remove duplicates and limit
+  const unique = Array.from(new Set(variations));
+  return unique.slice(0, MAX_QUERY_VARIATIONS);
+}
+
+// Helper function to filter out negative responses
+function isNegativeResponse(content: string): boolean {
+  const lower = content.toLowerCase();
+  const negativePatterns = [
+    /don't have/i,
+    /don't know/i,
+    /no information/i,
+    /not saved/i,
+    /not found/i,
+    /if you share/i,
+    /i don't have/i,
+    /i don't know/i,
+    /yet to be/i,
+    /haven't been/i,
+    /hasn't been/i,
+  ];
+  return negativePatterns.some(pattern => pattern.test(lower));
+}
+
+// Helper function to deduplicate results by content
+function deduplicateResults(results: any[]): any[] {
+  const seen = new Set<string>();
+  const unique: any[] = [];
+  
+  for (const result of results) {
+    // Create a key from content (normalized)
+    const contentKey = (result.content || '').trim().toLowerCase().slice(0, 200);
+    if (!seen.has(contentKey) && contentKey.length > 0) {
+      seen.add(contentKey);
+      unique.push(result);
+    }
+  }
+  
+  return unique;
+}
+
+// Helper function to aggregate results from multiple queries
+function aggregateResults(allResults: any[][]): any[] {
+  // Flatten all results
+  const flattened = allResults.flat();
+  
+  // Deduplicate by content
+  const deduplicated = deduplicateResults(flattened);
+  
+  // Sort by similarity (descending)
+  const sorted = deduplicated.sort((a, b) => {
+    const simA = typeof a.similarity === 'number' ? a.similarity : 0;
+    const simB = typeof b.similarity === 'number' ? b.similarity : 0;
+    return simB - simA;
+  });
+  
+  return sorted;
+}
+
 export const getInformationTool = {
   description: `Search the user's comprehensive knowledge base (RAG) to find relevant information for answering their questions.
 
@@ -30,12 +123,23 @@ IMPORTANT: After getting results from this tool, adapt your response based on wh
 - The rank indicates the order (1 = most relevant)
 - If a result has low relevance (< 0.5) and doesn't directly answer the question, IGNORE it
 
-The tool searches using semantic similarity and returns the most relevant content (max 5 results). For resources: returns relevant chunks. For tables: returns full row data as text.
+The tool searches using semantic similarity with multiple query variations and returns the most relevant content (max 5 results). For resources: returns relevant chunks. For tables: returns full row data as text.
 Only use results that are actually relevant to the user's question - don't include unrelated information.`,
   inputSchema: z.object({
     question: z.string().describe('The question or query to search for in the knowledge base. Can be a question or keywords.'),
   }),
   execute: async ({ question }: { question: string }) => {
+    const startTime = Date.now();
+    let logContext: any = {
+      question,
+      userId: null,
+      queryVariations: [],
+      totalResults: 0,
+      filteredResults: 0,
+      finalResults: 0,
+      executionTime: 0,
+    };
+    
     try {
       const session = await auth();
       const userId = session?.user?.id;
@@ -44,78 +148,74 @@ Only use results that are actually relevant to the user's question - don't inclu
         return [];
       }
       
-      // Enhance short queries with context for better embedding similarity
-      // Short queries (single words) get lower similarity scores, so add context
-      const enhancedQuery = question.trim().split(/\s+/).length <= 2 
-        ? `information about ${question}` 
-        : question;
+      logContext.userId = userId;
       
-      // Try the enhanced query first
-      let results = await findRelevantContent(enhancedQuery, userId);
+      // Generate multiple query variations
+      const queryVariations = generateQueryVariations(question);
+      logContext.queryVariations = queryVariations;
       
-      // If enhanced query didn't help much, also try original
-      if (results.length === 0 || (results.length > 0 && typeof results[0].similarity === 'number' && results[0].similarity < 0.4)) {
-        const originalResults = await findRelevantContent(question, userId);
-        // Use original if it gives better results
-        if (originalResults.length > 0 && typeof originalResults[0].similarity === 'number') {
-          const originalSim = originalResults[0].similarity;
-          const enhancedSim = results.length > 0 && typeof results[0].similarity === 'number' ? results[0].similarity : 0;
-          if (originalSim > enhancedSim) {
-            results = originalResults;
-          }
-        }
-      }
+      console.log(`[getInformation] Searching with ${queryVariations.length} query variations for: "${question}"`);
       
+      // Execute all queries in parallel for better performance
+      const queryPromises = queryVariations.map(query => 
+        findRelevantContent(query, userId).catch(err => {
+          console.error(`[getInformation] Error searching with query "${query}":`, err);
+          return [];
+        })
+      );
       
-      // Format results for better AI understanding
-      if (results.length === 0) {
-        console.log(`[getInformation] No results found for question: "${question}"`);
+      const allResultsArrays = await Promise.all(queryPromises);
+      logContext.totalResults = allResultsArrays.reduce((sum, arr) => sum + arr.length, 0);
+      
+      // Aggregate results from all queries
+      const aggregatedResults = aggregateResults(allResultsArrays);
+      
+      if (aggregatedResults.length === 0) {
+        const executionTime = Date.now() - startTime;
+        logContext.executionTime = executionTime;
+        console.log(`[getInformation] No results found after ${executionTime}ms. Query: "${question}", Variations: ${queryVariations.length}`);
         return [];
       }
       
-      // Filter out low similarity results - use higher threshold for better relevance
-      // Similarity is 0-1, where 1 is most similar
-      // Higher threshold ensures only truly relevant results are returned
-      const MIN_SIMILARITY = 0.5; // Balanced threshold for relevance
-      const MAX_RESULTS = 5; // Limit to top 5 most relevant results
-      
-      // Filter results by similarity threshold
-      let filteredResults = results.filter((r: any) => {
+      // Filter by similarity threshold
+      let filteredResults = aggregatedResults.filter((r: any) => {
         const sim = typeof r.similarity === 'number' ? r.similarity : 0;
         return sim > MIN_SIMILARITY;
       });
       
-      // Filter out results that are just saying they don't have the information
-      // These are false positives that don't actually contain the requested information
+      logContext.filteredResults = filteredResults.length;
+      
+      // Filter out negative responses
       filteredResults = filteredResults.filter((r: any) => {
-        const content = (r.content || '').toLowerCase();
-        // Filter out results that are just saying they don't have the information
-        const isNegativeResponse = /(don't have|don't know|no information|not saved|not found|yet|if you share|i don't have|i don't know)/i.test(content);
-        return !isNegativeResponse;
+        const content = r.content || '';
+        return !isNegativeResponse(content);
       });
       
-      // If we have good results (similarity > threshold), limit to top 5
+      // If we have good results, limit to top results
       if (filteredResults.length > 0) {
         filteredResults = filteredResults.slice(0, MAX_RESULTS);
-      } else if (results.length > 0) {
-        // If no results meet the threshold, take top results anyway (but log it)
-        // Still filter out negative responses
-        const fallbackCount = 3;
-        let fallbackResults = results.slice(0, fallbackCount);
-        
-        // Filter out negative responses even in fallback
-        fallbackResults = fallbackResults.filter((r: any) => {
-          const content = (r.content || '').toLowerCase();
-          const isNegativeResponse = /(don't have|don't know|no information|not saved|not found|yet|if you share|i don't have|i don't know)/i.test(content);
-          return !isNegativeResponse;
-        });
+      } else if (aggregatedResults.length > 0) {
+        // Fallback: if no results meet threshold, take top results anyway
+        // But still filter out negative responses
+        const fallbackResults = aggregatedResults
+          .filter((r: any) => {
+            const content = r.content || '';
+            return !isNegativeResponse(content);
+          })
+          .slice(0, 3); // Take top 3 in fallback
         
         filteredResults = fallbackResults;
+        
+        if (fallbackResults.length > 0) {
+          const topSim = typeof fallbackResults[0].similarity === 'number' ? fallbackResults[0].similarity : 0;
+          console.log(`[getInformation] Using fallback results (top similarity: ${topSim.toFixed(3)}). Query: "${question}"`);
+        }
       }
       
-      // Return results formatted for AI analysis
-      // All content comes from vector database (embeddings table)
-      return filteredResults.map((r: any, index: number) => {
+      logContext.finalResults = filteredResults.length;
+      
+      // Format results for AI analysis
+      const formattedResults = filteredResults.map((r: any, index: number) => {
         const sim = typeof r.similarity === 'number' ? r.similarity : null;
         
         // Extract table info from metadata if source is table
@@ -140,8 +240,24 @@ Only use results that are actually relevant to the user's question - don't inclu
           metadata: r.metadata || null,
         };
       });
+      
+      const executionTime = Date.now() - startTime;
+      logContext.executionTime = executionTime;
+      
+      // Log summary
+      if (formattedResults.length > 0) {
+        const topRelevance = formattedResults[0].relevance;
+        console.log(`[getInformation] Found ${formattedResults.length} results (top relevance: ${topRelevance?.toFixed(3) || 'N/A'}) in ${executionTime}ms. Query: "${question}"`);
+      } else {
+        console.log(`[getInformation] No relevant results found in ${executionTime}ms. Query: "${question}"`);
+      }
+      
+      return formattedResults;
     } catch (error) {
-      console.error('[getInformation] Error:', error);
+      const executionTime = Date.now() - startTime;
+      logContext.executionTime = executionTime;
+      logContext.error = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[getInformation] Error:', error, logContext);
       return [];
     }
   },

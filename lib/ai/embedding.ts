@@ -112,20 +112,105 @@ export const generateEmbedding = async (value: string): Promise<number[]> => {
   return embedding;
 };
 
-export const findRelevantContent = async (userQuery: string, userId: string) => {
+// Helper function to extract keywords from query for text search
+function extractKeywords(query: string): string[] {
+  const commonWords = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'when', 'where', 'who', 'why', 'how', 'about', 'my', 'me', 'i', 'you', 'your', 'this', 'that', 'these', 'those']);
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(word => word.length > 2 && !commonWords.has(word))
+    .slice(0, 5); // Limit to 5 keywords
+}
+
+// Helper function to calculate keyword match score
+function calculateKeywordScore(content: string, keywords: string[]): number {
+  if (keywords.length === 0) return 0;
+  
+  const lowerContent = content.toLowerCase();
+  let matches = 0;
+  for (const keyword of keywords) {
+    if (lowerContent.includes(keyword)) {
+      matches++;
+    }
+  }
+  return matches / keywords.length; // Normalize to 0-1
+}
+
+// Helper function to combine semantic and keyword scores
+function combineScores(semanticScore: number, keywordScore: number, semanticWeight = 0.7, keywordWeight = 0.3): number {
+  return semanticScore * semanticWeight + keywordScore * keywordWeight;
+}
+
+export const findRelevantContent = async (
+  userQuery: string, 
+  userId: string,
+  options?: {
+    useCache?: boolean;
+    useHybridSearch?: boolean;
+    minDate?: Date;
+    maxDate?: Date;
+  }
+) => {
+  const startTime = Date.now();
+  const useCache = options?.useCache !== false; // Default to true
+  const useHybridSearch = options?.useHybridSearch !== false; // Default to true
+  
   try {
+    // Check cache first
+    if (useCache) {
+      const { embeddingCache } = await import('./embedding-cache');
+      const cached = embeddingCache.get(userId, userQuery);
+      if (cached) {
+        console.log(`[RAG Search] Cache hit for query: "${userQuery}"`);
+        return cached;
+      }
+    }
+
+    // Generate embedding for semantic search
     const userQueryEmbedded = await generateEmbedding(userQuery);
-    // Convert JavaScript array to PostgreSQL vector format: '[1,2,3]'::vector
     const vectorString = `[${userQueryEmbedded.join(',')}]`;
     
-    // Use cosine similarity operator (<=>) which returns 1 for identical, 0 for orthogonal, -1 for opposite
-    // For pgvector, cosine similarity is normalized to 0-1 range (1 = most similar, 0 = least similar)
-    // Using <=> gives us similarity directly without conversion
+    // Extract keywords for hybrid search
+    const keywords = useHybridSearch ? extractKeywords(userQuery) : [];
+    
+    // Build similarity calculation
     const distance = sql<number>`${embeddings.embedding} <-> ${sql.raw(`'${vectorString}'::vector`)}`;
-    // Use 1 - cosine_distance for similarity (pgvector cosine distance is 0-2, so 1 - distance/2 = similarity)
-    // But let's also try using inner product which might be better for short queries
     const similarity = sql<number>`1 - ((${embeddings.embedding} <-> ${sql.raw(`'${vectorString}'::vector`)}) / 2.0)`;
     const topK = env.RAG_TOP_K ?? 8;
+    
+    // Build where clause
+    let whereClause: any = sql`(
+      (${embeddings.source} IN ('resource', 'calendar') AND ${resources.userId} = ${userId}) OR
+      (${embeddings.source} = 'table' AND ${userTables.userId} = ${userId})
+    )`;
+    
+    // Add date filters if provided (only for resources, not tables)
+    if (options?.minDate || options?.maxDate) {
+      const dateConditions: any[] = [];
+      if (options?.minDate) {
+        dateConditions.push(sql`${resources.createdAt} >= ${sql.raw(`'${options.minDate.toISOString()}'::timestamp`)}`);
+      }
+      if (options?.maxDate) {
+        dateConditions.push(sql`${resources.createdAt} <= ${sql.raw(`'${options.maxDate.toISOString()}'::timestamp`)}`);
+      }
+      
+      // Apply date filters only to resources/calendar, not tables
+      const dateFilter = dateConditions.length === 1 
+        ? dateConditions[0]
+        : dateConditions.length > 1
+        ? and(...dateConditions)
+        : null;
+      
+      if (dateFilter) {
+        whereClause = and(
+          whereClause,
+          sql`(${embeddings.source} != 'table' AND ${dateFilter}) OR ${embeddings.source} = 'table'`
+        );
+      }
+    }
+    
+    // Fetch more results than needed for hybrid ranking
+    const fetchLimit = useHybridSearch ? topK * 2 : topK;
     
     const rows = await db
       .select({
@@ -136,22 +221,43 @@ export const findRelevantContent = async (userQuery: string, userId: string) => 
         googleEventId: resources.googleEventId,
         resourceMetadata: resources.metadata,
         embeddingMetadata: embeddings.metadata,
+        createdAt: resources.createdAt,
+        updatedAt: resources.updatedAt,
       })
       .from(embeddings)
       .leftJoin(resources, sql`${resources.id} = ${embeddings.sourceId} AND ${embeddings.source} IN ('resource', 'calendar')`)
       .leftJoin(userTablesData, sql`${userTablesData.id} = ${embeddings.sourceId} AND ${embeddings.source} = 'table'`)
       .leftJoin(userTables, sql`${userTables.id} = ${userTablesData.userTableId}`)
-      .where(
-        sql`(
-          (${embeddings.source} IN ('resource', 'calendar') AND ${resources.userId} = ${userId}) OR
-          (${embeddings.source} = 'table' AND ${userTables.userId} = ${userId})
-        )`
-      )
+      .where(whereClause)
       .orderBy(distance)
-      .limit(topK);
+      .limit(fetchLimit);
+    
+    // Apply hybrid search ranking if enabled
+    let rankedResults = rows;
+    if (useHybridSearch && keywords.length > 0) {
+      rankedResults = rows.map(row => {
+        const semanticScore = typeof row.similarity === 'number' ? row.similarity : 0;
+        const keywordScore = calculateKeywordScore(row.content || '', keywords);
+        const combinedScore = combineScores(semanticScore, keywordScore);
+        
+        return {
+          ...row,
+          similarity: combinedScore,
+          semanticScore,
+          keywordScore,
+        };
+      }).sort((a, b) => {
+        const scoreA = typeof a.similarity === 'number' ? a.similarity : 0;
+        const scoreB = typeof b.similarity === 'number' ? b.similarity : 0;
+        return scoreB - scoreA;
+      });
+    }
+    
+    // Take top K results
+    const topResults = rankedResults.slice(0, topK);
     
     // Format results to match expected structure
-    return rows.map(row => ({
+    const formattedResults = topResults.map(row => ({
       content: row.content,
       similarity: row.similarity,
       source: row.source,
@@ -159,6 +265,21 @@ export const findRelevantContent = async (userQuery: string, userId: string) => 
       googleEventId: row.googleEventId,
       metadata: row.embeddingMetadata || row.resourceMetadata || null,
     }));
+    
+    // Cache results
+    if (useCache) {
+      const { embeddingCache } = await import('./embedding-cache');
+      embeddingCache.set(userId, userQuery, formattedResults);
+    }
+    
+    const executionTime = Date.now() - startTime;
+    if (useHybridSearch && keywords.length > 0) {
+      console.log(`[RAG Search] Found ${formattedResults.length} results using hybrid search (keywords: ${keywords.join(', ')}) in ${executionTime}ms`);
+    } else {
+      console.log(`[RAG Search] Found ${formattedResults.length} results in ${executionTime}ms`);
+    }
+    
+    return formattedResults;
   } catch (error) {
     console.error('[RAG Search] Error finding relevant content:', error);
     return [];
