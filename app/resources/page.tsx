@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { deleteResource, updateResource } from '@/lib/actions/resources';
 import Link from 'next/link';
 
@@ -27,6 +27,9 @@ export default function ResourcesPage() {
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
   const [editType, setEditType] = useState<'note' | 'document' | 'person' | 'project' | 'skill' | 'learning' | 'schedule' | 'event' | 'other'>('note');
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadResources = async (page: number = currentPage) => {
     try {
@@ -149,11 +152,97 @@ export default function ResourcesPage() {
     });
   };
 
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    const MAX_FILE_SIZE_MB = 10;
+    const maxSizeBytes = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+    if (file.size > maxSizeBytes) {
+      alert(`File size exceeds maximum allowed size of ${MAX_FILE_SIZE_MB}MB`);
+      return;
+    }
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const allowedExts = ['pdf', 'docx', 'txt', 'md'];
+    if (!ext || !allowedExts.includes(ext)) {
+      alert(`Unsupported file type. Supported types: ${allowedExts.join(', ').toUpperCase()}`);
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(`Uploading ${file.name}...`);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/resources/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (result.ok) {
+        setUploadProgress(`✓ Successfully uploaded ${file.name}`);
+        // Reload resources to show the new one
+        setTimeout(() => {
+          loadResources(currentPage);
+          setUploadProgress('');
+        }, 1000);
+      } else {
+        setUploadProgress(`✗ Error: ${result.message || 'Upload failed'}`);
+        setTimeout(() => setUploadProgress(''), 3000);
+      }
+    } catch (error) {
+      setUploadProgress(`✗ Error: ${error instanceof Error ? error.message : 'Upload failed'}`);
+      setTimeout(() => setUploadProgress(''), 3000);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   return (
     <div className="container mx-auto p-4 md:p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Knowledge Base</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept=".pdf,.docx,.txt,.md"
+            onChange={handleFileUpload}
+            disabled={uploading}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="btn btn-primary btn-sm"
+            disabled={uploading}
+          >
+            {uploading ? (
+              <>
+                <svg className="w-4 h-4 animate-spin mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Uploading...
+              </>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" className="w-4 h-4 mr-2 stroke-current">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                </svg>
+                Upload File
+              </>
+            )}
+          </button>
           <Link href="/tables" className="btn btn-outline btn-sm">
             My Tables
           </Link>
@@ -162,6 +251,14 @@ export default function ResourcesPage() {
           </Link>
         </div>
       </div>
+
+      {uploadProgress && (
+        <div className={`alert ${uploadProgress.startsWith('✓') ? 'alert-success' : uploadProgress.startsWith('✗') ? 'alert-error' : 'alert-info'} shadow-lg`}>
+          <div>
+            <span>{uploadProgress}</span>
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-4 flex-wrap">
         <div className="flex-1 min-w-[200px]">
