@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-const THEMES = ['silk', 'bumblebee', 'autumn', 'light', 'dark'] as const;
+const THEMES = ['silk', 'bumblebee', 'autumn', 'soft', 'light', 'dark'] as const;
 type ThemeName = typeof THEMES[number] | 'system';
 
 function resolveSystemTheme(): ThemeName {

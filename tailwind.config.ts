@@ -184,6 +184,53 @@ module.exports = {
           '--noise': '0',
         },
       },
+      {
+        soft: {
+          'color-scheme': 'light',
+          // Base colors - using Pure White and Cloud White
+          'base-100': '#FEFEFE', // Pure White
+          'base-200': '#EFEEEB', // Cloud White
+          'base-300': '#DED6DA', // Soft Orchid Tint
+          'base-content': '#4C4B4B', // Charcoal Accent
+          // Primary - using Ice Melt Blue
+          primary: '#D4E3F0', // Ice Melt Blue
+          'primary-content': '#4C4B4B', // Charcoal Accent
+          // Secondary - using Almost Aqua / Sage
+          secondary: '#C6CEBF', // Almost Aqua / Sage
+          'secondary-content': '#4C4B4B', // Charcoal Accent
+          // Accent - using Soft Orchid Tint
+          accent: '#DED6DA', // Soft Orchid Tint
+          'accent-content': '#4C4B4B', // Charcoal Accent
+          // Neutral - using Neutral Gray
+          neutral: '#8F8F8F', // Neutral Gray
+          'neutral-content': '#FEFEFE', // Pure White
+          // Info - using Ice Melt Blue
+          info: '#D4E3F0', // Ice Melt Blue
+          'info-content': '#4C4B4B', // Charcoal Accent
+          // Success - using Almost Aqua / Sage
+          success: '#C6CEBF', // Almost Aqua / Sage
+          'success-content': '#4C4B4B', // Charcoal Accent
+          // Warning - using Lemon Icing / Warm Cream
+          warning: '#F2E2CA', // Lemon Icing / Warm Cream
+          'warning-content': '#4C4B4B', // Charcoal Accent
+          // Error - using Soft Orchid Tint (darker variant)
+          error: '#DED6DA', // Soft Orchid Tint
+          'error-content': '#4C4B4B', // Charcoal Accent
+          '--rounded-box': '1rem',
+          '--rounded-btn': '0.5rem',
+          '--rounded-badge': '1rem',
+          '--tab-border': '1px',
+          '--tab-radius': '0.5rem',
+          '--radius-selector': '1rem',
+          '--radius-field': '0.5rem',
+          '--radius-box': '1rem',
+          '--size-selector': '0.25rem',
+          '--size-field': '0.25rem',
+          '--border': '1px',
+          '--depth': '1',
+          '--noise': '0',
+        },
+      },
       'light',
       'dark',
     ],
