@@ -12,30 +12,207 @@ const embeddingModel = openai.embedding(env.AI_EMBED_MODEL || 'text-embedding-3-
 const DEFAULT_CHUNK_SIZE = env.EMBED_CHUNK_SIZE ?? 800;
 const DEFAULT_CHUNK_OVERLAP = env.EMBED_CHUNK_OVERLAP ?? 200;
 
-const generateChunks = (input: string, size = DEFAULT_CHUNK_SIZE, overlap = DEFAULT_CHUNK_OVERLAP): string[] => {
-  // For very large texts, preserve paragraph structure better
+// Content type detection for adaptive chunking
+type ContentType = 'list' | 'code' | 'heading' | 'table' | 'paragraph' | 'mixed';
+
+function detectContentType(text: string): ContentType {
+  // Check for code blocks
+  if (text.includes('```') || text.match(/^\s*[{}[\](]|=>|->|::/)) {
+    return 'code';
+  }
+  
+  // Check for lists (markdown or plain)
+  const listPattern = /^[\s]*[-*+]|\d+\./m;
+  if (listPattern.test(text)) {
+    return 'list';
+  }
+  
+  // Check for headings
+  if (text.match(/^#{1,6}\s+/m)) {
+    return 'heading';
+  }
+  
+  // Check for tables (markdown or pipe-separated)
+  if (text.includes('|') && text.split('\n').filter(line => line.includes('|')).length >= 2) {
+    return 'table';
+  }
+  
+  // Check for paragraph-heavy content
+  const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+  if (paragraphs.length >= 3) {
+    return 'paragraph';
+  }
+  
+  return 'mixed';
+}
+
+// Adaptive chunk size based on content type
+function getAdaptiveChunkSize(baseSize: number, contentType: ContentType): number {
+  switch (contentType) {
+    case 'code':
+      return Math.min(baseSize * 1.5, 1200); // Code needs more context
+    case 'list':
+      return baseSize; // Lists are usually well-structured
+    case 'heading':
+      return Math.max(baseSize * 0.8, 400); // Headings with content
+    case 'table':
+      return baseSize * 1.2; // Tables need to stay together
+    case 'paragraph':
+      return baseSize;
+    default:
+      return baseSize;
+  }
+}
+
+// Preserve context (headings, list markers) in chunks
+function preserveContext(chunk: string, previousContext?: string): string {
+  if (!previousContext) return chunk;
+  
+  // Extract heading from previous context if it exists
+  const headingMatch = previousContext.match(/^(#{1,6}\s+.+)$/m);
+  if (headingMatch) {
+    return `${headingMatch[1]}\n\n${chunk}`;
+  }
+  
+  // Extract list marker if chunk continues a list
+  const listMarkerMatch = previousContext.match(/(^[\s]*[-*+]|\d+\.)\s+.+$/m);
+  if (listMarkerMatch && chunk.match(/^[\s]*[-*+]|\d+\./m)) {
+    // List continues, no need to add context
+    return chunk;
+  }
+  
+  return chunk;
+}
+
+const generateChunks = (
+  input: string, 
+  size = DEFAULT_CHUNK_SIZE, 
+  overlap = DEFAULT_CHUNK_OVERLAP,
+  preserveContextEnabled = true
+): string[] => {
   const normalized = input.trim();
   if (normalized.length === 0) return [];
   if (normalized.length <= size) return [normalized];
 
   const chunks: string[] = [];
+  const contentType = detectContentType(normalized);
+  const adaptiveSize = getAdaptiveChunkSize(size, contentType);
+  
+  // For code blocks, try to preserve entire blocks
+  if (contentType === 'code') {
+    // Match code blocks with their delimiters
+    const codeBlockRegex = /```[\s\S]*?```/g;
+    const codeBlocks: Array<{ text: string; index: number }> = [];
+    let match;
+    
+    while ((match = codeBlockRegex.exec(normalized)) !== null) {
+      codeBlocks.push({ text: match[0], index: match.index });
+    }
+    
+    if (codeBlocks.length > 0) {
+      // Has code blocks - preserve them
+      const result: string[] = [];
+      let currentChunk = '';
+      let lastIndex = 0;
+      
+      for (const codeBlock of codeBlocks) {
+        // Add text before code block
+        const textBefore = normalized.slice(lastIndex, codeBlock.index);
+        if (textBefore.trim().length > 0) {
+          if (currentChunk.length + textBefore.length > adaptiveSize && currentChunk.length > 0) {
+            result.push(currentChunk.trim());
+            currentChunk = textBefore;
+          } else {
+            currentChunk += (currentChunk ? '\n\n' : '') + textBefore;
+          }
+        }
+        
+        // Add code block
+        if (currentChunk.length + codeBlock.text.length > adaptiveSize && currentChunk.length > 0) {
+          result.push(currentChunk.trim());
+          currentChunk = codeBlock.text;
+        } else {
+          currentChunk += (currentChunk ? '\n\n' : '') + codeBlock.text;
+        }
+        
+        lastIndex = codeBlock.index + codeBlock.text.length;
+      }
+      
+      // Add remaining text after last code block
+      const textAfter = normalized.slice(lastIndex);
+      if (textAfter.trim().length > 0) {
+        if (currentChunk.length + textAfter.length > adaptiveSize && currentChunk.length > 0) {
+          result.push(currentChunk.trim());
+          currentChunk = textAfter;
+        } else {
+          currentChunk += (currentChunk ? '\n\n' : '') + textAfter;
+        }
+      }
+      
+      if (currentChunk.trim().length > 0) {
+        result.push(currentChunk.trim());
+      }
+      
+      return result.length > 0 ? result : [normalized];
+    }
+  }
+  
+  // For lists, preserve list items together
+  if (contentType === 'list') {
+    const lines = normalized.split('\n');
+    const result: string[] = [];
+    let currentChunk = '';
+    let previousContext = '';
+    
+    for (const line of lines) {
+      const isListItem = /^[\s]*[-*+]|\d+\./.test(line);
+      
+      if (isListItem) {
+        // If adding this item would exceed size, save current chunk
+        if (currentChunk.length + line.length + 1 > adaptiveSize && currentChunk.length > 0) {
+          result.push(preserveContextEnabled ? preserveContext(currentChunk.trim(), previousContext) : currentChunk.trim());
+          previousContext = currentChunk;
+          currentChunk = line;
+        } else {
+          currentChunk += (currentChunk ? '\n' : '') + line;
+        }
+      } else {
+        // Non-list line (might be heading or paragraph)
+        if (currentChunk.length + line.length + 1 > adaptiveSize && currentChunk.length > 0) {
+          result.push(preserveContextEnabled ? preserveContext(currentChunk.trim(), previousContext) : currentChunk.trim());
+          previousContext = currentChunk;
+          currentChunk = line;
+        } else {
+          currentChunk += (currentChunk ? '\n' : '') + line;
+        }
+      }
+    }
+    
+    if (currentChunk.trim().length > 0) {
+      result.push(preserveContextEnabled ? preserveContext(currentChunk.trim(), previousContext) : currentChunk.trim());
+    }
+    
+    return result.length > 0 ? result : [normalized];
+  }
   
   // For large texts, try to split by paragraphs first, then by sentences
-  const isLargeText = normalized.length > size * 10; // More than 10 chunks worth
+  const isLargeText = normalized.length > adaptiveSize * 10;
   
   if (isLargeText) {
     // Split by double newlines (paragraphs) first
     const paragraphs = normalized.split(/\n\s*\n/).filter(p => p.trim().length > 0);
     let currentChunk = '';
+    let previousContext = '';
     
     for (const para of paragraphs) {
       const paraTrimmed = para.replace(/\s+/g, ' ').trim();
       
       // If adding this paragraph would exceed size, save current chunk and start new one
-      if (currentChunk.length + paraTrimmed.length + 1 > size && currentChunk.length > 0) {
-        chunks.push(currentChunk.trim());
+      if (currentChunk.length + paraTrimmed.length + 1 > adaptiveSize && currentChunk.length > 0) {
+        chunks.push(preserveContextEnabled ? preserveContext(currentChunk.trim(), previousContext) : currentChunk.trim());
+        previousContext = currentChunk;
         // Start new chunk with overlap from previous
-        const overlapText = currentChunk.slice(-overlap);
+        const overlapText = currentChunk.slice(-Math.min(overlap, currentChunk.length));
         currentChunk = overlapText + ' ' + paraTrimmed;
       } else {
         currentChunk += (currentChunk ? ' ' : '') + paraTrimmed;
@@ -44,24 +221,24 @@ const generateChunks = (input: string, size = DEFAULT_CHUNK_SIZE, overlap = DEFA
     
     // Add remaining chunk
     if (currentChunk.trim().length > 0) {
-      chunks.push(currentChunk.trim());
+      chunks.push(preserveContextEnabled ? preserveContext(currentChunk.trim(), previousContext) : currentChunk.trim());
     }
     
     // If we still have very large chunks, split them by sentences
     const finalChunks: string[] = [];
     for (const chunk of chunks) {
-      if (chunk.length <= size) {
+      if (chunk.length <= adaptiveSize) {
         finalChunks.push(chunk);
       } else {
         // Split large chunk by sentences
-        const sentences = chunk.split(/[.!?]+\s+/).filter(s => s.trim().length > 0);
+        const sentences = chunk.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
         let sentenceChunk = '';
         for (const sentence of sentences) {
-          if (sentenceChunk.length + sentence.length + 1 > size && sentenceChunk.length > 0) {
+          if (sentenceChunk.length + sentence.length + 1 > adaptiveSize && sentenceChunk.length > 0) {
             finalChunks.push(sentenceChunk.trim());
             sentenceChunk = sentence;
           } else {
-            sentenceChunk += (sentenceChunk ? '. ' : '') + sentence;
+            sentenceChunk += (sentenceChunk ? ' ' : '') + sentence;
           }
         }
         if (sentenceChunk.trim().length > 0) {
@@ -72,23 +249,37 @@ const generateChunks = (input: string, size = DEFAULT_CHUNK_SIZE, overlap = DEFA
     return finalChunks;
   }
   
-  // For smaller texts, use original logic
+  // For smaller texts, use improved logic with context preservation
   const normalizedSpaces = normalized.replaceAll('\n', ' ').replace(/\s+/g, ' ').trim();
   let start = 0;
+  let previousContext = '';
+  
   while (start < normalizedSpaces.length) {
-    const end = Math.min(start + size, normalizedSpaces.length);
+    const end = Math.min(start + adaptiveSize, normalizedSpaces.length);
     let chunk = normalizedSpaces.slice(start, end);
+    
+    // Try to break at sentence boundary
     if (end < normalizedSpaces.length) {
       const lastSentence = chunk.lastIndexOf('. ');
-      if (lastSentence > size * 0.5) {
-        chunk = chunk.slice(0, lastSentence + 1);
+      const lastQuestion = chunk.lastIndexOf('? ');
+      const lastExclamation = chunk.lastIndexOf('! ');
+      const lastBreak = Math.max(lastSentence, lastQuestion, lastExclamation);
+      
+      if (lastBreak > adaptiveSize * 0.5) {
+        chunk = chunk.slice(0, lastBreak + 1);
       }
     }
+    
     const trimmed = chunk.trim();
-    if (trimmed.length > 0) chunks.push(trimmed);
+    if (trimmed.length > 0) {
+      chunks.push(preserveContextEnabled ? preserveContext(trimmed, previousContext) : trimmed);
+      previousContext = trimmed;
+    }
+    
     if (end >= normalizedSpaces.length) break;
-    start += Math.max(1, size - overlap);
+    start += Math.max(1, adaptiveSize - overlap);
   }
+  
   return chunks;
 };
 
