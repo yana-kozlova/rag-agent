@@ -15,8 +15,6 @@ type AttachedFile = {
   uploading?: boolean;
   resourceId?: string;
   error?: string;
-  extractedText?: string;
-  extracting?: boolean;
 };
 
 export default function ChatSection() {
@@ -39,19 +37,6 @@ export default function ChatSection() {
     }
   });
   
-  // Helper function to remove file content from message text for display
-  const getDisplayText = (text: string): string => {
-    // Remove file content blocks: [File: filename]\n...content...
-    // Pattern matches: \n\n[File: filename]\n followed by content until next [File: or end
-    let result = text;
-    // Match all [File: ...] blocks and their content
-    result = result.replace(/\n\n\[File: [^\]]+\]\n[\s\S]*?(?=\n\n\[File:|$)/g, '');
-    // Also handle case where file content is at the end without trailing newlines
-    result = result.replace(/\n\n\[File: [^\]]+\]\n.*$/s, '');
-    // Clean up any double newlines left behind
-    result = result.replace(/\n\n\n+/g, '\n\n');
-    return result.trim();
-  };
 
   type HistoryMessage = { id: string; role: string; content: string; createdAt?: string | Date };
   const [history, setHistory] = useState<HistoryMessage[]>([]);
@@ -232,11 +217,7 @@ export default function ChatSection() {
           const isUser = m.role === 'user';
           const chatSide = isUser ? 'chat-end' : 'chat-start';
           const textParts = Array.isArray(m.parts) ? m.parts.filter((p: any) => p?.type === 'text') : [];
-          let bubbleText = textParts.map((p: any) => p.text).join('\n');
-          // Remove file contents from user messages for display
-          if (isUser && bubbleText) {
-            bubbleText = getDisplayText(bubbleText);
-          }
+          const bubbleText = textParts.map((p: any) => p.text).join('\n');
           if (isUser && autoPrompt && bubbleText.trim() === autoPrompt.trim()) return null;
           const created = (m as any).createdAt;
           const createdDate = created ? new Date(created as any) : null;
@@ -322,32 +303,23 @@ export default function ChatSection() {
                 <div className="text-xs text-base-content/60">
                   {(attached.file.size / 1024).toFixed(1)} KB
                 </div>
-                {attached.extracting && (
-                  <div className="flex items-center gap-1 text-xs text-primary mt-1">
-                    <svg className="w-3 h-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Extracting text...
-                  </div>
-                )}
                 {attached.uploading && (
                   <div className="flex items-center gap-1 text-xs text-primary mt-1">
                     <svg className="w-3 h-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Saving to resources...
+                    Uploading...
                   </div>
                 )}
                 {attached.resourceId && (
-                  <div className="text-xs text-success mt-1">✓ Saved to resources</div>
+                  <div className="text-xs text-success mt-1">✓ Saved</div>
                 )}
                 {attached.error && (
                   <div className="text-xs text-error mt-1">{attached.error}</div>
                 )}
               </div>
-              {!attached.uploading && !attached.extracting && (
+              {!attached.uploading && (
                   <button
                   type="button"
                   onClick={() => {
@@ -374,52 +346,12 @@ export default function ChatSection() {
           
           if (!content && attachedFiles.length === 0) return;
 
-          // Extract text from files and upload to resources
-          const fileTexts: string[] = [];
+          // Upload files to resources (save for RAG)
           const uploadedResources: string[] = [];
           
           for (const attached of attachedFiles) {
-            // Extract text from file if not already extracted
-            if (!attached.extractedText && !attached.extracting && !attached.error) {
-              setAttachedFiles((prev) =>
-                prev.map((f) => (f.id === attached.id ? { ...f, extracting: true } : f))
-              );
-
-              try {
-                // Extract text from file
-                const extractFormData = new FormData();
-                extractFormData.append('file', attached.file);
-                const extractResponse = await fetch('/api/resources/extract-text', {
-                  method: 'POST',
-                  body: extractFormData,
-                });
-                const extractResult = await extractResponse.json();
-                
-                if (extractResult.ok && extractResult.text) {
-                  fileTexts.push(`\n\n[File: ${attached.file.name}]\n${extractResult.text}`);
-                  
-                  setAttachedFiles((prev) =>
-                    prev.map((f) => (f.id === attached.id ? { ...f, extractedText: extractResult.text, extracting: false } : f))
-                  );
-                } else {
-                  throw new Error(extractResult.message || 'Failed to extract text');
-                }
-              } catch (error) {
-                setAttachedFiles((prev) =>
-                  prev.map((f) =>
-                    f.id === attached.id
-                      ? { ...f, extracting: false, error: error instanceof Error ? error.message : 'Failed to extract text' }
-                      : f
-                  )
-                );
-                continue;
-              }
-            } else if (attached.extractedText) {
-              fileTexts.push(`\n\n[File: ${attached.file.name}]\n${attached.extractedText}`);
-            }
-
-            // Upload to resources (save for RAG)
-            if (!attached.resourceId && !attached.uploading && !attached.error && attached.extractedText) {
+            // Upload to resources if not already uploaded
+            if (!attached.resourceId && !attached.uploading && !attached.error) {
               setAttachedFiles((prev) =>
                 prev.map((f) => (f.id === attached.id ? { ...f, uploading: true } : f))
               );
@@ -448,14 +380,14 @@ export default function ChatSection() {
                   // Don't fail the whole message if upload fails, just log
                   console.warn('Failed to save file to resources:', uploadResult.message);
                   setAttachedFiles((prev) =>
-                    prev.map((f) => (f.id === attached.id ? { ...f, uploading: false } : f))
+                    prev.map((f) => (f.id === attached.id ? { ...f, uploading: false, error: uploadResult.message || 'Upload failed' } : f))
                   );
                 }
               } catch (error) {
                 // Don't fail the whole message if upload fails
                 console.warn('Failed to save file to resources:', error);
                 setAttachedFiles((prev) =>
-                  prev.map((f) => (f.id === attached.id ? { ...f, uploading: false } : f))
+                  prev.map((f) => (f.id === attached.id ? { ...f, uploading: false, error: error instanceof Error ? error.message : 'Upload failed' } : f))
                 );
               }
             } else if (attached.resourceId) {
@@ -463,35 +395,29 @@ export default function ChatSection() {
             }
           }
 
-          // Combine user text with file contents for AI
-          const fileContentText = fileTexts.join('\n');
-          const messageTextForAI = content 
-            ? `${content}${fileContentText}`
-            : fileContentText.trim() || (uploadedResources.length > 0 
-              ? `I've uploaded ${uploadedResources.length} file(s). Please analyze them.`
-              : '');
-
-          // Create display text (user text + file names, without file contents)
-          const fileNames = attachedFiles
-            .filter(f => f.extractedText || f.resourceId)
-            .map(f => f.file.name)
-            .join(', ');
-          const messageTextForDisplay = content 
-            ? (fileNames ? `${content}\n\n[Attached files: ${fileNames}]` : content)
-            : (fileNames ? `[Attached files: ${fileNames}]` : '');
-
-          if (messageTextForAI) {
-            // Save to history with display text (without file contents)
-            if (messageTextForDisplay) {
-              fetch('/api/chat/history', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ role: 'user', content: messageTextForDisplay }),
-              }).catch(() => {});
-            }
+          // Prepare message text
+          let messageText = content;
+          if (uploadedResources.length > 0) {
+            // Don't include file names in the message to avoid AI trying to search for them
+            // Only provide resourceIds - AI should use analyzeFile directly with these IDs
+            const resourceIdsList = uploadedResources.join(', ');
             
-            // Send full content to AI (file contents will be filtered in display)
-            sendMessage({ text: messageTextForAI });
+            const fileInfo = `[FILES_UPLOADED] ${uploadedResources.length} file(s) have been uploaded to the knowledge base. Resource IDs: ${resourceIdsList}. Use analyzeFile with these resourceIds directly - DO NOT use getInformation. The files are already saved and available.`;
+            messageText = content 
+              ? `${content}\n\n${fileInfo}`
+              : fileInfo;
+          }
+
+          if (messageText) {
+            // Save to history
+            fetch('/api/chat/history', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ role: 'user', content: messageText }),
+            }).catch(() => {});
+            
+            // Send message to AI
+            sendMessage({ text: messageText });
           }
 
           setInput('');
