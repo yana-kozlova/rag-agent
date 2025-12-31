@@ -19,6 +19,8 @@ export async function GET(req: Request) {
     const limitParam = url.searchParams.get('limit');
     const offsetParam = url.searchParams.get('offset');
     const typeParam = url.searchParams.get('type'); // Filter by metadata type
+    const tagParams = url.searchParams.getAll('tag'); // Filter by tags (multiple)
+    const categoryParam = url.searchParams.get('category'); // Filter by category
     
     const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 20, 1), 100) : 20;
     const offset = offsetParam ? Math.max(parseInt(offsetParam, 10) || 0, 0) : 0;
@@ -26,7 +28,7 @@ export async function GET(req: Request) {
     // Build where conditions
     const conditions = [eq(resources.userId, userId as any)];
 
-    // Get all resources for the user first, then filter by type if needed
+    // Get all resources for the user first, then filter by type/tag/category if needed
     // This avoids issues with JSONB parameterization in Drizzle
     let rows = await db
       .select({
@@ -42,11 +44,37 @@ export async function GET(req: Request) {
       .where(and(...conditions))
       .orderBy(desc(resources.createdAt));
 
-    // Filter by type in JavaScript if typeParam is provided
-    if (typeParam) {
+    // Filter by type, tags, or category in JavaScript
+    if (typeParam || tagParams.length > 0 || categoryParam) {
       rows = rows.filter(row => {
         const meta = row.metadata as any;
-        return meta?.type === typeParam;
+        
+        // Filter by type
+        if (typeParam && meta?.type !== typeParam) {
+          return false;
+        }
+        
+        // Filter by tags (multiple tags - resource must have ALL selected tags)
+        if (tagParams.length > 0) {
+          const tags = meta?.tags || [];
+          if (!Array.isArray(tags)) {
+            return false;
+          }
+          // Resource must have all selected tags (exact match)
+          const hasAllTags = tagParams.every(tagParam => 
+            tags.some((tag: string) => typeof tag === 'string' && tag === tagParam)
+          );
+          if (!hasAllTags) {
+            return false;
+          }
+        }
+        
+        // Filter by category
+        if (categoryParam && meta?.category !== categoryParam) {
+          return false;
+        }
+        
+        return true;
       });
     }
 

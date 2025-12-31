@@ -19,6 +19,14 @@ export default function ResourcesPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('');
+  const [tagFilters, setTagFilters] = useState<string[]>([]);
+  const [tagFilterInput, setTagFilterInput] = useState<string>('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [categoryFilterInput, setCategoryFilterInput] = useState<string>('');
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [allCategories, setAllCategories] = useState<string[]>([]);
+  const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+  const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -27,9 +35,25 @@ export default function ResourcesPage() {
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
   const [editType, setEditType] = useState<'note' | 'document' | 'person' | 'project' | 'skill' | 'learning' | 'schedule' | 'event' | 'other'>('note');
+  const [editTags, setEditTags] = useState<string[]>([]);
+  const [editCategory, setEditCategory] = useState<string>('');
+  const [newTagInput, setNewTagInput] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadTagsAndCategories = async () => {
+    try {
+      const res = await fetch('/api/resources/tags');
+      const data = await res.json();
+      if (data.ok) {
+        setAllTags(data.tags || []);
+        setAllCategories(data.categories || []);
+      }
+    } catch (error) {
+      console.error('Error loading tags:', error);
+    }
+  };
 
   const loadResources = async (page: number = currentPage) => {
     try {
@@ -40,6 +64,10 @@ export default function ResourcesPage() {
         offset: offset.toString(),
       });
       if (typeFilter) params.append('type', typeFilter);
+      if (tagFilters.length > 0) {
+        tagFilters.forEach(tag => params.append('tag', tag));
+      }
+      if (categoryFilter) params.append('category', categoryFilter);
       
       const res = await fetch(`/api/resources?${params}`);
       const data = await res.json();
@@ -58,10 +86,35 @@ export default function ResourcesPage() {
   };
 
   useEffect(() => {
+    loadTagsAndCategories();
+  }, []);
+
+  const addTagFilter = (tag: string) => {
+    if (tag && !tagFilters.includes(tag)) {
+      setTagFilters([...tagFilters, tag]);
+      setTagFilterInput('');
+      setShowTagSuggestions(false);
+    }
+  };
+
+  const removeTagFilter = (tagToRemove: string) => {
+    setTagFilters(tagFilters.filter(t => t !== tagToRemove));
+  };
+
+  useEffect(() => {
+    // Sync input with filter
+    if (categoryFilter) {
+      setCategoryFilterInput(categoryFilter);
+    } else {
+      setCategoryFilterInput('');
+    }
+  }, [categoryFilter]);
+
+  useEffect(() => {
     setCurrentPage(1);
     loadResources(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeFilter]);
+  }, [typeFilter, tagFilters, categoryFilter]);
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this resource?')) return;
@@ -89,13 +142,22 @@ export default function ResourcesPage() {
     setEditContent(resource.content);
     const currentType = getTypeLabel(resource.metadata);
     setEditType(currentType as 'note' | 'document' | 'person' | 'project' | 'skill' | 'learning' | 'schedule' | 'event' | 'other');
+    const meta = resource.metadata as any;
+    setEditTags(Array.isArray(meta?.tags) ? [...meta.tags] : []);
+    setEditCategory(meta?.category || '');
   };
 
   const handleSave = async (id: string) => {
+    const metadata: any = { 
+      type: editType,
+      tags: editTags.length > 0 ? editTags : undefined,
+      category: editCategory || undefined,
+    };
+    
     const result = await updateResource(id, {
       title: editTitle || undefined,
       content: editContent,
-      metadata: { type: editType },
+      metadata,
     });
     
     if (result.success) {
@@ -105,7 +167,7 @@ export default function ResourcesPage() {
               ...r, 
               title: editTitle || null, 
               content: editContent, 
-              metadata: { ...r.metadata, type: editType },
+              metadata: { ...r.metadata, ...metadata },
               updatedAt: new Date() 
             }
           : r
@@ -114,6 +176,11 @@ export default function ResourcesPage() {
       setEditTitle('');
       setEditContent('');
       setEditType('note');
+      setEditTags([]);
+      setEditCategory('');
+      setNewTagInput('');
+      // Reload tags to get updated list
+      loadTagsAndCategories();
     } else {
       alert(result.message || 'Failed to update resource');
     }
@@ -124,6 +191,31 @@ export default function ResourcesPage() {
     setEditTitle('');
     setEditContent('');
     setEditType('note');
+    setEditTags([]);
+    setEditCategory('');
+    setNewTagInput('');
+  };
+
+  const addTag = (tag: string) => {
+    const trimmed = tag.trim();
+    if (trimmed && !editTags.includes(trimmed)) {
+      setEditTags([...editTags, trimmed]);
+      if (!allTags.includes(trimmed)) {
+        setAllTags([...allTags, trimmed].sort());
+      }
+    }
+    setNewTagInput('');
+  };
+
+  const removeTag = (tagToRemove: string) => {
+    setEditTags(editTags.filter(t => t !== tagToRemove));
+  };
+
+  const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && newTagInput.trim()) {
+      e.preventDefault();
+      addTag(newTagInput);
+    }
   };
 
   // Client-side search filter (only filters by text, type is already filtered on backend)
@@ -260,30 +352,189 @@ export default function ResourcesPage() {
         </div>
       )}
 
-      <div className="flex gap-4 flex-wrap">
-        <div className="flex-1 min-w-[200px]">
-          <input
-            type="text"
-            placeholder="Search resources..."
-            className="input input-bordered w-full"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+      <div className="space-y-4">
+        <div className="flex gap-4 flex-wrap">
+          <div className="flex-1 min-w-[200px]">
+            <input
+              type="text"
+              placeholder="Search resources..."
+              className="input input-bordered w-full"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <select
+            className="select select-bordered"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+          >
+            <option value="">All types</option>
+            <option value="note">Notes</option>
+            <option value="document">Documents</option>
+            <option value="person">People</option>
+            <option value="project">Projects</option>
+            <option value="skill">Skills</option>
+            <option value="learning">Learning</option>
+            <option value="schedule">Schedule</option>
+          </select>
+          <div className="relative min-w-[200px]">
+            <input
+              type="text"
+              className="input input-bordered w-full"
+              placeholder="Filter by tag..."
+              value={tagFilterInput}
+              onChange={(e) => {
+                const value = e.target.value;
+                setTagFilterInput(value);
+                setShowTagSuggestions(true);
+              }}
+              onFocus={() => setShowTagSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowTagSuggestions(false), 200)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && tagFilterInput.trim()) {
+                  const match = allTags.find(t => t.toLowerCase() === tagFilterInput.toLowerCase());
+                  if (match && !tagFilters.includes(match)) {
+                    addTagFilter(match);
+                  } else if (match) {
+                    setTagFilterInput('');
+                    setShowTagSuggestions(false);
+                  }
+                }
+              }}
+            />
+            {showTagSuggestions && tagFilterInput && (() => {
+              const filteredTags = allTags.filter(tag => 
+                tag.toLowerCase().includes(tagFilterInput.toLowerCase()) && 
+                !tagFilters.includes(tag)
+              );
+              
+              if (filteredTags.length > 0) {
+                return (
+                  <div className="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {filteredTags.slice(0, 20).map(tag => (
+                      <button
+                        key={tag}
+                        type="button"
+                        className="w-full text-left px-4 py-2 hover:bg-base-200"
+                        onClick={() => addTagFilter(tag)}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                );
+              } else {
+                return (
+                  <div className="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-lg shadow-lg">
+                    <div className="px-4 py-2 text-base-content/50">No tags found or all selected</div>
+                  </div>
+                );
+              }
+            })()}
+          </div>
+          <div className="relative min-w-[200px]">
+            <input
+              type="text"
+              className="input input-bordered w-full"
+              placeholder="Filter by category..."
+              value={categoryFilterInput}
+              onChange={(e) => {
+                const value = e.target.value;
+                setCategoryFilterInput(value);
+                setShowCategorySuggestions(true);
+                // Clear filter if input is empty
+                if (!value.trim()) {
+                  setCategoryFilter('');
+                }
+              }}
+              onFocus={() => setShowCategorySuggestions(true)}
+              onBlur={() => setTimeout(() => setShowCategorySuggestions(false), 200)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && categoryFilterInput.trim()) {
+                  const match = allCategories.find(c => c.toLowerCase() === categoryFilterInput.toLowerCase());
+                  if (match) {
+                    setCategoryFilter(match);
+                    setCategoryFilterInput(match);
+                    setShowCategorySuggestions(false);
+                  }
+                }
+              }}
+            />
+            {categoryFilter && (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                <button
+                  className="btn btn-xs btn-circle btn-ghost"
+                  onClick={() => {
+                    setCategoryFilter('');
+                    setCategoryFilterInput('');
+                  }}
+                  title="Clear category filter"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            {showCategorySuggestions && categoryFilterInput && (() => {
+              const filteredCategories = allCategories.filter(cat => 
+                cat.toLowerCase().includes(categoryFilterInput.toLowerCase())
+              );
+              
+              if (filteredCategories.length > 0) {
+                return (
+                  <div className="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {filteredCategories.slice(0, 20).map(cat => (
+                      <button
+                        key={cat}
+                        type="button"
+                        className="w-full text-left px-4 py-2 hover:bg-base-200 flex items-center justify-between"
+                        onClick={() => {
+                          setCategoryFilter(cat);
+                          setCategoryFilterInput(cat);
+                          setShowCategorySuggestions(false);
+                        }}
+                      >
+                        <span>{cat}</span>
+                        {categoryFilter === cat && <span className="text-primary">✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                );
+              } else {
+                return (
+                  <div className="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-lg shadow-lg">
+                    <div className="px-4 py-2 text-base-content/50">No categories found</div>
+                  </div>
+                );
+              }
+            })()}
+          </div>
         </div>
-        <select
-          className="select select-bordered"
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-        >
-          <option value="">All types</option>
-          <option value="note">Notes</option>
-          <option value="document">Documents</option>
-          <option value="person">People</option>
-          <option value="project">Projects</option>
-          <option value="skill">Skills</option>
-          <option value="learning">Learning</option>
-          <option value="schedule">Schedule</option>
-        </select>
+        {(tagFilters.length > 0 || categoryFilter) && (
+          <div className="flex gap-2 items-center flex-wrap">
+            {tagFilters.map(tag => (
+              <div key={tag} className="badge badge-primary gap-2">
+                Tag: {tag}
+                <button
+                  className="btn btn-xs btn-circle btn-ghost"
+                  onClick={() => removeTagFilter(tag)}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            {categoryFilter && (
+              <div className="badge badge-secondary gap-2">
+                Category: {categoryFilter}
+                <button
+                  className="btn btn-xs btn-circle btn-ghost"
+                  onClick={() => setCategoryFilter('')}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {loading && resources.length === 0 ? (
@@ -322,6 +573,81 @@ export default function ResourcesPage() {
                         <option value="event">Event</option>
                         <option value="other">Other</option>
                       </select>
+                      <div>
+                        <label className="label">
+                          <span className="label-text">Category (optional)</span>
+                        </label>
+                        <input
+                          type="text"
+                          className="input input-bordered w-full"
+                          placeholder="e.g., work, personal, learning"
+                          value={editCategory}
+                          onChange={(e) => setEditCategory(e.target.value)}
+                          list="category-suggestions"
+                        />
+                        <datalist id="category-suggestions">
+                          {allCategories.map(cat => (
+                            <option key={cat} value={cat} />
+                          ))}
+                        </datalist>
+                      </div>
+                      <div>
+                        <label className="label">
+                          <span className="label-text">Tags</span>
+                        </label>
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {editTags.map(tag => (
+                            <span key={tag} className="badge badge-primary gap-2">
+                              {tag}
+                              <button
+                                className="btn btn-xs btn-circle btn-ghost"
+                                onClick={() => removeTag(tag)}
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            className="input input-bordered flex-1"
+                            placeholder="Add tag (press Enter)"
+                            value={newTagInput}
+                            onChange={(e) => setNewTagInput(e.target.value)}
+                            onKeyDown={handleTagInputKeyDown}
+                            list="tag-suggestions"
+                          />
+                          <datalist id="tag-suggestions">
+                            {allTags.filter(t => !editTags.includes(t)).map(tag => (
+                              <option key={tag} value={tag} />
+                            ))}
+                          </datalist>
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => addTag(newTagInput)}
+                            disabled={!newTagInput.trim()}
+                          >
+                            Add
+                          </button>
+                        </div>
+                        {allTags.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-xs text-base-content/70 mb-1">Existing tags:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {allTags.filter(t => !editTags.includes(t)).map(tag => (
+                                <button
+                                  key={tag}
+                                  className="badge badge-outline badge-sm cursor-pointer hover:badge-primary"
+                                  onClick={() => addTag(tag)}
+                                >
+                                  + {tag}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       <textarea
                         className="textarea textarea-bordered w-full min-h-[200px]"
                         value={editContent}
@@ -346,14 +672,37 @@ export default function ResourcesPage() {
                     <>
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
                             <h2 className="card-title text-lg">
                               {resource.title || '(No title)'}
                             </h2>
                             <span className="badge badge-outline badge-sm">
                               {getTypeLabel(resource.metadata)}
                             </span>
+                            {(resource.metadata as any)?.category && (
+                              <span className="badge badge-secondary badge-sm">
+                                {(resource.metadata as any).category}
+                              </span>
+                            )}
                           </div>
+                          {(resource.metadata as any)?.tags && Array.isArray((resource.metadata as any).tags) && (resource.metadata as any).tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mb-2">
+                              {(resource.metadata as any).tags.map((tag: string) => (
+                                <span
+                                  key={tag}
+                                  className="badge badge-primary badge-sm cursor-pointer"
+                                  onClick={() => {
+                                    if (!tagFilters.includes(tag)) {
+                                      addTagFilter(tag);
+                                    }
+                                  }}
+                                  title="Click to filter by this tag"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           <p className="text-sm text-base-content/70 mb-2">
                             {formatDate(resource.createdAt)}
                           </p>

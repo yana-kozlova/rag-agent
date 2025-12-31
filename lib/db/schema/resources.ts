@@ -42,6 +42,7 @@ export const resourceMetadataSchema = z.object({
   projectName: z.string().optional(),
   skillName: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  category: z.string().optional(), // Category for grouping resources (e.g., "work", "personal", "learning")
   // Structured information extraction fields
   facts: z.array(z.object({
     subject: z.string(),
