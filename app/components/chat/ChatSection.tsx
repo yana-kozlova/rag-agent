@@ -219,20 +219,14 @@ export default function ChatSection() {
           const textParts = Array.isArray(m.parts) ? m.parts.filter((p: any) => p?.type === 'text') : [];
           let bubbleText = textParts.map((p: any) => p.text).join('\n');
           
-          // Remove technical [FILES_UPLOADED] message from display for user messages
-          if (isUser && bubbleText) {
-            // Check if message contains [FILES_UPLOADED]
-            if (bubbleText.includes('[FILES_UPLOADED]')) {
-              // Extract user content before [FILES_UPLOADED]
-              const parts = bubbleText.split('[FILES_UPLOADED]');
-              bubbleText = parts[0].trim();
-              
-              // If no user content before technical message, show simple message
-              if (!bubbleText || bubbleText === '') {
-                bubbleText = 'Uploaded file(s)';
-              }
-            }
+          // Remove hidden resourceIds marker from display (only for new messages, not from history)
+          // Check if message is from useChat (not from history) by checking if it's in messagesWithUniqueIds
+          const isFromUseChat = messagesWithUniqueIds.some((msg: any) => msg.id === m.id);
+          if (isUser && isFromUseChat && bubbleText) {
+            // Remove zero-width marker: [RESOURCE_IDS:...]
+            bubbleText = bubbleText.replace(/\u200B\u200B\[RESOURCE_IDS:[^\]]+\]\u200B\u200B/g, '').trim();
           }
+          
           
           if (isUser && autoPrompt && bubbleText.trim() === autoPrompt.trim()) return null;
           const created = (m as any).createdAt;
@@ -411,26 +405,14 @@ export default function ChatSection() {
             }
           }
 
-          // Prepare message text for AI (includes technical info about uploaded files)
-          let messageTextForAI = content;
-          if (uploadedResources.length > 0) {
-            // Don't include file names in the message to avoid AI trying to search for them
-            // Only provide resourceIds - AI should use analyzeFile directly with these IDs
-            const resourceIdsList = uploadedResources.join(', ');
-            
-            const fileInfo = `[FILES_UPLOADED] ${uploadedResources.length} file(s) have been uploaded to the knowledge base. Resource IDs: ${resourceIdsList}. Use analyzeFile with these resourceIds directly - DO NOT use getInformation. The files are already saved and available.`;
-            messageTextForAI = content 
-              ? `${content}\n\n${fileInfo}`
-              : fileInfo;
+          // Prepare message text for display (user-friendly, no technical info)
+          let messageTextForDisplay = content;
+          if (uploadedResources.length > 0 && !content) {
+            messageTextForDisplay = `Uploaded ${uploadedResources.length} file(s)`;
           }
 
-          // Prepare display text for user (without technical info)
-          const messageTextForDisplay = content || (uploadedResources.length > 0 
-            ? `Uploaded ${uploadedResources.length} file(s)`
-            : '');
-
-          if (messageTextForAI) {
-            // Save to history with user-friendly text (without technical info)
+          if (messageTextForDisplay || uploadedResources.length > 0) {
+            // Save to history with user-friendly text
             if (messageTextForDisplay) {
               fetch('/api/chat/history', {
                 method: 'POST',
@@ -439,8 +421,19 @@ export default function ChatSection() {
               }).catch(() => {});
             }
             
-            // Send full message to AI (includes technical info for AI processing)
-            sendMessage({ text: messageTextForAI });
+            // Send message with hidden marker for resourceIds (API will replace it)
+            // The marker won't be visible to user because API processes it before AI sees it
+            let messageToSend = messageTextForDisplay || '';
+            if (uploadedResources.length > 0) {
+              // Add hidden marker that API will recognize and replace with technical info
+              // Use zero-width characters so it's invisible but API can detect it
+              const marker = `\u200B\u200B[RESOURCE_IDS:${uploadedResources.join(',')}]\u200B\u200B`;
+              messageToSend = messageTextForDisplay 
+                ? `${messageTextForDisplay}${marker}`
+                : `Uploaded ${uploadedResources.length} file(s)${marker}`;
+            }
+            
+            sendMessage({ text: messageToSend });
           }
 
           setInput('');
