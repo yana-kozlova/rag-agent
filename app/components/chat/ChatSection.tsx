@@ -217,7 +217,23 @@ export default function ChatSection() {
           const isUser = m.role === 'user';
           const chatSide = isUser ? 'chat-end' : 'chat-start';
           const textParts = Array.isArray(m.parts) ? m.parts.filter((p: any) => p?.type === 'text') : [];
-          const bubbleText = textParts.map((p: any) => p.text).join('\n');
+          let bubbleText = textParts.map((p: any) => p.text).join('\n');
+          
+          // Remove technical [FILES_UPLOADED] message from display for user messages
+          if (isUser && bubbleText) {
+            // Check if message contains [FILES_UPLOADED]
+            if (bubbleText.includes('[FILES_UPLOADED]')) {
+              // Extract user content before [FILES_UPLOADED]
+              const parts = bubbleText.split('[FILES_UPLOADED]');
+              bubbleText = parts[0].trim();
+              
+              // If no user content before technical message, show simple message
+              if (!bubbleText || bubbleText === '') {
+                bubbleText = 'Uploaded file(s)';
+              }
+            }
+          }
+          
           if (isUser && autoPrompt && bubbleText.trim() === autoPrompt.trim()) return null;
           const created = (m as any).createdAt;
           const createdDate = created ? new Date(created as any) : null;
@@ -395,29 +411,36 @@ export default function ChatSection() {
             }
           }
 
-          // Prepare message text
-          let messageText = content;
+          // Prepare message text for AI (includes technical info about uploaded files)
+          let messageTextForAI = content;
           if (uploadedResources.length > 0) {
             // Don't include file names in the message to avoid AI trying to search for them
             // Only provide resourceIds - AI should use analyzeFile directly with these IDs
             const resourceIdsList = uploadedResources.join(', ');
             
             const fileInfo = `[FILES_UPLOADED] ${uploadedResources.length} file(s) have been uploaded to the knowledge base. Resource IDs: ${resourceIdsList}. Use analyzeFile with these resourceIds directly - DO NOT use getInformation. The files are already saved and available.`;
-            messageText = content 
+            messageTextForAI = content 
               ? `${content}\n\n${fileInfo}`
               : fileInfo;
           }
 
-          if (messageText) {
-            // Save to history
-            fetch('/api/chat/history', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ role: 'user', content: messageText }),
-            }).catch(() => {});
+          // Prepare display text for user (without technical info)
+          const messageTextForDisplay = content || (uploadedResources.length > 0 
+            ? `Uploaded ${uploadedResources.length} file(s)`
+            : '');
+
+          if (messageTextForAI) {
+            // Save to history with user-friendly text (without technical info)
+            if (messageTextForDisplay) {
+              fetch('/api/chat/history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role: 'user', content: messageTextForDisplay }),
+              }).catch(() => {});
+            }
             
-            // Send message to AI
-            sendMessage({ text: messageText });
+            // Send full message to AI (includes technical info for AI processing)
+            sendMessage({ text: messageTextForAI });
           }
 
           setInput('');
