@@ -30,7 +30,7 @@ export const resources = pgTable("resources", {
 
 // Metadata schema for content types
 export const resourceMetadataSchema = z.object({
-  type: z.enum(['note', 'document', 'schedule', 'person', 'project', 'skill', 'event', 'learning', 'other']).optional(),
+  type: z.enum(['note', 'document', 'schedule', 'person', 'project', 'skill', 'event', 'learning', 'preference', 'need', 'other']).optional(),
   items: z.array(z.object({
     title: z.string().optional(),
     time: z.string().optional(),
@@ -42,6 +42,25 @@ export const resourceMetadataSchema = z.object({
   projectName: z.string().optional(),
   skillName: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  // Structured information extraction fields
+  facts: z.array(z.object({
+    subject: z.string(),
+    predicate: z.string(),
+    object: z.string(),
+    context: z.string().optional(),
+  })).optional(),
+  entities: z.array(z.object({
+    name: z.string(),
+    type: z.string(),
+    relationship: z.string().optional(),
+  })).optional(),
+  needs: z.array(z.object({
+    need: z.string(),
+    priority: z.enum(['high', 'medium', 'low']).optional(),
+    context: z.string().optional(),
+  })).optional(),
+  keyPoints: z.array(z.string()).optional(),
+  userName: z.string().optional(),
 }).passthrough();
 
 // Schema for resources - used to validate API requests

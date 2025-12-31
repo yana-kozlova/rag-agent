@@ -1,10 +1,8 @@
 import { z } from 'zod';
 import { createResource } from '@/lib/actions/resources';
 import { auth } from '@/app/api/auth/auth';
-import { generateObject } from 'ai';
-import { openai } from '@ai-sdk/openai';
-import { env } from '@/lib/env.mjs';
 import { looksLikeCalendarCommandOrScheduleOperation } from '@/lib/privacy/schedule-privacy';
+import { extractStructuredInformation, formatStructuredContent } from '@/lib/ai/information-extraction';
 
 export const addResourceTool = {
   description: `Add a resource to your knowledge base.
@@ -29,65 +27,88 @@ export const addResourceTool = {
       };
     }
     
-    // If title not provided, try to extract from first line
-    let extractedTitle = title;
-    if (!extractedTitle) {
-      const firstLine = content.split('\n')[0]?.trim();
-      if (firstLine && firstLine.length > 0 && firstLine.length < 200) {
-        extractedTitle = firstLine;
-      }
-    }
-    
-    // Classify content type
-    type ContentType = 'note' | 'document' | 'schedule' | 'person' | 'project' | 'skill' | 'event' | 'learning' | 'other';
-    let contentType: ContentType = 'note';
+    // Extract structured information using AI analysis
     const isLargeText = content.length > 5000;
+    let structuredContent = content;
+    let extractedTitle = title;
+    let contentType: 'note' | 'document' | 'schedule' | 'person' | 'project' | 'skill' | 'event' | 'learning' | 'preference' | 'need' | 'other' = 'note';
+    let metadata: any = {};
     
-    if (isLargeText) {
-      contentType = 'document';
-    } else if (content.length <= 2000) {
-      // Try to classify content type for smaller texts
+    // For smaller texts, use structured extraction
+    if (!isLargeText && content.length <= 2000) {
       try {
-        const typeClassificationSchema = z.object({
-          type: z.enum(['note', 'document', 'schedule', 'person', 'project', 'skill', 'event', 'learning', 'other']).describe('Content type'),
-          confidence: z.number().describe('Confidence level 0-1'),
-        });
+        const userName = session?.user?.name || null;
+        const extracted = await extractStructuredInformation(content, userName);
         
-        const modelName = env.AI_CHAT_MODEL || 'gpt-4o-mini';
-        const typeResult = await generateObject({
-          model: openai(modelName),
-          schema: typeClassificationSchema,
-          prompt: `Classify the following content into one of these types:
-- note: general notes, thoughts, ideas
-- document: long-form content, articles, documents
-- schedule: insights about the user's schedule, patterns, events, not explicitly saved as events
-- person: information about a person (name, relationship, details)
-- project: project information, goals, tasks
-- skill: skills, abilities, learning topics
-- event: specific events, experiences, memories
-- learning: learning progress, study notes, educational content
-- other: anything else
-
-Content: "${content.substring(0, 1000)}"
-
-Return the most appropriate type.`,
-          temperature: 0.1,
-        });
-        
-        if (typeResult.object.confidence > 0.5) {
-          contentType = typeResult.object.type;
+        if (extracted) {
+          // Use structured content for storage - only save extracted information, not original message
+          structuredContent = formatStructuredContent(extracted, content, false); // false = don't include original
+          extractedTitle = extracted.structuredContent.title;
+          contentType = extracted.contentType;
+          
+          // Build rich metadata from extracted information
+          metadata = {
+            type: contentType,
+            tags: extracted.structuredContent.tags,
+            facts: extracted.facts,
+            entities: extracted.entities.map(e => ({
+              name: e.name,
+              type: e.type,
+              relationship: e.relationship,
+            })),
+            needs: extracted.needs,
+            keyPoints: extracted.structuredContent.keyPoints,
+            userName: extracted.userName || userName,
+          };
+          
+          console.log(`[addResource] Extracted structured information: ${extracted.facts.length} facts, ${extracted.entities.length} entities, ${extracted.needs.length} needs`);
+        } else {
+          // Fallback to simple extraction if AI extraction fails
+          if (!extractedTitle) {
+            const firstLine = content.split('\n')[0]?.trim();
+            if (firstLine && firstLine.length > 0 && firstLine.length < 200) {
+              extractedTitle = firstLine;
+            }
+          }
+          metadata = { type: contentType };
         }
       } catch (error) {
-        // Fallback to note if classification fails
-        console.error('[addResource] Error classifying content type:', error);
+        console.error('[addResource] Error extracting structured information:', error);
+        // Fallback to simple extraction
+        if (!extractedTitle) {
+          const firstLine = content.split('\n')[0]?.trim();
+          if (firstLine && firstLine.length > 0 && firstLine.length < 200) {
+            extractedTitle = firstLine;
+          }
+        }
+        metadata = { type: contentType };
+      }
+    } else {
+      // For large texts, use simple extraction
+      if (isLargeText) {
+        contentType = 'document';
+        metadata = { 
+          type: contentType, 
+          size: content.length, 
+          chunks: Math.ceil(content.length / 800) 
+        };
+      } else {
+        metadata = { type: contentType };
+      }
+      
+      if (!extractedTitle) {
+        const firstLine = content.split('\n')[0]?.trim();
+        if (firstLine && firstLine.length > 0 && firstLine.length < 200) {
+          extractedTitle = firstLine;
+        }
       }
     }
     
     return createResource({ 
-      content, 
+      content: structuredContent, 
       userId: session.user.id,
       title: extractedTitle || undefined,
-      metadata: { type: contentType },
+      metadata,
     });
   },
 } as const;
