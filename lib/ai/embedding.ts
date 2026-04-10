@@ -368,13 +368,15 @@ export const findRelevantContent = async (
     }
 
     const vectorString = `[${userQueryEmbedded.join(',')}]`;
-    
+
     // Extract keywords for hybrid search
     const keywords = useHybridSearch ? extractKeywords(userQuery) : [];
-    
-    // Build similarity calculation
-    const distance = sql<number>`${embeddings.embedding} <-> ${sql.raw(`'${vectorString}'::vector`)}`;
-    const similarity = sql<number>`1 - ((${embeddings.embedding} <-> ${sql.raw(`'${vectorString}'::vector`)}) / 2.0)`;
+
+    // Cosine distance (<=>) matches the HNSW index built with vector_cosine_ops,
+    // which lets Postgres use the index for ORDER BY instead of a sequential scan.
+    // cosine_distance = 1 - cosine_similarity, so similarity = 1 - distance.
+    const distance = sql<number>`${embeddings.embedding} <=> ${sql.raw(`'${vectorString}'::vector`)}`;
+    const similarity = sql<number>`1 - (${embeddings.embedding} <=> ${sql.raw(`'${vectorString}'::vector`)})`;
     const topK = env.RAG_TOP_K ?? 8;
     
     // Build where clause
