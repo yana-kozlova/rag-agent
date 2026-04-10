@@ -16,7 +16,7 @@ export async function DELETE() {
     const resourceRows = await db
       .select({ id: resources.id })
       .from(resources)
-      .where(eq(resources.userId, userId as any));
+      .where(eq(resources.userId, userId as string));
 
     const ids = resourceRows.map(r => r.id);
     if (ids.length === 0) {
@@ -41,7 +41,7 @@ export async function DELETE() {
         eq(embeddingsTable.source, 'resource')
       )
     );
-    await db.delete(resources).where(eq(resources.userId, userId as any));
+    await db.delete(resources).where(eq(resources.userId, userId as string));
 
     return NextResponse.json({ ok: true, deletedResources: ids.length, deletedEmbeddings: embRows.length });
   } catch (err: any) {

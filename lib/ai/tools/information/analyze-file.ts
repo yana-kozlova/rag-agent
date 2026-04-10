@@ -2,8 +2,9 @@ import { z } from 'zod';
 import { auth } from '@/app/api/auth/auth';
 import { db } from '@/lib/db';
 import { resources } from '@/lib/db/schema/resources';
-import { eq, and, or, ilike, sql } from 'drizzle-orm';
-import { extractStructuredInformation, formatStructuredContent } from '@/lib/ai/information-extraction';
+import { eq, and, or, ilike } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
+import { extractStructuredInformation } from '@/lib/ai/information-extraction';
 import { updateResource } from '@/lib/actions/resources';
 
 export const analyzeFileTool = {
@@ -51,85 +52,34 @@ export const analyzeFileTool = {
     const searchTerm = filename || (resourceId && !isLikelyId ? resourceId : null);
     if (!resource && searchTerm) {
       const trimmedSearchTerm = searchTerm.trim();
-      const searchPattern = `%${searchTerm}%`;
-      
-      // First, get all resources for the user (to filter in JS for JSONB search)
-      const allResources = await db
+      const searchPattern = `%${trimmedSearchTerm}%`;
+
+      // Search by title or metadata->>'fileName' in SQL instead of loading all resources
+      const matchingResources = await db
         .select()
         .from(resources)
-        .where(eq(resources.userId, session.user.id as any));
-      
-      // Normalize search term: remove extension, normalize spaces/underscores
-      const normalizeForSearch = (str: string) => {
-        return str
-          .toLowerCase()
-          .replace(/\.[^.]+$/, '') // Remove extension
-          .replace(/[_\s]+/g, ' ') // Replace underscores and multiple spaces with single space
-          .trim();
-      };
-      
-      const normalizedSearchTerm = normalizeForSearch(trimmedSearchTerm);
-      
-      // Filter by title or metadata.fileName
-      const matchingResources = allResources.filter(r => {
-        const meta = r.metadata as any;
-        const fileName = meta?.fileName || '';
-        const title = r.title || '';
-        
-        const normalizedFileName = normalizeForSearch(fileName);
-        const normalizedTitle = normalizeForSearch(title);
-        
-        return (
-          normalizedTitle.includes(normalizedSearchTerm) ||
-          normalizedFileName.includes(normalizedSearchTerm) ||
-          normalizedSearchTerm.includes(normalizedTitle) ||
-          normalizedSearchTerm.includes(normalizedFileName) ||
-          title.toLowerCase().includes(trimmedSearchTerm.toLowerCase()) ||
-          fileName.toLowerCase().includes(trimmedSearchTerm.toLowerCase()) ||
-          fileName === trimmedSearchTerm ||
-          title === trimmedSearchTerm
-        );
-      });
-      
-      // Sort by relevance (exact matches first)
+        .where(and(
+          eq(resources.userId, session.user.id as string),
+          or(
+            ilike(resources.title, searchPattern),
+            sql`${resources.metadata}->>'fileName' ILIKE ${searchPattern}`
+          )
+        ))
+        .limit(10);
+
+      // Sort by relevance: exact title match first
       matchingResources.sort((a, b) => {
-        const aMeta = a.metadata as any;
-        const bMeta = b.metadata as any;
-        const aFileName = aMeta?.fileName || '';
-        const bFileName = bMeta?.fileName || '';
-        const aTitle = a.title || '';
-        const bTitle = b.title || '';
-        
-        const normalizedAFileName = normalizeForSearch(aFileName);
-        const normalizedBFileName = normalizeForSearch(bFileName);
-        const normalizedATitle = normalizeForSearch(aTitle);
-        const normalizedBTitle = normalizeForSearch(bTitle);
-        
-        // Exact match in normalized title
-        if (normalizedATitle === normalizedSearchTerm && normalizedBTitle !== normalizedSearchTerm) return -1;
-        if (normalizedBTitle === normalizedSearchTerm && normalizedATitle !== normalizedSearchTerm) return 1;
-        
-        // Exact match in normalized fileName
-        if (normalizedAFileName === normalizedSearchTerm && normalizedBFileName !== normalizedSearchTerm) return -1;
-        if (normalizedBFileName === normalizedSearchTerm && normalizedAFileName !== normalizedSearchTerm) return 1;
-        
-        // Starts with in normalized title
-        if (normalizedATitle.startsWith(normalizedSearchTerm) && !normalizedBTitle.startsWith(normalizedSearchTerm)) return -1;
-        if (normalizedBTitle.startsWith(normalizedSearchTerm) && !normalizedATitle.startsWith(normalizedSearchTerm)) return 1;
-        
-        // Starts with in normalized fileName
-        if (normalizedAFileName.startsWith(normalizedSearchTerm) && !normalizedBFileName.startsWith(normalizedSearchTerm)) return -1;
-        if (normalizedBFileName.startsWith(normalizedSearchTerm) && !normalizedAFileName.startsWith(normalizedSearchTerm)) return 1;
-        
-        // Fallback to original exact matches
-        if (aTitle === trimmedSearchTerm && bTitle !== trimmedSearchTerm) return -1;
-        if (bTitle === trimmedSearchTerm && aTitle !== trimmedSearchTerm) return 1;
-        if (aFileName === trimmedSearchTerm && bFileName !== trimmedSearchTerm) return -1;
-        if (bFileName === trimmedSearchTerm && aFileName !== trimmedSearchTerm) return 1;
-        
+        const aTitle = (a.title || '').toLowerCase();
+        const bTitle = (b.title || '').toLowerCase();
+        const lowerSearch = trimmedSearchTerm.toLowerCase();
+
+        if (aTitle === lowerSearch && bTitle !== lowerSearch) return -1;
+        if (bTitle === lowerSearch && aTitle !== lowerSearch) return 1;
+        if (aTitle.startsWith(lowerSearch) && !bTitle.startsWith(lowerSearch)) return -1;
+        if (bTitle.startsWith(lowerSearch) && !aTitle.startsWith(lowerSearch)) return 1;
         return 0;
       });
-      
+
       resource = matchingResources[0];
     }
 

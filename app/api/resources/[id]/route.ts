@@ -24,7 +24,7 @@ export async function GET(
       .from(resources)
       .where(and(
         eq(resources.id, params.id),
-        eq(resources.userId, userId as any)
+        eq(resources.userId, userId as string)
       ))
       .limit(1);
 

@@ -13,7 +13,7 @@ export async function notifyUser(
   const subscriptions = await db
     .select()
     .from(pushSubscriptions)
-    .where(eq(pushSubscriptions.userId, userId as any));
+    .where(eq(pushSubscriptions.userId, userId as string));
 
   if (subscriptions.length === 0) {
     return { sent: 0, total: 0 };

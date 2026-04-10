@@ -36,7 +36,7 @@ export async function POST(req: Request) {
       await db
         .update(pushSubscriptions)
         .set({
-          userId: userId as any,
+          userId: userId as string,
           keys: keys as any,
           updatedAt: new Date(),
         })
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
 
     // Create new subscription
     await db.insert(pushSubscriptions).values({
-      userId: userId as any,
+      userId: userId as string,
       endpoint,
       keys: keys as any,
     });

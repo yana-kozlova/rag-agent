@@ -19,7 +19,7 @@ async function getAccessTokenForUser(userId: string): Promise<string | null> {
       .select()
       .from(accounts)
       .where(and(
-        eq(accounts.userId, userId as any),
+        eq(accounts.userId, userId as string),
         eq(accounts.provider, 'google')
       ))
       .limit(1);
@@ -63,7 +63,7 @@ async function getAccessTokenForUser(userId: string): Promise<string | null> {
         expires_at: expiresAt,
       })
       .where(and(
-        eq(accounts.userId, userId as any),
+        eq(accounts.userId, userId as string),
         eq(accounts.provider, 'google')
       ));
 
@@ -130,7 +130,7 @@ export async function GET(req: Request) {
           continue;
         }
 
-        const userRows = await db.select().from(users).where(eq(users.id, userId as any)).limit(1);
+        const userRows = await db.select().from(users).where(eq(users.id, userId as string)).limit(1);
         const user = userRows[0];
         if (!user) continue;
 

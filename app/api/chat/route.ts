@@ -8,7 +8,7 @@ import {
 import { tools } from '@/lib/ai/tools';
 import { env } from '@/lib/env.mjs';
 import { SYSTEM_PROMPT } from '@/app/prompts/system';
-import { saveUserMessageIfImportant } from '@/lib/middleware/save-user-message';
+import { saveUserMessage } from '@/lib/middleware/save-user-message';
 
 // Allow streaming responses up to 60 seconds
 export const maxDuration = 60;
@@ -75,7 +75,7 @@ export async function POST(req: Request) {
       if (textContent) {
         const textForSaving = textContent.replace(/\n\n\[FILES_UPLOADED\].*$/s, '').trim();
         // Fire and forget - don't block the response
-        saveUserMessageIfImportant(textForSaving).catch(err => {
+        saveUserMessage(textForSaving).catch(err => {
           console.error('Failed to save user message:', err);
         });
       }

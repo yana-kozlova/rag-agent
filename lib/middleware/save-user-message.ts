@@ -9,7 +9,7 @@ import { eq } from 'drizzle-orm';
  * Simple function to save user messages to the messages table (chat history)
  * Saves messages as-is without any classification or processing
  */
-export async function saveUserMessageIfImportant(content: string): Promise<{ saved: boolean; reason?: string; messageId?: string }> {
+export async function saveUserMessage(content: string): Promise<{ saved: boolean; reason?: string; messageId?: string }> {
   try {
     const session = await auth();
     const userId = session?.user?.id;
@@ -26,13 +26,13 @@ export async function saveUserMessageIfImportant(content: string): Promise<{ sav
     const existing = await db
       .select({ id: conversations.id })
       .from(conversations)
-      .where(eq(conversations.userId, userId as any))
+      .where(eq(conversations.userId, userId as string))
       .limit(1);
     
     if (existing.length > 0) {
       convoId = existing[0].id;
     } else {
-      const inserted = await db.insert(conversations).values({ userId: userId as any }).returning({ id: conversations.id });
+      const inserted = await db.insert(conversations).values({ userId: userId as string }).returning({ id: conversations.id });
       convoId = inserted[0].id;
     }
 

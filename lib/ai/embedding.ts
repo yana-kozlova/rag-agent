@@ -2,10 +2,10 @@ import { embed, embedMany } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { env } from '@/lib/env.mjs';
 import { db } from '../db';
-import { cosineDistance, sql, eq, and, or } from 'drizzle-orm';
-import { embeddings } from '../db/schema/embeddings';
-import { resources } from '../db/schema/resources';
-import { userTablesData, userTables } from '../db/schema/user-tables';
+import { sql, and } from 'drizzle-orm';
+import { embeddings } from '@/lib/db/schema';
+import { resources } from '@/lib/db/schema';
+import { userTablesData, userTables } from '@/lib/db/schema';
 
 const embeddingModel = openai.embedding(env.AI_EMBED_MODEL || 'text-embedding-3-small');
 
@@ -359,6 +359,14 @@ export const findRelevantContent = async (
 
     // Generate embedding for semantic search
     const userQueryEmbedded = await generateEmbedding(userQuery);
+
+    // Validate that every embedding value is a finite number to prevent injection via sql.raw()
+    for (const val of userQueryEmbedded) {
+      if (typeof val !== 'number' || !Number.isFinite(val)) {
+        throw new Error('Invalid embedding value: expected finite numbers');
+      }
+    }
+
     const vectorString = `[${userQueryEmbedded.join(',')}]`;
     
     // Extract keywords for hybrid search

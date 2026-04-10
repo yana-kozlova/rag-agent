@@ -24,8 +24,11 @@ export function looksLikeCalendarCommandOrScheduleOperation(text: string) {
       text
     );
 
-  return (command && calendarish) || (calendarish && hasTimeOrDate && command) || (scheduleLabelBlock && command);
+  return (command && calendarish) || (calendarish && hasTimeOrDate && command) || (scheduleLabelBlock && command && calendarish);
 }
+
+
+
 
 
 

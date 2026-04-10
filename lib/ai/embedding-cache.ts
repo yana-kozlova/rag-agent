@@ -65,30 +65,19 @@ class EmbeddingCache {
       timestamp: Date.now(),
     });
   }
-
-  clear(): void {
-    this.cache.clear();
-  }
-
-  // Clear expired entries (can be called periodically)
-  clearExpired(): void {
-    const now = Date.now();
-    for (const [key, entry] of this.cache.entries()) {
-      if (now - entry.timestamp > CACHE_TTL_MS) {
+  clearForUser(userId: string): void {
+    const prefix = `${userId}:`;
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) {
         this.cache.delete(key);
       }
     }
-  }
-
-  getStats() {
-    return {
-      size: this.cache.size,
-      maxSize: MAX_CACHE_SIZE,
-      ttl: CACHE_TTL_MS,
-    };
   }
 }
 
 // Singleton instance
 export const embeddingCache = new EmbeddingCache();
+
+
+
 

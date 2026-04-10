@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { saveUserMessageIfImportant } from '@/lib/middleware/save-user-message';
+import { saveUserMessage } from '@/lib/middleware/save-user-message';
 
 export const runtime = 'nodejs';
 
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'empty content' }, { status: 400 });
     }
 
-    const result = await saveUserMessageIfImportant(content);
+    const result = await saveUserMessage(content);
     
     return NextResponse.json({ 
       ok: true, 

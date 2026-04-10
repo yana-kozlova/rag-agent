@@ -13,22 +13,21 @@ import { embeddings as embeddingsTable } from '../db/schema/embeddings';
 import { eq, and } from 'drizzle-orm';
 import { auth } from '@/app/api/auth/auth';
 import { sql } from 'drizzle-orm';
+import { embeddingCache } from '../ai/embedding-cache';
 
 export const createResource = async (input: NewResourceParams) => {
   try {
-    const session = await auth();
-    const userId = session?.user?.id;
+    const parsed = insertResourceSchema.parse(input);
+    const { content, title, metadata, userId } = parsed;
+
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };
     }
 
-    const parsed = insertResourceSchema.parse(input);
-    const { content, title, metadata } = parsed;
-
     const [resource] = await db
       .insert(resources)
-      .values({ 
-        content, 
+      .values({
+        content,
         userId,
         title: title || null,
         metadata: metadata || null,
@@ -47,13 +46,15 @@ export const createResource = async (input: NewResourceParams) => {
       );
     }
 
+    embeddingCache.clearForUser(userId);
+
     return { success: true, message: 'Resource successfully created and embedded.', id: resource.id };
   } catch (error) {
-    return { 
-      success: false, 
+    return {
+      success: false,
       message: error instanceof Error && error.message.length > 0
         ? error.message
-        : 'Error, please try again.' 
+        : 'Error, please try again.'
     };
   }
 };
@@ -74,7 +75,7 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
       .from(resources)
       .where(and(
         eq(resources.id, resourceId),
-        eq(resources.userId, userId as any)
+        eq(resources.userId, userId as string)
       ))
       .limit(1);
 
@@ -102,7 +103,7 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
       .set(updateData)
       .where(and(
         eq(resources.id, resourceId),
-        eq(resources.userId, userId as any)
+        eq(resources.userId, userId as string)
       ))
       .returning();
 
@@ -126,6 +127,8 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
         );
       }
     }
+
+    embeddingCache.clearForUser(userId);
 
     return { success: true, message: 'Resource successfully updated.', resource: updated };
   } catch (error) {
@@ -152,7 +155,7 @@ export const deleteResource = async (resourceId: string) => {
       .from(resources)
       .where(and(
         eq(resources.id, resourceId),
-        eq(resources.userId, userId as any)
+        eq(resources.userId, userId as string)
       ))
       .limit(1);
 
@@ -170,8 +173,10 @@ export const deleteResource = async (resourceId: string) => {
       .delete(resources)
       .where(and(
         eq(resources.id, resourceId),
-        eq(resources.userId, userId as any)
+        eq(resources.userId, userId as string)
       ));
+
+    embeddingCache.clearForUser(userId);
 
     return { success: true, message: 'Resource successfully deleted.' };
   } catch (error) {

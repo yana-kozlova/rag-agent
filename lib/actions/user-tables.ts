@@ -32,7 +32,7 @@ export const createUserTable = async (input: CreateUserTableParams) => {
       .insert(userTables)
       .values({
         ...parsed,
-        userId: userId as any,
+        userId: userId as string,
         settings: parsed.settings || { sortable: true, filterable: true, editable: true },
       })
       .returning();

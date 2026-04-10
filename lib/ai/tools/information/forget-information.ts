@@ -77,7 +77,7 @@ IMPORTANT:
         .from(resources)
         .where(and(
           inArray(resources.id, idsToDelete),
-          eq(resources.userId, userId as any)
+          eq(resources.userId, userId as string)
         ));
 
       if (resourcesToDelete.length === 0) {

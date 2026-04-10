@@ -121,8 +121,24 @@ function extractTimezoneOffset(isoString: string): string {
 }
 
 function formatDateWithOffset(date: Date, offset: string): string {
-  // Format date as ISO with the specified offset (simpler approach)
-  return date.toISOString().replace('Z', offset);
+  // Parse the offset to get the shift in minutes
+  const match = offset.match(/^([+-])(\d{2}):(\d{2})$/);
+  if (!match) return date.toISOString();
+
+  const sign = match[1] === '+' ? 1 : -1;
+  const offsetMinutes = sign * (parseInt(match[2], 10) * 60 + parseInt(match[3], 10));
+
+  // Shift UTC time by the offset to get the local wall-clock time
+  const local = new Date(date.getTime() + offsetMinutes * 60_000);
+
+  const yyyy = local.getUTCFullYear();
+  const mm = String(local.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(local.getUTCDate()).padStart(2, '0');
+  const hh = String(local.getUTCHours()).padStart(2, '0');
+  const mi = String(local.getUTCMinutes()).padStart(2, '0');
+  const ss = String(local.getUTCSeconds()).padStart(2, '0');
+
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}${offset}`;
 }
 
 export async function suggestAlternativeSlots(params: {

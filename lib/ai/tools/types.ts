@@ -6,6 +6,3 @@ export interface ToolDefinition<TInput = any, TOutput = any> {
   execute: (input: TInput) => Promise<TOutput>;
 }
 
-export * from './information/add-resource';
-export * from './information/get-information';
-export * from './events/create-event';

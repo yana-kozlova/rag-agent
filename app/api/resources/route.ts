@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/app/api/auth/auth';
 import { db } from '@/lib/db';
 import { resources } from '@/lib/db/schema/resources';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, sql } from 'drizzle-orm';
 
 export const runtime = 'nodejs';
 
@@ -25,12 +25,27 @@ export async function GET(req: Request) {
     const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 20, 1), 100) : 20;
     const offset = offsetParam ? Math.max(parseInt(offsetParam, 10) || 0, 0) : 0;
 
-    // Build where conditions
-    const conditions = [eq(resources.userId, userId as any)];
+    // Build where conditions — filter in SQL including JSONB fields
+    const conditions: any[] = [eq(resources.userId, userId as string)];
 
-    // Get all resources for the user first, then filter by type/tag/category if needed
-    // This avoids issues with JSONB parameterization in Drizzle
-    let rows = await db
+    if (typeParam) {
+      conditions.push(sql`${resources.metadata}->>'type' = ${typeParam}`);
+    }
+    if (categoryParam) {
+      conditions.push(sql`${resources.metadata}->>'category' = ${categoryParam}`);
+    }
+    if (tagParams.length > 0) {
+      // @> checks that the tags array contains all specified tags
+      conditions.push(sql`${resources.metadata}->'tags' @> ${JSON.stringify(tagParams)}::jsonb`);
+    }
+
+    // Count total matching rows for pagination
+    const [{ count: totalCount }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(resources)
+      .where(and(...conditions));
+
+    const rows = await db
       .select({
         id: resources.id,
         title: resources.title,
@@ -42,54 +57,18 @@ export async function GET(req: Request) {
       })
       .from(resources)
       .where(and(...conditions))
-      .orderBy(desc(resources.createdAt));
-
-    // Filter by type, tags, or category in JavaScript
-    if (typeParam || tagParams.length > 0 || categoryParam) {
-      rows = rows.filter(row => {
-        const meta = row.metadata as any;
-        
-        // Filter by type
-        if (typeParam && meta?.type !== typeParam) {
-          return false;
-        }
-        
-        // Filter by tags (multiple tags - resource must have ALL selected tags)
-        if (tagParams.length > 0) {
-          const tags = meta?.tags || [];
-          if (!Array.isArray(tags)) {
-            return false;
-          }
-          // Resource must have all selected tags (exact match)
-          const hasAllTags = tagParams.every(tagParam => 
-            tags.some((tag: string) => typeof tag === 'string' && tag === tagParam)
-          );
-          if (!hasAllTags) {
-            return false;
-          }
-        }
-        
-        // Filter by category
-        if (categoryParam && meta?.category !== categoryParam) {
-          return false;
-        }
-        
-        return true;
-      });
-    }
-
-    // Apply pagination after filtering
-    const paginatedRows = rows.slice(offset, offset + limit);
-    const totalCount = rows.length;
+      .orderBy(desc(resources.createdAt))
+      .limit(limit)
+      .offset(offset);
 
     return NextResponse.json({
       ok: true,
-      resources: paginatedRows,
+      resources: rows,
       pagination: {
         limit,
         offset,
         total: totalCount,
-        hasMore: offset + paginatedRows.length < totalCount,
+        hasMore: offset + rows.length < totalCount,
       },
     });
   } catch (err: any) {

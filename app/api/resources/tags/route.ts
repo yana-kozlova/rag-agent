@@ -21,7 +21,7 @@ export async function GET(req: Request) {
         metadata: resources.metadata,
       })
       .from(resources)
-      .where(eq(resources.userId, userId as any));
+      .where(eq(resources.userId, userId as string));
 
     // Extract all unique tags
     const allTags = new Set<string>();
@@ -54,4 +54,7 @@ export async function GET(req: Request) {
     );
   }
 }
+
+
+
 
