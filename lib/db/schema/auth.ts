@@ -6,8 +6,8 @@ import {
   integer,
   uuid,
   boolean,
-  jsonb,
 } from "drizzle-orm/pg-core";
+import { jsonb } from "../jsonb";
 import { type AdapterAccount } from "@auth/core/adapters";
 
 export const users = pgTable("user", {

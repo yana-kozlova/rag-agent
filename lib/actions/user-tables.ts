@@ -307,6 +307,87 @@ export const updateTableRow = async (rowId: string, input: UpdateTableRowParams)
   }
 };
 
+export const createTableRowsBulk = async (input: {
+  userTableId: string;
+  rows: Array<Record<string, any>>;
+}) => {
+  try {
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) {
+      return { success: false, message: 'Unauthorized. Please sign in.' };
+    }
+
+    if (!Array.isArray(input.rows) || input.rows.length === 0) {
+      return { success: false, message: 'No rows provided.' };
+    }
+
+    const [table] = await db
+      .select()
+      .from(userTables)
+      .where(eq(userTables.id, input.userTableId))
+      .limit(1);
+
+    if (!table) {
+      return { success: false, message: 'Table not found.' };
+    }
+    if (table.userId !== userId) {
+      return { success: false, message: 'Unauthorized. You can only add rows to your own tables.' };
+    }
+
+    const columns = table.columns as TableColumn[];
+
+    const insertedRows = await db
+      .insert(userTablesData)
+      .values(
+        input.rows.map((rowData) => ({
+          userTableId: input.userTableId,
+          rowData,
+          metadata: null,
+        }))
+      )
+      .returning();
+
+    // Generate embeddings for all rows (in parallel)
+    const embeddingPromises = insertedRows.map(async (row) => {
+      const rowText = convertRowToText(row.rowData as Record<string, any>, columns);
+      if (!rowText.trim()) return [];
+      const rowEmbeddings = await generateEmbeddings(rowText);
+      return rowEmbeddings.map((e) => ({
+        sourceId: row.id,
+        source: 'table' as const,
+        content: e.content,
+        embedding: e.embedding,
+        metadata: {
+          tableId: table.id,
+          tableTitle: table.title,
+        },
+      }));
+    });
+
+    const embeddingBatches = await Promise.all(embeddingPromises);
+    const allEmbeddings = embeddingBatches.flat();
+    if (allEmbeddings.length > 0) {
+      await db.insert(embeddingsTable).values(allEmbeddings);
+    }
+
+    return {
+      success: true,
+      message: `${insertedRows.length} row(s) successfully created.`,
+      ids: insertedRows.map((r) => r.id),
+      count: insertedRows.length,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error && error.message.length > 0
+          ? error.message
+          : 'Error creating rows, please try again.',
+    };
+  }
+};
+
 export const deleteTableRow = async (rowId: string) => {
   try {
     const session = await auth();

@@ -1,5 +1,6 @@
 import { nanoid } from '@/lib/utils';
-import { index, jsonb, pgEnum, pgTable, text, varchar, vector } from 'drizzle-orm/pg-core';
+import { index, pgEnum, pgTable, text, varchar, vector } from 'drizzle-orm/pg-core';
+import { jsonb } from '../jsonb';
 
 export const embeddingSourceEnum = pgEnum('embedding_source', ['resource', 'calendar', 'table']);
 
