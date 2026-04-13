@@ -18,6 +18,7 @@ import {
 import { eq, and, inArray } from 'drizzle-orm';
 import { generateEmbeddings } from '@/lib/ai/embedding';
 import { embeddings as embeddingsTable } from '@/lib/db/schema/embeddings';
+import { resources } from '@/lib/db/schema/resources';
 
 export const createUserTable = async (input: CreateUserTableParams) => {
   try {
@@ -202,7 +203,7 @@ export const createTableRow = async (input: CreateTableRowParams) => {
     // Generate embeddings for the row
     const rowText = convertRowToText(parsed.rowData, table.columns as TableColumn[]);
     if (rowText.trim().length > 0) {
-      const rowEmbeddings = await generateEmbeddings(rowText);
+      const rowEmbeddings = await generateEmbeddings(rowText, 'createTableRow');
       if (rowEmbeddings.length > 0) {
         await db.insert(embeddingsTable).values(
           rowEmbeddings.map(e => ({
@@ -278,7 +279,7 @@ export const updateTableRow = async (rowId: string, input: UpdateTableRowParams)
       // Generate new embeddings
       const rowText = convertRowToText(parsed.rowData, row.table.columns as TableColumn[]);
       if (rowText.trim().length > 0) {
-        const rowEmbeddings = await generateEmbeddings(rowText);
+        const rowEmbeddings = await generateEmbeddings(rowText, 'updateTableRow');
         if (rowEmbeddings.length > 0) {
           await db.insert(embeddingsTable).values(
             rowEmbeddings.map(e => ({
@@ -310,6 +311,13 @@ export const updateTableRow = async (rowId: string, input: UpdateTableRowParams)
 export const createTableRowsBulk = async (input: {
   userTableId: string;
   rows: Array<Record<string, any>>;
+  /**
+   * Optional parallel array — sourceResourceIdsPerRow[i] is the list of
+   * resource IDs that row[i] was derived from. When present, the row's
+   * metadata records the sources AND each source resource's metadata is
+   * updated with a back-link ({ tableId, rowId, tableTitle }).
+   */
+  sourceResourceIdsPerRow?: Array<string[] | undefined>;
 }) => {
   try {
     const session = await auth();
@@ -336,15 +344,23 @@ export const createTableRowsBulk = async (input: {
     }
 
     const columns = table.columns as TableColumn[];
+    const sourceIdsPerRow = input.sourceResourceIdsPerRow ?? [];
 
     const insertedRows = await db
       .insert(userTablesData)
       .values(
-        input.rows.map((rowData) => ({
-          userTableId: input.userTableId,
-          rowData,
-          metadata: null,
-        }))
+        input.rows.map((rowData, i) => {
+          const sourceIds = sourceIdsPerRow[i];
+          const metadata =
+            sourceIds && sourceIds.length > 0
+              ? { sourceResourceIds: sourceIds }
+              : null;
+          return {
+            userTableId: input.userTableId,
+            rowData,
+            metadata,
+          };
+        })
       )
       .returning();
 
@@ -352,7 +368,7 @@ export const createTableRowsBulk = async (input: {
     const embeddingPromises = insertedRows.map(async (row) => {
       const rowText = convertRowToText(row.rowData as Record<string, any>, columns);
       if (!rowText.trim()) return [];
-      const rowEmbeddings = await generateEmbeddings(rowText);
+      const rowEmbeddings = await generateEmbeddings(rowText, 'createTableRowsBulk');
       return rowEmbeddings.map((e) => ({
         sourceId: row.id,
         source: 'table' as const,
@@ -369,6 +385,69 @@ export const createTableRowsBulk = async (input: {
     const allEmbeddings = embeddingBatches.flat();
     if (allEmbeddings.length > 0) {
       await db.insert(embeddingsTable).values(allEmbeddings);
+    }
+
+    // Write back-links into the source resources' metadata so the note side
+    // of the second-brain graph knows which table rows it produced.
+    if (sourceIdsPerRow.length > 0) {
+      // Build: resourceId -> list of { rowId, linkedAt }
+      const linkedAt = new Date().toISOString();
+      const byResource = new Map<string, Array<{ rowId: string; linkedAt: string }>>();
+      insertedRows.forEach((row, i) => {
+        const sourceIds = sourceIdsPerRow[i];
+        if (!sourceIds) return;
+        for (const rid of sourceIds) {
+          if (!byResource.has(rid)) byResource.set(rid, []);
+          byResource.get(rid)!.push({ rowId: row.id, linkedAt });
+        }
+      });
+
+      if (byResource.size > 0) {
+        // Fetch all affected resources in one query (scoped to this user)
+        const resourceIds = Array.from(byResource.keys());
+        const existingResources = await db
+          .select({
+            id: resources.id,
+            metadata: resources.metadata,
+            userId: resources.userId,
+          })
+          .from(resources)
+          .where(
+            and(
+              inArray(resources.id, resourceIds),
+              eq(resources.userId, userId)
+            )
+          );
+
+        // Update each resource's metadata with de-duped linkedRows
+        await Promise.all(
+          existingResources.map(async (r) => {
+            const newLinks = byResource.get(r.id) ?? [];
+            const existingMeta = (r.metadata as any) || {};
+            const existingLinks: Array<{ tableId: string; rowId: string; tableTitle?: string; linkedAt?: string }> =
+              Array.isArray(existingMeta.linkedRows) ? existingMeta.linkedRows : [];
+
+            const seen = new Set(existingLinks.map((l) => `${l.tableId}:${l.rowId}`));
+            for (const link of newLinks) {
+              const key = `${table.id}:${link.rowId}`;
+              if (!seen.has(key)) {
+                existingLinks.push({
+                  tableId: table.id,
+                  rowId: link.rowId,
+                  tableTitle: table.title,
+                  linkedAt: link.linkedAt,
+                });
+                seen.add(key);
+              }
+            }
+
+            await db
+              .update(resources)
+              .set({ metadata: { ...existingMeta, linkedRows: existingLinks } })
+              .where(eq(resources.id, r.id));
+          })
+        );
+      }
     }
 
     return {

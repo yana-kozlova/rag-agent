@@ -5,34 +5,43 @@ import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
-// Helper to get time range based on range type
+// Helper to get time range based on range type.
+// "day" uses calendar-day boundaries (start-of-today → end-of-today) so that
+// asking "what's on my schedule today?" at 11pm still shows the full day and
+// doesn't leak into tomorrow.
 const getTimeRange = (rangeType: 'day' | 'week' | 'month' | 'upcoming') => {
   const now = new Date();
-  const timeMin = now.toISOString();
+  let timeMin: string;
   let timeMax: string;
 
   switch (rangeType) {
     case 'day': {
-      const end = new Date(now);
-      end.setDate(now.getDate() + 1);
-      timeMax = end.toISOString();
+      const startOfDay = new Date(now);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(now);
+      endOfDay.setHours(23, 59, 59, 999);
+      timeMin = startOfDay.toISOString();
+      timeMax = endOfDay.toISOString();
       break;
     }
     case 'week': {
+      timeMin = now.toISOString();
       const end = new Date(now);
       end.setDate(now.getDate() + 7);
       timeMax = end.toISOString();
       break;
     }
     case 'month': {
+      timeMin = now.toISOString();
       const end = new Date(now);
       end.setMonth(now.getMonth() + 1);
       timeMax = end.toISOString();
       break;
     }
     case 'upcoming': {
+      timeMin = now.toISOString();
       const end = new Date(now);
-      end.setMonth(now.getMonth() + 3); // Show events for next 3 months
+      end.setMonth(now.getMonth() + 3);
       timeMax = end.toISOString();
       break;
     }

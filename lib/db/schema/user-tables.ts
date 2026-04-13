@@ -19,6 +19,19 @@ export const tableColumnSchema = z.object({
 // Table row data schema (flexible - can have any keys matching column IDs)
 export const tableRowSchema = z.record(z.string(), z.any());
 
+// Opt-in auto-routing rules. When set, newly created resources whose metadata
+// (contentType / tags) matches the filter will automatically be turned into a
+// row in this table using zero LLM calls — purely by mapping extracted
+// metadata fields onto columns by name convention.
+export const tableAutoRouteSchema = z.object({
+  // Match by extracted contentType (e.g. ["event", "note"])
+  matchTypes: z.array(z.string()).optional(),
+  // Match if resource tags intersect with any of these
+  matchTags: z.array(z.string()).optional(),
+  // Require at least one match condition to fire (default true)
+  requireMatch: z.boolean().optional(),
+});
+
 // Table settings schema
 export const tableSettingsSchema = z.object({
   sortable: z.boolean().optional(),
@@ -26,6 +39,7 @@ export const tableSettingsSchema = z.object({
   editable: z.boolean().optional(),
   pagination: z.boolean().optional(),
   pageSize: z.number().optional(),
+  autoRoute: tableAutoRouteSchema.optional(),
 });
 
 // User tables - stores user-created data tables (metadata only, no data)

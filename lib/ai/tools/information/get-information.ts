@@ -157,8 +157,10 @@ Only use results that are actually relevant to the user's question - don't inclu
       console.log(`[getInformation] Searching with ${queryVariations.length} query variations for: "${question}"`);
       
       // Execute all queries in parallel for better performance
-      const queryPromises = queryVariations.map(query => 
-        findRelevantContent(query, userId).catch(err => {
+      const queryPromises = queryVariations.map((query, idx) =>
+        findRelevantContent(query, userId, {
+          caller: `getInformation[var ${idx + 1}/${queryVariations.length}]`,
+        }).catch(err => {
           console.error(`[getInformation] Error searching with query "${query}":`, err);
           return [];
         })

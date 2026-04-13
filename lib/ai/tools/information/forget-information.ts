@@ -31,7 +31,7 @@ IMPORTANT:
       }
 
       // First, find relevant resources
-      const searchResults = await findRelevantContent(query, userId);
+      const searchResults = await findRelevantContent(query, userId, { caller: 'forgetInformation' });
       
       if (searchResults.length === 0) {
         return { 

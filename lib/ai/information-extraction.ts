@@ -5,6 +5,7 @@ import { generateObject } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { env } from '@/lib/env.mjs';
 import { z } from 'zod';
+import { logLlmUsage } from './telemetry';
 
 // Schema for structured information extraction
 const informationExtractionSchema = z.object({
@@ -53,13 +54,14 @@ export type ExtractedInformation = z.infer<typeof informationExtractionSchema>;
  */
 export async function extractStructuredInformation(
   content: string,
-  userName?: string | null
+  userName?: string | null,
+  caller: string = 'extractStructuredInformation'
 ): Promise<ExtractedInformation | null> {
   try {
     const modelName = env.AI_CHAT_MODEL || 'gpt-4o-mini';
-    
+
     const userContext = userName ? `The user's name is ${userName}. ` : '';
-    
+    const startedAt = Date.now();
     const result = await generateObject({
       model: openai(modelName),
       schema: informationExtractionSchema,
@@ -102,6 +104,22 @@ Structured content:
 
 Now analyze the provided message.`,
       temperature: 0.2, // Lower temperature for more consistent extraction
+    });
+
+    const usage = (result as any).usage;
+    logLlmUsage({
+      op: 'generateObject',
+      model: modelName,
+      caller,
+      inputChars: content.length,
+      usage: usage
+        ? {
+            inputTokens: usage.inputTokens ?? usage.promptTokens,
+            outputTokens: usage.outputTokens ?? usage.completionTokens,
+            totalTokens: usage.totalTokens,
+          }
+        : undefined,
+      durationMs: Date.now() - startedAt,
     });
 
     return result.object;

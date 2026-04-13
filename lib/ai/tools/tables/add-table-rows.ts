@@ -56,7 +56,12 @@ export const addTableRowsTool = {
     Use this to populate a table the user asked you to fill, or to add entries the user mentions in conversation.
     You can reference the table by its ID (from createTable or listTables) or by its title.
     Row data keys can be either column IDs or column names — the tool will match them case-insensitively.
-    If unsure which table to use, call listTables first.`,
+    If unsure which table to use, call listTables first.
+
+    **Second-brain pattern:** when a row is derived from one or more of the user's notes/resources
+    (for example via getInformation or extractToTable), pass the originating resource IDs in
+    sourceResourceIdsPerRow. This creates a bi-directional link so the note knows which row it
+    produced and the row knows which notes it came from.`,
   inputSchema: z.object({
     tableId: z.string().optional().describe('The ID of the target table (preferred if known)'),
     tableTitle: z.string().optional().describe('The title of the target table (used if tableId not provided)'),
@@ -64,15 +69,23 @@ export const addTableRowsTool = {
       .array(z.record(z.string(), z.any()))
       .min(1)
       .describe('Array of row objects. Each key should match a column name or ID.'),
+    sourceResourceIdsPerRow: z
+      .array(z.array(z.string()))
+      .optional()
+      .describe(
+        'Optional parallel array: sourceResourceIdsPerRow[i] is the list of resource IDs that row[i] was derived from. Use this when populating a table from existing notes so back-links are created.'
+      ),
   }),
   execute: async ({
     tableId,
     tableTitle,
     rows,
+    sourceResourceIdsPerRow,
   }: {
     tableId?: string;
     tableTitle?: string;
     rows: Array<Record<string, any>>;
+    sourceResourceIdsPerRow?: Array<string[]>;
   }) => {
     const session = await auth();
     if (!session?.user?.id) {
@@ -124,8 +137,16 @@ export const addTableRowsTool = {
     const columns = table.columns as TableColumn[];
     const mappedRows = rows.map((r) => mapRowToColumnIds(r, columns));
 
-    // Drop rows where nothing mapped (would be empty)
-    const nonEmptyRows = mappedRows.filter((r) => Object.keys(r).length > 0);
+    // Drop rows where nothing mapped (would be empty), preserving source-link alignment
+    const nonEmptyRows: Record<string, any>[] = [];
+    const nonEmptySourceIds: Array<string[] | undefined> = [];
+    mappedRows.forEach((r, i) => {
+      if (Object.keys(r).length > 0) {
+        nonEmptyRows.push(r);
+        nonEmptySourceIds.push(sourceResourceIdsPerRow?.[i]);
+      }
+    });
+
     if (nonEmptyRows.length === 0) {
       return {
         success: false,
@@ -138,6 +159,9 @@ export const addTableRowsTool = {
     const result = await createTableRowsBulk({
       userTableId: table.id,
       rows: nonEmptyRows,
+      sourceResourceIdsPerRow: nonEmptySourceIds.some((s) => s && s.length > 0)
+        ? nonEmptySourceIds
+        : undefined,
     });
 
     if (!result.success) {

@@ -38,7 +38,7 @@ export const addResourceTool = {
     if (!isLargeText && content.length <= 2000) {
       try {
         const userName = session?.user?.name || null;
-        const extracted = await extractStructuredInformation(content, userName);
+        const extracted = await extractStructuredInformation(content, userName, 'addResource');
         
         if (extracted) {
           // Use structured content for storage - only save extracted information, not original message

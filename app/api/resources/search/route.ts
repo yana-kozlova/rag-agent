@@ -29,7 +29,7 @@ export async function GET(req: Request) {
 
     const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 8, 1), 20) : 8;
     
-    const results = await findRelevantContent(query, userId);
+    const results = await findRelevantContent(query, userId, { caller: 'api/resources/search' });
     
     // Limit results if needed (findRelevantContent already limits, but we respect the param)
     const limitedResults = results.slice(0, limit);

@@ -63,6 +63,14 @@ export const resourceMetadataSchema = z.object({
   })).optional(),
   keyPoints: z.array(z.string()).optional(),
   userName: z.string().optional(),
+  // Bi-directional link: rows in user tables that were derived from this resource.
+  // Written by createTableRowsBulk when sourceResourceIds is passed.
+  linkedRows: z.array(z.object({
+    tableId: z.string(),
+    rowId: z.string(),
+    tableTitle: z.string().optional(),
+    linkedAt: z.string().optional(), // ISO timestamp
+  })).optional(),
 }).passthrough();
 
 // Schema for resources - used to validate API requests

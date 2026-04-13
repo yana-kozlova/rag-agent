@@ -6,8 +6,10 @@ import { sql, and } from 'drizzle-orm';
 import { embeddings } from '@/lib/db/schema';
 import { resources } from '@/lib/db/schema';
 import { userTablesData, userTables } from '@/lib/db/schema';
+import { logLlmUsage } from './telemetry';
 
-const embeddingModel = openai.embedding(env.AI_EMBED_MODEL || 'text-embedding-3-small');
+const EMBED_MODEL_NAME = env.AI_EMBED_MODEL || 'text-embedding-3-small';
+const embeddingModel = openai.embedding(EMBED_MODEL_NAME);
 
 const DEFAULT_CHUNK_SIZE = env.EMBED_CHUNK_SIZE ?? 800;
 const DEFAULT_CHUNK_OVERLAP = env.EMBED_CHUNK_OVERLAP ?? 200;
@@ -285,22 +287,51 @@ const generateChunks = (
 
 export const generateEmbeddings = async (
   value: string,
+  caller: string = 'generateEmbeddings',
 ): Promise<Array<{ embedding: number[]; content: string }>> => {
   const chunks = generateChunks(value);
-  const { embeddings } = await embedMany({
+  if (chunks.length === 0) return [];
+  const startedAt = Date.now();
+  const result = await embedMany({
     model: embeddingModel,
     values: chunks,
   });
-  return embeddings.map((e, i) => ({ content: chunks[i], embedding: e }));
+  const inputChars = chunks.reduce((sum, c) => sum + c.length, 0);
+  logLlmUsage({
+    op: 'embedMany',
+    model: EMBED_MODEL_NAME,
+    caller,
+    inputChars,
+    batchSize: chunks.length,
+    usage: (result as any).usage
+      ? { totalTokens: (result as any).usage.tokens ?? (result as any).usage.totalTokens }
+      : undefined,
+    durationMs: Date.now() - startedAt,
+  });
+  return result.embeddings.map((e, i) => ({ content: chunks[i], embedding: e }));
 };
 
-export const generateEmbedding = async (value: string): Promise<number[]> => {
+export const generateEmbedding = async (
+  value: string,
+  caller: string = 'generateEmbedding',
+): Promise<number[]> => {
   const input = value.replaceAll('\n', ' ').replace(/\s+/g, ' ').trim();
-  const { embedding } = await embed({
+  const startedAt = Date.now();
+  const result = await embed({
     model: embeddingModel,
     value: input,
   });
-  return embedding;
+  logLlmUsage({
+    op: 'embed',
+    model: EMBED_MODEL_NAME,
+    caller,
+    inputChars: input.length,
+    usage: (result as any).usage
+      ? { totalTokens: (result as any).usage.tokens ?? (result as any).usage.totalTokens }
+      : undefined,
+    durationMs: Date.now() - startedAt,
+  });
+  return result.embedding;
 };
 
 // Helper function to extract keywords from query for text search
@@ -333,18 +364,20 @@ function combineScores(semanticScore: number, keywordScore: number, semanticWeig
 }
 
 export const findRelevantContent = async (
-  userQuery: string, 
+  userQuery: string,
   userId: string,
   options?: {
     useCache?: boolean;
     useHybridSearch?: boolean;
     minDate?: Date;
     maxDate?: Date;
+    caller?: string;
   }
 ) => {
   const startTime = Date.now();
   const useCache = options?.useCache !== false; // Default to true
   const useHybridSearch = options?.useHybridSearch !== false; // Default to true
+  const caller = options?.caller ?? 'findRelevantContent';
   
   try {
     // Check cache first
@@ -358,7 +391,7 @@ export const findRelevantContent = async (
     }
 
     // Generate embedding for semantic search
-    const userQueryEmbedded = await generateEmbedding(userQuery);
+    const userQueryEmbedded = await generateEmbedding(userQuery, `findRelevantContent(${caller})`);
 
     // Validate that every embedding value is a finite number to prevent injection via sql.raw()
     for (const val of userQueryEmbedded) {

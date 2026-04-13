@@ -14,6 +14,7 @@ import { eq, and } from 'drizzle-orm';
 import { auth } from '@/app/api/auth/auth';
 import { sql } from 'drizzle-orm';
 import { embeddingCache } from '../ai/embedding-cache';
+import { autoRouteResource } from './auto-route-resource';
 
 export const createResource = async (input: NewResourceParams) => {
   try {
@@ -34,7 +35,7 @@ export const createResource = async (input: NewResourceParams) => {
       })
       .returning();
 
-    const embeddings = await generateEmbeddings(content);
+    const embeddings = await generateEmbeddings(content, 'createResource');
     if (embeddings.length > 0) {
       await db.insert(embeddingsTable).values(
         embeddings.map(embedding => ({
@@ -47,6 +48,12 @@ export const createResource = async (input: NewResourceParams) => {
     }
 
     embeddingCache.clearForUser(userId);
+
+    // Fire-and-forget: auto-route into tables whose autoRoute rule matches.
+    // Never blocks or fails createResource.
+    autoRouteResource(resource.id, userId).catch((err) => {
+      console.error('[createResource] autoRouteResource failed (non-fatal):', err);
+    });
 
     return { success: true, message: 'Resource successfully created and embedded.', id: resource.id };
   } catch (error) {
@@ -115,7 +122,7 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
         .where(eq(embeddingsTable.sourceId, resourceId));
 
       // Generate new embeddings
-      const embeddings = await generateEmbeddings(parsed.content);
+      const embeddings = await generateEmbeddings(parsed.content, 'updateResource');
       if (embeddings.length > 0) {
         await db.insert(embeddingsTable).values(
           embeddings.map(embedding => ({

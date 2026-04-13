@@ -103,7 +103,7 @@ export const analyzeFileTool = {
 
     // Extract structured information using AI
     const userName = session?.user?.name || null;
-    let extracted = await extractStructuredInformation(resource.content, userName);
+    let extracted = await extractStructuredInformation(resource.content, userName, 'analyzeFile');
 
     if (!extracted) {
       return {

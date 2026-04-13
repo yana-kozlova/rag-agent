@@ -9,6 +9,7 @@ import { tools } from '@/lib/ai/tools';
 import { env } from '@/lib/env.mjs';
 import { SYSTEM_PROMPT } from '@/app/prompts/system';
 import { saveUserMessage } from '@/lib/middleware/save-user-message';
+import { logLlmUsage } from '@/lib/ai/telemetry';
 
 // Allow streaming responses up to 60 seconds
 export const maxDuration = 60;
@@ -83,6 +84,7 @@ export async function POST(req: Request) {
 
     const modelName = env.AI_CHAT_MODEL || 'gpt-4o-mini';
     const toolSteps = env.AI_TOOL_STEPS ?? 5;
+    const streamStartedAt = Date.now();
     const result = streamText({
       model: openai(modelName),
       messages: convertToModelMessages(processedMessages),
@@ -90,6 +92,22 @@ export async function POST(req: Request) {
       system: SYSTEM_PROMPT.replace('{TOOLS}', Object.values(tools).map(t => t.description).join('\n')).replace('{TODAY}', new Date().toLocaleDateString()),
       tools,
       abortSignal: (req as any).signal,
+      onFinish: ({ usage, finishReason }: any) => {
+        logLlmUsage({
+          op: 'streamText',
+          model: modelName,
+          caller: 'api/chat',
+          usage: usage
+            ? {
+                inputTokens: usage.inputTokens ?? usage.promptTokens,
+                outputTokens: usage.outputTokens ?? usage.completionTokens,
+                totalTokens: usage.totalTokens,
+              }
+            : undefined,
+          durationMs: Date.now() - streamStartedAt,
+          note: finishReason ? `finish=${finishReason}` : undefined,
+        });
+      },
     });
 
     return result.toUIMessageStreamResponse();

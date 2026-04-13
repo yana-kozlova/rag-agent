@@ -14,6 +14,7 @@ import { scheduleEventTool } from './events/schedule-event';
 import { createTableTool } from './tables/create-table';
 import { listTablesTool } from './tables/list-tables';
 import { addTableRowsTool } from './tables/add-table-rows';
+import { extractToTableTool } from './tables/extract-to-table';
 
 export const tools = {
   addResource: addResourceTool,
@@ -27,6 +28,7 @@ export const tools = {
   createTable: createTableTool,
   listTables: listTablesTool,
   addTableRows: addTableRowsTool,
+  extractToTable: extractToTableTool,
 } as const;
 
 export type { ToolDefinition } from './types';
