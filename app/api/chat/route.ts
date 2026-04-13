@@ -89,7 +89,9 @@ export async function POST(req: Request) {
       model: openai(modelName),
       messages: convertToModelMessages(processedMessages),
       stopWhen: stepCountIs(toolSteps),
-      system: SYSTEM_PROMPT.replace('{TOOLS}', Object.values(tools).map(t => t.description).join('\n')).replace('{TODAY}', new Date().toLocaleDateString()),
+      system: SYSTEM_PROMPT
+        .replace('{TOOLS}', Object.values(tools).map(t => t.description).join('\n'))
+        .replace('{TODAY_ISO}', new Date().toISOString().slice(0, 10)),
       tools,
       abortSignal: (req as any).signal,
       onFinish: ({ usage, finishReason }: any) => {

@@ -412,21 +412,8 @@ export default function ChatSection() {
           }
 
           if (messageTextForDisplay || uploadedResources.length > 0) {
-            // Save to history with user-friendly text
-            if (messageTextForDisplay) {
-              fetch('/api/chat/history', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ role: 'user', content: messageTextForDisplay }),
-              }).catch(() => {});
-            }
-            
-            // Send message with hidden marker for resourceIds (API will replace it)
-            // The marker won't be visible to user because API processes it before AI sees it
-            let messageToSend = messageTextForDisplay || '';
+           let messageToSend = messageTextForDisplay || '';
             if (uploadedResources.length > 0) {
-              // Add hidden marker that API will recognize and replace with technical info
-              // Use zero-width characters so it's invisible but API can detect it
               const marker = `\u200B\u200B[RESOURCE_IDS:${uploadedResources.join(',')}]\u200B\u200B`;
               messageToSend = messageTextForDisplay 
                 ? `${messageTextForDisplay}${marker}`

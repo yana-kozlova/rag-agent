@@ -28,6 +28,7 @@ export class GoogleCalendarService {
     singleEvents?: boolean;
     orderBy?: 'startTime' | 'updated';
     pageToken?: string;
+    timeZone?: string;
   } = {}) {
     const params: calendar_v3.Params$Resource$Events$List = {
       calendarId,
@@ -38,6 +39,7 @@ export class GoogleCalendarService {
       orderBy: opts.orderBy ?? 'startTime',
       q: opts.q,
       pageToken: opts.pageToken,
+      timeZone: opts.timeZone,
     };
     const res = await this.calendar.events.list(params as any, { timeout: 15000 });
     return {
@@ -115,6 +117,19 @@ export class GoogleCalendarService {
     } catch (error) {
       console.error('Error patching calendar event:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Get the user's calendar timezone (e.g. "Europe/Kyiv").
+   * Falls back to server local timezone on error.
+   */
+  async getTimeZone(): Promise<string> {
+    try {
+      const res = await this.calendar.settings.get({ setting: 'timezone' });
+      return (res.data.value as string) || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone;
     }
   }
 
