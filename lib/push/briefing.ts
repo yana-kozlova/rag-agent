@@ -2,8 +2,8 @@ import { openai } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 import { env } from '@/lib/env.mjs';
 import { logLlmUsage } from '@/lib/ai/telemetry';
-import { findRelevantContent } from '@/lib/ai/embedding';
 import { GoogleCalendarService } from '@/lib/services/calendar';
+import type { DayNote } from './day-notes';
 import {
   type CalendarEvent,
   fetchEventsBetween,
@@ -52,9 +52,13 @@ function plainBriefing(events: BriefingEvent[], tz: string): string {
  * saved notes that relates to it, condensed into notification-sized copy.
  */
 export async function generateBriefing(
-  userId: string,
   events: BriefingEvent[],
-  tz: string
+  tz: string,
+  /**
+   * Notes already retrieved for this day. Passed in rather than fetched here so
+   * the morning pass performs one retrieval total — see `fetchDayNotes`.
+   */
+  dayNotes: DayNote[] = []
 ): Promise<Briefing> {
   const eventCount = events.length;
 
@@ -70,23 +74,10 @@ export async function generateBriefing(
     .map((e) => `- ${formatEventTime(e, tz)} ${e.title}${e.location ? ` (${e.location})` : ''}`)
     .join('\n');
 
-  // Pull notes related to today's agenda so the briefing can surface context
-  // the user saved earlier and has probably forgotten about.
-  let notes = '';
-  try {
-    const topics = events.map((e) => e.title).join(', ');
-    const relevant = await findRelevantContent(topics, userId, {
-      caller: 'push/briefing',
-    });
-    if (Array.isArray(relevant) && relevant.length > 0) {
-      notes = relevant
-        .slice(0, 4)
-        .map((r: any) => `- ${String(r.name ?? r.content ?? '').slice(0, 300)}`)
-        .join('\n');
-    }
-  } catch (error) {
-    console.error('[push/briefing] RAG lookup failed:', error);
-  }
+  const notes = dayNotes
+    .slice(0, 4)
+    .map((n) => `- ${n.text.slice(0, 300)}`)
+    .join('\n');
 
   if (!env.OPENAI_API_KEY) {
     return { title: '☀️ Good morning', body: plainBriefing(events, tz), eventCount };

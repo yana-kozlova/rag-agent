@@ -1,4 +1,5 @@
 import { getLocalDateKey } from './timezone';
+import type { CalendarEvent } from './calendar-window';
 
 /**
  * Deterministic detection of things worth interrupting the user about.
@@ -9,25 +10,12 @@ import { getLocalDateKey } from './timezone';
  * assistant cheap enough to run daily and honest enough to unit test.
  */
 
-export type EventAttendee = {
-  email?: string | null;
-  displayName?: string | null;
-  self?: boolean | null;
-  organizer?: boolean | null;
-  responseStatus?: string | null;
-};
-
-export type DayEvent = {
-  id: string;
-  calendarId: string;
-  title: string;
-  /** RFC-3339 instant, or a bare date for all-day events. */
-  start: string;
-  end?: string;
-  allDay: boolean;
-  location?: string;
-  attendees?: EventAttendee[];
-};
+/**
+ * Exactly what `fetchEventsBetween` returns — aliased only to name the role
+ * these events play here. Detectors must not require a shape the shared
+ * calendar reader cannot produce, so the two are deliberately one type.
+ */
+export type DayEvent = CalendarEvent;
 
 export type InsightKind = 'conflict' | 'no-break' | 'person-context';
 

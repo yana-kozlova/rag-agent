@@ -8,6 +8,9 @@ import { getAccessTokenForUser, resolveUserTimezone } from '@/lib/push/google-to
 import { getLocalHour, getLocalDateKey } from '@/lib/push/timezone';
 import { claimNotification, pruneNotificationLedger } from '@/lib/push/dedupe';
 import { generateBriefing, fetchTodayEvents } from '@/lib/push/briefing';
+import { fetchDayNotes } from '@/lib/push/day-notes';
+import { scanDay } from '@/lib/push/insight-scan';
+import { enqueueNotification } from '@/lib/push/queue';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 
 export const runtime = 'nodejs';
@@ -37,6 +40,9 @@ export async function GET(req: Request) {
         timezone: users.timezone,
         briefingHour: users.briefingHour,
         briefingEnabled: users.briefingEnabled,
+        proactiveEnabled: users.proactiveEnabled,
+        quietHoursStart: users.quietHoursStart,
+        quietHoursEnd: users.quietHoursEnd,
       })
       .from(pushSubscriptions)
       .innerJoin(users, eq(users.id, pushSubscriptions.userId));
@@ -47,6 +53,7 @@ export async function GET(req: Request) {
 
     let sent = 0;
     let skipped = 0;
+    let queued = 0;
     const errors: string[] = [];
 
     for (const candidate of candidates) {
@@ -89,7 +96,11 @@ export async function GET(req: Request) {
             )
           : [];
 
-        const briefing = await generateBriefing(candidate.userId, events, tz);
+        // One retrieval, two consumers: the briefing works it into its
+        // sentence, the scan matches it against who the user is meeting.
+        const notes = await fetchDayNotes(candidate.userId, events);
+
+        const briefing = await generateBriefing(events, tz, notes);
 
         const subs = await db
           .select({ endpoint: pushSubscriptions.endpoint, keys: pushSubscriptions.keys })
@@ -119,6 +130,40 @@ export async function GET(req: Request) {
         );
 
         sent += successCount;
+
+        // Proactive insights ride the same pass: the events and notes are
+        // already in hand, so the scan itself costs no further calls. Each one
+        // is queued for its own moment rather than sent now — a "no break for
+        // four hours" warning is useful ten minutes before, not at breakfast.
+        if (candidate.proactiveEnabled) {
+          const insights = scanDay({
+            events,
+            notes,
+            now,
+            tz,
+            quietHours: {
+              quietHoursStart: candidate.quietHoursStart,
+              quietHoursEnd: candidate.quietHoursEnd,
+            },
+          });
+
+          for (const insight of insights) {
+            // Claimed at scan time, so a re-run of this hour cannot queue the
+            // same nudge twice even though nothing has been delivered yet.
+            if (!(await claimNotification(candidate.userId, insight.dedupeKey, insight.kind))) {
+              continue;
+            }
+
+            await enqueueNotification({
+              userId: candidate.userId,
+              notifyAt: insight.notifyAt,
+              payload: insight.payload,
+              kind: insight.kind,
+            });
+
+            queued++;
+          }
+        }
       } catch (error: any) {
         console.error(`[push/scheduled] Error for user ${candidate.userId}:`, error);
         errors.push(candidate.userId);
@@ -131,6 +176,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       sent,
+      queued,
       skipped,
       candidates: candidates.length,
       errors: errors.length,

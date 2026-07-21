@@ -6,6 +6,7 @@ type Preferences = {
   briefingEnabled: boolean;
   briefingHour: number;
   eventRemindersEnabled: boolean;
+  proactiveEnabled: boolean;
   retroEnabled: boolean;
   retroHour: number;
   quietHoursStart: number | null;
@@ -157,6 +158,23 @@ export function NotificationPreferences() {
           </label>
           <span className="label-text-alt opacity-70">
             Sent shortly before an event starts, with Snooze and Cancel buttons.
+          </span>
+        </div>
+
+        <div className="form-control">
+          <label className="label cursor-pointer justify-between">
+            <span className="label-text">Proactive insights</span>
+            <input
+              type="checkbox"
+              className="toggle"
+              checked={prefs.proactiveEnabled}
+              onChange={(e) => save({ proactiveEnabled: e.currentTarget.checked })}
+            />
+          </label>
+          <span className="label-text-alt opacity-70">
+            Nudges about double-bookings, long back-to-back stretches, and notes on
+            people you&apos;re about to meet. These can arrive at times you didn&apos;t
+            pick — quiet hours still apply.
           </span>
         </div>
 

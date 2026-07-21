@@ -10,13 +10,26 @@ import { addLocalDays, formatUtcOffset, getLocalDateKey } from './timezone';
  * the window — so the fan-out, de-duplication and ordering live here once.
  */
 
+export type EventAttendee = {
+  email?: string | null;
+  displayName?: string | null;
+  /** True on the entry representing the calendar's owner. */
+  self?: boolean | null;
+  organizer?: boolean | null;
+  /** accepted | declined | tentative | needsAction */
+  responseStatus?: string | null;
+};
+
 export type CalendarEvent = {
   id: string;
+  /** Which of the user's calendars this copy came from. */
+  calendarId: string;
   title: string;
   start: string;
   end?: string;
   allDay: boolean;
   location?: string;
+  attendees?: EventAttendee[];
 };
 
 /**
@@ -67,19 +80,29 @@ export async function fetchEventsBetween(
     )
   );
 
-  const events = results.flatMap((res) => {
+  const events = results.flatMap((res, i) => {
     if (res.status !== 'fulfilled') return [];
+    // Index back into calendarIds: acting on an event later — cancelling it,
+    // or moving it — has to target the calendar it actually lives on.
+    const calendarId = calendarIds[i]!;
     return (res.value.items || []).map((event: any) => ({
       id: event.id as string,
+      calendarId,
       title: (event.summary as string) || 'Untitled',
       start: (event.start?.dateTime || event.start?.date) as string,
       end: (event.end?.dateTime || event.end?.date) as string | undefined,
       allDay: !event.start?.dateTime,
       location: event.location as string | undefined,
+      // Carried through unfiltered; deciding which attendees matter is the
+      // caller's business, and dropping them here is what previously made
+      // "who am I meeting" impossible to answer downstream.
+      attendees: (event.attendees as EventAttendee[] | undefined) ?? undefined,
     }));
   });
 
   // Merge duplicates across followed calendars, then order by start time.
+  // calendarIds puts "primary" first, so the copy that wins is the user's own —
+  // the only one carrying their responseStatus.
   const seen = new Map<string, CalendarEvent>();
   for (const e of events) {
     if (e.start && !seen.has(e.id)) seen.set(e.id, e);

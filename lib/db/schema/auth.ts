@@ -25,6 +25,12 @@ export const users = pgTable("user", {
   briefingHour: integer("briefing_hour").notNull().default(9),
   briefingEnabled: boolean("briefing_enabled").notNull().default(true),
   eventRemindersEnabled: boolean("event_reminders_enabled").notNull().default(true),
+  /**
+   * Proactive insights — conflicts, no-break stretches, notes about people you
+   * are about to meet. Off by default: it is the only notification kind that
+   * interrupts at times the user never picked, so it has to be asked for.
+   */
+  proactiveEnabled: boolean("proactive_enabled").notNull().default(false),
   // Weekly retrospective, sent on the user's local Sunday at this local hour.
   retroHour: integer("retro_hour").notNull().default(19),
   retroEnabled: boolean("retro_enabled").notNull().default(true),

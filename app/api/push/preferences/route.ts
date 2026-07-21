@@ -16,6 +16,7 @@ const preferencesSchema = z
     briefingEnabled: z.boolean().optional(),
     briefingHour: hour.optional(),
     eventRemindersEnabled: z.boolean().optional(),
+    proactiveEnabled: z.boolean().optional(),
     retroEnabled: z.boolean().optional(),
     retroHour: hour.optional(),
     // Explicit null clears the window; omitting the field leaves it untouched.
@@ -38,6 +39,7 @@ export async function GET() {
         briefingEnabled: users.briefingEnabled,
         briefingHour: users.briefingHour,
         eventRemindersEnabled: users.eventRemindersEnabled,
+        proactiveEnabled: users.proactiveEnabled,
         retroEnabled: users.retroEnabled,
         retroHour: users.retroHour,
         quietHoursStart: users.quietHoursStart,
