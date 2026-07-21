@@ -3,6 +3,7 @@
 import { ScheduleEventCard } from './ScheduleEventCard';
 import { KnowledgeResults } from './KnowledgeResults';
 import { EventsCard } from './EventsCard';
+import { renderDeleteEvent, renderAddResource, renderForgetInformation } from './mutations';
 import { RawToolOutput } from './RawToolOutput';
 
 type ToolPart = {
@@ -19,6 +20,9 @@ const RENDERERS: Record<string, (part: ToolPart) => React.ReactNode> = {
   ),
   getInformation: (part) => <KnowledgeResults output={part.output} />,
   getEvents: (part) => <EventsCard output={(part.output ?? {}) as any} />,
+  deleteEvent: renderDeleteEvent,
+  addResource: renderAddResource,
+  forgetInformation: renderForgetInformation,
 };
 
 export function renderToolPart(part: ToolPart): React.ReactNode {
