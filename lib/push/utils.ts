@@ -11,6 +11,19 @@ export interface PushSubscription {
   };
 }
 
+/**
+ * A button rendered on the notification itself.
+ *
+ * `action` is the id the service worker receives back in `event.action`.
+ * Most platforms surface only the first two, and several (notably iOS Safari)
+ * render none — so an action must never be the only way to do something.
+ */
+export interface PushAction {
+  action: string;
+  title: string;
+  icon?: string;
+}
+
 export interface PushPayload {
   title: string;
   body: string;
@@ -18,6 +31,8 @@ export interface PushPayload {
   icon?: string;
   badge?: string;
   tag?: string;
+  actions?: PushAction[];
+  requireInteraction?: boolean;
 }
 
 const VAPID_PUBLIC_KEY = env.VAPID_PUBLIC_KEY || '';
@@ -57,6 +72,9 @@ export async function sendPushNotification(
       badge: payload.badge || '/avatars/bot.svg',
       tag: payload.tag || 'default',
       data: payload.data || {},
+      // Browsers cap the visible count themselves; sending more is harmless.
+      actions: payload.actions ?? [],
+      requireInteraction: payload.requireInteraction ?? false,
     });
 
     await webpushInstance.sendNotification(
@@ -108,16 +126,40 @@ export async function sendToSubscriptions(
   return { successCount, total: subscriptions.length };
 }
 
+/**
+ * Guard for cron-triggered endpoints.
+ *
+ * Fails *closed*: with no CRON_SECRET configured these routes are reachable by
+ * anyone who knows the path, so an unset secret is treated as misconfiguration
+ * rather than as "no auth needed". Development is exempted so local runs work.
+ */
 export function validateCronSecret(req: Request): boolean {
   const cronSecret = env.CRON_SECRET || process.env.CRON_SECRET;
+
   if (!cronSecret || typeof cronSecret !== 'string' || cronSecret.trim().length === 0) {
-    return true; // No secret required
+    if (process.env.NODE_ENV !== 'production') return true;
+    console.error(
+      '[push] CRON_SECRET is not set in production — refusing to run cron endpoint.'
+    );
+    return false;
   }
 
   const authHeader = req.headers.get('authorization');
-  const providedSecret = authHeader?.replace('Bearer ', '') || 
-                       new URL(req.url).searchParams.get('secret');
-  
-  return providedSecret === cronSecret;
+  const providedSecret =
+    authHeader?.replace('Bearer ', '') || new URL(req.url).searchParams.get('secret');
+
+  if (!providedSecret) return false;
+
+  return timingSafeEqual(providedSecret, cronSecret);
+}
+
+/** Constant-time string compare, so the secret can't be probed byte by byte. */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
 

@@ -5,22 +5,32 @@ import { users } from '@/lib/db/schema/auth';
 import { eq } from 'drizzle-orm';
 import { sendToSubscriptions, validateCronSecret } from '@/lib/push/utils';
 import { getAccessTokenForUser, resolveUserTimezone } from '@/lib/push/google-token';
-import { getLocalHour, getLocalDateKey } from '@/lib/push/timezone';
-import { claimNotification, pruneNotificationLedger } from '@/lib/push/dedupe';
-import { generateBriefing, fetchTodayEvents } from '@/lib/push/briefing';
+import { getLocalHour, getLocalDateKey, getLocalDayOfWeek } from '@/lib/push/timezone';
+import { claimNotification } from '@/lib/push/dedupe';
+import {
+  fetchWeekEvents,
+  fetchWeekNotes,
+  generateRetrospective,
+  weekStartInstant,
+} from '@/lib/push/retrospective';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 
 export const runtime = 'nodejs';
-// Briefing generation fans out over calendars plus an LLM call per user.
+// A week of calendars across several sources, plus an LLM call per user.
 export const maxDuration = 60;
 
+/** Sunday, in the 0 = Sunday numbering `getLocalDayOfWeek` returns. */
+const SUNDAY = 0;
+
 /**
- * Daily briefing dispatcher.
+ * Weekly retrospective dispatcher.
  *
- * Invoked hourly by cron. Vercel evaluates cron expressions in UTC and that is
- * not configurable, so the *schedule* does not decide when a user hears from us:
- * the job wakes every hour and sends only to users for whom it is currently
- * their local briefing hour. This is what fixes briefings landing hours late.
+ * Same shape as the daily briefing — an hourly cron that decides per user
+ * whether it is currently their moment — with one extra filter for the local
+ * day of week. The cron must wake on Saturday, Sunday *and* Monday in UTC:
+ * somebody's local Sunday starts as early as Saturday 10:00 UTC (UTC+14) and
+ * ends as late as Monday 12:00 UTC (UTC-12), so a Sunday-only UTC schedule
+ * would silently skip users on both edges of the map.
  */
 export async function GET(req: Request) {
   try {
@@ -30,13 +40,12 @@ export async function GET(req: Request) {
 
     const now = new Date();
 
-    // Users who can actually receive a push, with their scheduling preferences.
     const candidates = await db
       .selectDistinct({
         userId: users.id,
         timezone: users.timezone,
-        briefingHour: users.briefingHour,
-        briefingEnabled: users.briefingEnabled,
+        retroHour: users.retroHour,
+        retroEnabled: users.retroEnabled,
       })
       .from(pushSubscriptions)
       .innerJoin(users, eq(users.id, pushSubscriptions.userId));
@@ -51,7 +60,7 @@ export async function GET(req: Request) {
 
     for (const candidate of candidates) {
       try {
-        if (!candidate.briefingEnabled) {
+        if (!candidate.retroEnabled) {
           skipped++;
           continue;
         }
@@ -63,25 +72,26 @@ export async function GET(req: Request) {
           candidate.timezone
         );
 
-        // Quiet hours are not consulted here on purpose: the briefing hour is
-        // itself an explicit choice, so a user who picks one inside their quiet
-        // window means it. Silencing it would just look broken.
-        //
-        // The whole point: compare against the user's wall clock, not the server's.
-        if (getLocalHour(now, tz) !== candidate.briefingHour) {
+        // Quiet hours are deliberately not consulted, for the same reason as the
+        // briefing: the retro hour is itself an explicit choice by the user.
+        if (
+          getLocalDayOfWeek(now, tz) !== SUNDAY ||
+          getLocalHour(now, tz) !== candidate.retroHour
+        ) {
           skipped++;
           continue;
         }
 
-        // One briefing per local day, even if cron double-fires or retries.
-        const dedupeKey = `briefing:${getLocalDateKey(now, tz)}`;
-        if (!(await claimNotification(candidate.userId, dedupeKey, 'daily-briefing'))) {
+        // Keyed on the local Sunday, so retries and double-fires collapse into
+        // the one send — and next Sunday is a different key.
+        const dedupeKey = `retro:${getLocalDateKey(now, tz)}`;
+        if (!(await claimNotification(candidate.userId, dedupeKey, 'weekly-retro'))) {
           skipped++;
           continue;
         }
 
         const events = accessToken
-          ? await fetchTodayEvents(
+          ? await fetchWeekEvents(
               new GoogleCalendarService(accessToken, candidate.userId),
               candidate.userId,
               now,
@@ -89,7 +99,12 @@ export async function GET(req: Request) {
             )
           : [];
 
-        const briefing = await generateBriefing(candidate.userId, events, tz);
+        const notes = await fetchWeekNotes(
+          candidate.userId,
+          weekStartInstant(now, tz)
+        );
+
+        const retro = await generateRetrospective(candidate.userId, events, notes, tz);
 
         const subs = await db
           .select({ endpoint: pushSubscriptions.endpoint, keys: pushSubscriptions.keys })
@@ -99,34 +114,32 @@ export async function GET(req: Request) {
         const { successCount } = await sendToSubscriptions(
           subs.map((s) => ({ endpoint: s.endpoint, keys: s.keys })),
           {
-            title: briefing.title,
-            body: briefing.body,
+            title: retro.title,
+            body: retro.body,
             data: {
               url: '/',
-              type: 'daily-briefing',
-              date: getLocalDateKey(now, tz),
-              snoozeMinutes: 60,
+              type: 'weekly-retro',
+              weekEnding: getLocalDateKey(now, tz),
+              stats: retro.stats,
+              snoozeMinutes: 120,
             },
             icon: '/avatars/bot.svg',
             badge: '/avatars/bot.svg',
-            tag: 'daily-briefing',
+            tag: 'weekly-retro',
             actions: [
               { action: 'snooze', title: 'Later' },
               { action: 'save-note', title: 'Save' },
             ],
           },
-          'push/scheduled'
+          'push/retrospective'
         );
 
         sent += successCount;
       } catch (error: any) {
-        console.error(`[push/scheduled] Error for user ${candidate.userId}:`, error);
+        console.error(`[push/retrospective] Error for user ${candidate.userId}:`, error);
         errors.push(candidate.userId);
       }
     }
-
-    // Cheap housekeeping so the dedupe ledger stays small.
-    await pruneNotificationLedger();
 
     return NextResponse.json({
       ok: true,
@@ -137,7 +150,7 @@ export async function GET(req: Request) {
       timestamp: now.toISOString(),
     });
   } catch (error: any) {
-    console.error('[push/scheduled] Error:', error);
+    console.error('[push/retrospective] Error:', error);
     return NextResponse.json(
       { ok: false, error: error?.message ?? 'Unknown error' },
       { status: 500 }

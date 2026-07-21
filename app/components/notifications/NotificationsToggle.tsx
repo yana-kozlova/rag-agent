@@ -10,16 +10,20 @@ export function NotificationsToggle() {
   const [pushSupported, setPushSupported] = useState<boolean>(false);
   const [subscribing, setSubscribing] = useState<boolean>(false);
   const [nextScheduled, setNextScheduled] = useState<string | null>(null);
+  const [timezone, setTimezone] = useState<string | null>(null);
 
   const fetchNextScheduled = useCallback(async () => {
     try {
       const res = await fetch('/api/push/next-scheduled');
-      if (res.ok) {
-        const data = await res.json();
-        setNextScheduled(data.nextScheduledLocal);
+      if (!res.ok) {
+        setNextScheduled(null);
+        return;
       }
+      const data = await res.json();
+      setNextScheduled(data.enabled ? data.nextScheduledLocal ?? null : null);
+      setTimezone(data.timezone ?? null);
     } catch (e) {
-      // Ignore errors
+      setNextScheduled(null);
     }
   }, []);
 
@@ -317,7 +321,8 @@ export function NotificationsToggle() {
           <div className="text-sm text-success">✓ Push notifications enabled. You&apos;ll receive alerts even when the tab is closed.</div>
           {nextScheduled && (
             <div className="text-xs text-muted-foreground">
-              Next reminder: {nextScheduled}
+              Next briefing: {nextScheduled}
+              {timezone ? ` (${timezone})` : ''}
             </div>
           )}
         </div>

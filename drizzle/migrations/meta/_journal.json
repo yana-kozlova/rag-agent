@@ -50,6 +50,34 @@
       "when": 1764500000000,
       "tag": "0006_push_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1764600000000,
+      "tag": "0007_notification_scheduling",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1764700000000,
+      "tag": "0008_notification_actions",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1764800000000,
+      "tag": "0009_weekly_retrospective",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1764900000000,
+      "tag": "0010_notification_claim",
+      "breakpoints": true
     }
   ]
 }

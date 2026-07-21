@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { title, message, userId: targetUserId, data } = body;
+    const { title, message, data } = body;
 
     if (!title || !message) {
       return NextResponse.json(
@@ -25,11 +25,14 @@ export async function POST(req: Request) {
       );
     }
 
-    // Get user's push subscriptions
+    // Deliberately scoped to the session user only. This route previously
+    // honoured a `userId` from the request body, which let any signed-in user
+    // push arbitrary notifications to anyone else. There is no admin concept
+    // here, so cross-user sends have no legitimate caller.
     const subscriptions = await db
       .select()
       .from(pushSubscriptions)
-      .where(eq(pushSubscriptions.userId, (targetUserId || userId) as any));
+      .where(eq(pushSubscriptions.userId, userId));
 
     if (subscriptions.length === 0) {
       return NextResponse.json({

@@ -17,6 +17,21 @@ export const users = pgTable("user", {
   emailVerified: timestamp("emailVerified", { mode: "date" }),
   image: text("image"),
   followedCalendars: jsonb("followed_calendars").$type<Array<{ calendarId: string; summary?: string }>>().notNull().default([] as any),
+  // IANA timezone (e.g. "Europe/Kyiv"), synced from the user's Google Calendar
+  // settings. Cron jobs run in UTC, so this is what lets us fire notifications
+  // at the right *local* hour instead of the server's hour.
+  timezone: text("timezone"),
+  // Local hour (0-23) at which the daily briefing is sent.
+  briefingHour: integer("briefing_hour").notNull().default(9),
+  briefingEnabled: boolean("briefing_enabled").notNull().default(true),
+  eventRemindersEnabled: boolean("event_reminders_enabled").notNull().default(true),
+  // Weekly retrospective, sent on the user's local Sunday at this local hour.
+  retroHour: integer("retro_hour").notNull().default(19),
+  retroEnabled: boolean("retro_enabled").notNull().default(true),
+  // Quiet hours as local hours [start, end), wrapping past midnight when
+  // start > end (e.g. 22 → 8). Null on either side disables the window.
+  quietHoursStart: integer("quiet_hours_start"),
+  quietHoursEnd: integer("quiet_hours_end"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

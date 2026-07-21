@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { ThemeSwitcher } from '@/app/components/theme/ThemeSwitcher';
 import { NotificationsToggle } from '@/app/components/notifications/NotificationsToggle';
 import { CalendarsPanel } from './CalendarsPanel';
+import { NotificationPreferences } from './NotificationPreferences';
 import ClearDataPanel from './ClearDataPanel';
 import Image from 'next/image';
 
@@ -51,6 +52,7 @@ export default async function SettingsPage() {
             <div className="card-actions justify-end" />
           </div>
         </section>
+        <NotificationPreferences />
         <CalendarsPanel />
         <ClearDataPanel />
       </div>
