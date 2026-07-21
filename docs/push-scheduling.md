@@ -40,13 +40,30 @@ send a header.
 
 | Endpoint | Schedule | Purpose |
 | --- | --- | --- |
-| `/api/push/scheduled` | `0 * * * *` | Daily briefing. Runs hourly and sends only to users whose local hour matches their `briefing_hour`, which is how one UTC schedule serves every timezone. |
+| `/api/push/scheduled` | `0 * * * *` | Daily briefing **dispatcher**. Runs hourly and selects only users whose local hour matches their `briefing_hour` — how one UTC schedule serves every timezone — then fans the per-user work out (see below). |
 | `/api/push/event-reminders` | `0 * * * *` | "Starting soon" reminders. The 60-minute match band is tied to this hourly cadence — see the constants in the route before changing it. |
 | `/api/push/drain` | `0 * * * *` | Safety net only: delivers rows QStash never took, and reclaims deliveries that died mid-flight. |
 | `/api/push/retrospective` | `0 * * * 6,0,1` | Weekly look back at the past seven days. Filters on local *day* as well as local hour. The Saturday/Sunday/Monday schedule is not padding: somebody's local Sunday starts Saturday 10:00 UTC (UTC+14) and ends Monday 12:00 UTC (UTC-12), so a Sunday-only schedule skips users at both edges of the map. |
 
 Hourly is deliberate for `drain`. It is not the delivery mechanism; making it
 more frequent buys nothing once QStash is configured.
+
+## Briefing fan-out
+
+`/api/push/scheduled` is a dispatcher, not a worker. It runs a cheap in-memory
+gate (`isBriefingDue`, off the cached `timezone`) over every subscriber and does
+no per-user I/O for the ~95% who aren't in their briefing window this hour. Each
+survivor is published as one QStash message to `POST /api/push/briefing-user`,
+which does that user's calendar fetch, LLM briefing, send, and insight queuing
+in its own short invocation. This is what keeps thousands of users off a single
+60-second budget; the atomic dedupe claim inside the worker makes a doubled
+dispatch or a QStash retry idempotent.
+
+`briefing-user` is driven by QStash, not cron — it takes `{ userId }` and
+authenticates with the same forwarded `CRON_SECRET`. Without QStash configured
+(local dev, or a failed publish) the dispatcher falls back to running users
+inline, bounded, so small deployments still work; large ones must set
+`QSTASH_TOKEN`.
 
 ## Cutover
 

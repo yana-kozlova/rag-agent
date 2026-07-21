@@ -32,16 +32,23 @@ function callbackOrigin(): string | null {
 }
 
 /**
- * Ask QStash to POST the drain endpoint when `notifyAt` arrives.
+ * Ask QStash to POST one of our endpoints, optionally not before a given
+ * instant. The callback authenticates with CRON_SECRET, forwarded as a plain
+ * `Authorization` header, so every push endpoint validates it identically.
  *
- * Returns the QStash message id, or null when scheduling was not possible —
- * no token, no reachable origin, or the API rejected it. Null is not an error
- * the caller needs to handle: the queue row is already durable, so the sweep
- * picks it up regardless. Precision degrades; delivery does not.
+ * Returns the QStash message id, or null when publishing was not possible —
+ * no token, no reachable origin, no secret, or the API rejected it. Callers
+ * treat null as "QStash didn't take it" and fall back accordingly; it is never
+ * a throw they must catch.
  */
-export async function scheduleDelivery(params: {
-  queueRowId: string;
-  notifyAt: Date;
+export async function publishJob(params: {
+  /** App-relative path, e.g. '/api/push/drain'. */
+  path: string;
+  body: unknown;
+  /** Earliest delivery instant. Omit or pass a past time for "send now". */
+  notBefore?: Date;
+  /** QStash-side retries on a transient 5xx from us. */
+  retries?: number;
 }): Promise<string | null> {
   const token = env.QSTASH_TOKEN;
   const origin = callbackOrigin();
@@ -53,14 +60,13 @@ export async function scheduleDelivery(params: {
     return null;
   }
 
-  const destination = `${origin}/api/push/drain`;
+  const destination = `${origin}${params.path}`;
 
   // Whole seconds since the epoch; QStash rejects fractional values. A time
-  // already past means "send now", which is exactly the desired behaviour for
-  // a snooze that was queued late.
+  // already past means "send now".
   const notBefore = Math.max(
     Math.floor(Date.now() / 1000),
-    Math.floor(params.notifyAt.getTime() / 1000)
+    Math.floor((params.notBefore?.getTime() ?? 0) / 1000)
   );
 
   try {
@@ -72,15 +78,14 @@ export async function scheduleDelivery(params: {
         'Upstash-Not-Before': String(notBefore),
         // Reaches our route as a plain `Authorization` header.
         'Upstash-Forward-Authorization': `Bearer ${cronSecret}`,
-        // A transient 5xx on our side shouldn't drop the notification.
-        'Upstash-Retries': '3',
+        'Upstash-Retries': String(params.retries ?? 3),
       },
-      body: JSON.stringify({ queueRowId: params.queueRowId }),
+      body: JSON.stringify(params.body),
     });
 
     if (!res.ok) {
       console.error(
-        `[push/qstash] Publish failed (${res.status}): ${await res.text().catch(() => '')}`
+        `[push/qstash] Publish to ${params.path} failed (${res.status}): ${await res.text().catch(() => '')}`
       );
       return null;
     }
@@ -91,4 +96,22 @@ export async function scheduleDelivery(params: {
     console.error('[push/qstash] Publish threw:', error);
     return null;
   }
+}
+
+/**
+ * Ask QStash to POST the drain endpoint when `notifyAt` arrives.
+ *
+ * Null is not an error the caller needs to handle: the queue row is already
+ * durable, so the sweep picks it up regardless. Precision degrades; delivery
+ * does not.
+ */
+export async function scheduleDelivery(params: {
+  queueRowId: string;
+  notifyAt: Date;
+}): Promise<string | null> {
+  return publishJob({
+    path: '/api/push/drain',
+    body: { queueRowId: params.queueRowId },
+    notBefore: params.notifyAt,
+  });
 }
