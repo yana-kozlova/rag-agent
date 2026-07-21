@@ -4,6 +4,10 @@ import { GoogleCalendarService } from '@/lib/services/calendar';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import type { ToolCalendarEvent } from '@/types/calendar';
+import { eventsToModelOutput, type GetEventsOutput } from './get-events-format';
+
+export type { GetEventsOutput };
 
 /**
  * Compute UTC offset for a timezone at a given moment (handles DST).
@@ -106,26 +110,41 @@ Use "range" for common presets OR "date" for a specific day.
           })
         )
       );
-      const merged = results.flatMap((r: any) =>
-        r.status === 'fulfilled' ? r.value.items ?? [] : []
+      // Tag each merged event with the calendar it came from (results align
+      // positionally with calendarIds), so the card can label followed calendars.
+      const merged = results.flatMap((r: any, i: number) =>
+        r.status === 'fulfilled'
+          ? (r.value.items ?? []).map((item: any) => ({ item, calendarId: calendarIds[i]! }))
+          : []
       );
 
-      if (!merged.length) return [];
-
-      return merged.map((event) => {
-        const start = (event.start?.dateTime ?? event.start?.date) as string | undefined;
-        const end = (event.end?.dateTime ?? event.end?.date) as string | undefined;
-        const title = event.summary || 'No Title';
-        return [
-          `[Event] ${title}`,
-          start && end ? `When: ${start} - ${end}` : undefined,
-          event.location ? `Location: ${event.location}` : undefined,
-          event.description ? `Description: ${event.description}` : undefined,
-        ].filter(Boolean).join('. ');
+      const events: ToolCalendarEvent[] = merged.map(({ item, calendarId }) => {
+        const start = (item.start?.dateTime ?? item.start?.date) as string | undefined;
+        const end = (item.end?.dateTime ?? item.end?.date) as string | undefined;
+        const allDay = !!item.start?.date && !item.start?.dateTime;
+        return {
+          id: (item.id as string) ?? '',
+          calendarId,
+          title: item.summary || 'No Title',
+          start,
+          end,
+          allDay,
+          location: item.location || undefined,
+          description: item.description || undefined,
+          htmlLink: item.htmlLink || undefined,
+        };
       });
+
+      // Stable chronological order for display.
+      events.sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
+
+      return { events, count: events.length };
     } catch (error) {
       console.error('Error in getEventsTool:', error);
       throw new Error('Failed to fetch or process calendar events');
     }
   },
+  // The model keeps receiving the legacy JSON array of text lines; the rich
+  // `events` payload above is for the UI only.
+  toModelOutput: (output: GetEventsOutput) => eventsToModelOutput(output),
 } as const;

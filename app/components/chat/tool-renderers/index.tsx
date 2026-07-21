@@ -2,6 +2,7 @@
 
 import { ScheduleEventCard } from './ScheduleEventCard';
 import { KnowledgeResults } from './KnowledgeResults';
+import { EventsCard } from './EventsCard';
 import { RawToolOutput } from './RawToolOutput';
 
 type ToolPart = {
@@ -17,6 +18,7 @@ const RENDERERS: Record<string, (part: ToolPart) => React.ReactNode> = {
     <ScheduleEventCard output={(part.output ?? {}) as any} input={part.input as any} />
   ),
   getInformation: (part) => <KnowledgeResults output={part.output} />,
+  getEvents: (part) => <EventsCard output={(part.output ?? {}) as any} />,
 };
 
 export function renderToolPart(part: ToolPart): React.ReactNode {
