@@ -90,7 +90,7 @@ export default function EventsQuickPanel() {
   const dayLetters = ['S','M','T','W','T','F','S'];
 
   return (
-    <div className="card bg-base-100 card-border border-base-300 card-sm overflow-hidden shadow rounded-box">
+    <div className="card bg-base-100 card-bordered border-base-300 card-compact overflow-hidden shadow rounded-box">
       <div className="card-body gap-4 p-4">
         <div className="border-b-base-300 grid grid-cols-7 border-b border-dashed pb-3">
           {weekDays.map((d) => {
@@ -101,10 +101,10 @@ export default function EventsQuickPanel() {
                 type="button"
                 onClick={() => setSelected(new Date(d))}
                 disabled={isBeforeLocalDay(d, new Date())}
-                className={`rounded-field flex flex-col items-center px-2 py-1 ${isSel ? 'bg-success text-success-content' : ''} ${isBeforeLocalDay(d, new Date()) ? 'opacity-50' : ''}`}
+                className={`rounded-btn flex flex-col items-center px-2 py-1 ${isSel ? 'bg-success text-success-content' : ''} ${isBeforeLocalDay(d, new Date()) ? 'opacity-50' : ''}`}
               >
-                <span className="text-sm font-semibold">{d.getDate()}</span>
-                <span className="text-[10px] font-semibold opacity-50">{dayLetters[d.getDay()]}</span>
+                <span className="text-sm font-semibold font-mono">{d.getDate()}</span>
+                <span className="text-[10px] font-semibold opacity-50 font-mono">{dayLetters[d.getDay()]}</span>
               </button>
             );
           })}
@@ -121,7 +121,7 @@ export default function EventsQuickPanel() {
           <div className="flex items-center gap-2 p-4">
             <div className="grow min-w-0">
               <div className="text-sm font-medium truncate">{featured.title}</div>
-              <div className="text-xs opacity-60 truncate">
+              <div className="text-xs opacity-60 truncate font-mono">
                 {new Date(featured.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 {' – '}
                 {new Date(featured.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -143,7 +143,7 @@ export default function EventsQuickPanel() {
             <div key={ev.id} className="flex items-center gap-2 py-2 px-4">
                 <div className="grow min-w-0">
                   <div className="text-sm font-medium truncate">{ev.title}</div>
-                  <div className="text-xs opacity-60 truncate">
+                  <div className="text-xs opacity-60 truncate font-mono">
                     {new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     {' – '}
                     {new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

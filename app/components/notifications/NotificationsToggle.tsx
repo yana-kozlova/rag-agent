@@ -320,7 +320,7 @@ export function NotificationsToggle() {
         <div className="space-y-1">
           <div className="text-sm text-success">✓ Push notifications enabled. You&apos;ll receive alerts even when the tab is closed.</div>
           {nextScheduled && (
-            <div className="text-xs text-muted-foreground">
+            <div className="text-xs text-base-content/60">
               Next briefing: {nextScheduled}
               {timezone ? ` (${timezone})` : ''}
             </div>

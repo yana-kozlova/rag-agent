@@ -32,7 +32,7 @@ const CalendarSummary = dynamic(() => import('@/app/components/widgets/calendar-
 const EventsQuickPanel = dynamic(() => import('@/app/components/widgets/events-quick-panel'), { 
   ssr: false, 
   loading: () => (
-    <div className="card bg-base-100 card-border border-base-300 card-sm overflow-hidden shadow rounded-box min-h-[300px]">
+    <div className="card bg-base-100 card-bordered border-base-300 card-compact overflow-hidden shadow rounded-box min-h-[300px]">
       <div className="card-body gap-4 p-4">
         <div className="grid grid-cols-7 gap-2">
           {[1, 2, 3, 4, 5, 6, 7].map(i => (

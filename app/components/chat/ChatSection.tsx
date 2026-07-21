@@ -281,7 +281,7 @@ export default function ChatSection() {
               </div>
               <div className="chat-header">
                 {isUser ? 'You' : 'Assistant'}
-                {dateTimeStr && <time className="text-xs opacity-50 ml-2">{dateTimeStr}</time>}
+                {dateTimeStr && <time className="text-xs opacity-50 ml-2 font-mono">{dateTimeStr}</time>}
               </div>
               {bubbleText && (
                 <div className={`chat-bubble whitespace-pre-wrap break-words text-sm md:text-base`}>

@@ -1,8 +1,5 @@
-const { fontFamily } = require("tailwindcss/defaultTheme")
-
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  darkMode: ["class"],
   content: [
     "./app/**/*.{js,ts,jsx,tsx}",
     "./components/**/*.{js,ts,jsx,tsx}",
@@ -16,98 +13,20 @@ module.exports = {
       },
     },
     extend: {
-      colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-        destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
-        },
-        popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
-        },
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
-        },
-      },
-      borderRadius: {
-        lg: `var(--radius)`,
-        md: `calc(var(--radius) - 2px)`,
-        sm: "calc(var(--radius) - 4px)",
-      },
       fontFamily: {
-        sans: ["var(--font-sans)", ...fontFamily.sans],
-      },
-      keyframes: {
-        "accordion-down": {
-          from: { height: 0 },
-          to: { height: "var(--radix-accordion-content-height)" },
-        },
-        "accordion-up": {
-          from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: 0 },
-        },
-      },
-      animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
+        // Sans carries prose: chat, headings, descriptions.
+        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        // Mono carries data: times, tags, ids, counters, code.
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
     },
   },
-  plugins: [require("tailwindcss-animate"), require("daisyui")],
+  plugins: [require("daisyui")],
   daisyui: {
+    // One light theme and its dark twin. `dark` mirrors `silk`: the same warm
+    // hue axis, inverted. Buttons stay a single flat surface in both, and the
+    // vivid label colours (acid green / orange / teal) carry the identity.
     themes: [
-      {
-        bumblebee: {
-          'color-scheme': 'light',
-          primary: 'oklch(78% 0.189 84.429)',
-          'primary-content': 'oklch(100% 0 0)',
-          secondary: 'oklch(82% 0.238 128.85)',
-          'secondary-content': 'oklch(25% 0.141 291.089)',
-          accent: 'oklch(72% 0.16 232.661)',
-          'accent-content': 'oklch(27% 0.077 45.635)',
-          neutral: 'oklch(53% 0 0)',
-          'neutral-content': 'oklch(98% 0 0)',
-          'base-100': 'oklch(98% 0 0)',
-          'base-200': 'oklch(96% 0 0)',
-          'base-300': 'oklch(90% 0 0)',
-          'base-content': 'oklch(15% 0 0)',
-          info: 'oklch(58% 0.158 241.966)',
-          'info-content': 'oklch(97% 0.013 236.62)',
-          success: 'oklch(63% 0.2 131.684)',
-          'success-content': 'oklch(98% 0.031 120.757)',
-          warning: 'oklch(64% 0.179 58.318)',
-          'warning-content': 'oklch(98% 0.022 95.277)',
-          error: 'oklch(56% 0.253 17.585)',
-          'error-content': 'oklch(98% 0.015 12.422)',
-          '--rounded-box': '1rem',
-          '--rounded-btn': '1rem',
-          '--rounded-badge': '1rem',
-          '--tab-border': '1.5px',
-          '--tab-radius': '1rem',
-        },
-      },
       {
         silk: {
           'color-scheme': 'light',
@@ -122,7 +41,8 @@ module.exports = {
           'base-100': 'oklch(97% 0.0035 67.78)',
           'base-200': 'oklch(95% 0.0081 61.42)',
           'base-300': 'oklch(90% 0.0081 61.42)',
-          'base-content': 'oklch(40% 0.0081 61.42)',
+          // Darkened from 40% so body text clears 7:1 on base-100.
+          'base-content': 'oklch(35% 0.0081 61.42)',
           info: 'oklch(80.39% 0.1148 241.68)',
           'info-content': 'oklch(30.39% 0.1148 241.68)',
           success: 'oklch(83.92% 0.0901 136.87)',
@@ -134,105 +54,46 @@ module.exports = {
           '--rounded-box': '1rem',
           '--rounded-btn': '0.5rem',
           '--rounded-badge': '2rem',
+          '--border-btn': '1px',
           '--tab-border': '2px',
           '--tab-radius': '0.5rem',
-          '--radius-selector': '2rem',
-          '--radius-field': '0.5rem',
-          '--radius-box': '1rem',
-          '--size-selector': '0.25rem',
-          '--size-field': '0.25rem',
-          '--border': '2px',
-          '--depth': '1',
-          '--noise': '0',
         },
       },
       {
-        autumn: {
-          'color-scheme': 'light',
-          'base-100': 'oklch(96% 0 0)',
-          'base-200': 'oklch(90% 0 0)',
-          'base-300': 'oklch(83% 0 0)',
-          'base-content': 'oklch(18% 0 0)',
-          primary: 'oklch(57% 0.17 40)',
-          'primary-content': 'oklch(90% 0.03 35)',
-          secondary: 'oklch(75% 0.14 85)',
-          'secondary-content': 'oklch(15% 0.03 85)',
-          accent: 'oklch(55% 0.11 135)',
-          'accent-content': 'oklch(92% 0.02 135)',
-          neutral: 'oklch(52% 0.03 50)',
-          'neutral-content': 'oklch(91% 0.007 50)',
-          info: 'oklch(68% 0.09 210)',
-          'info-content': 'oklch(14% 0.02 210)',
-          success: 'oklch(62% 0.08 160)',
-          'success-content': 'oklch(13% 0.015 160)',
-          warning: 'oklch(72% 0.15 65)',
-          'warning-content': 'oklch(13% 0.03 65)',
-          error: 'oklch(52% 0.22 25)',
-          'error-content': 'oklch(93% 0.04 25)',
+        dark: {
+          'color-scheme': 'dark',
+          // Inverted: the button surface is now warm light, and the label keeps
+          // silk's vivid hue, darkened enough to read against it.
+          primary: 'oklch(93% 0.008 67.78)',
+          'primary-content': 'oklch(43% 0.16 117.44)',
+          secondary: 'oklch(93% 0.008 67.78)',
+          'secondary-content': 'oklch(45% 0.19 50.94)',
+          accent: 'oklch(93% 0.008 67.78)',
+          'accent-content': 'oklch(45% 0.13 189.9)',
+          neutral: 'oklch(85% 0.006 61.42)',
+          'neutral-content': 'oklch(22% 0.006 61.42)',
+          'base-100': 'oklch(21% 0.006 67.78)',
+          'base-200': 'oklch(25% 0.007 61.42)',
+          'base-300': 'oklch(31% 0.008 61.42)',
+          'base-content': 'oklch(89% 0.008 61.42)',
+          // Status colours are shared with silk: light fill, dark label. They
+          // read as badges on either base without a second set of values.
+          info: 'oklch(80.39% 0.1148 241.68)',
+          'info-content': 'oklch(30.39% 0.1148 241.68)',
+          success: 'oklch(83.92% 0.0901 136.87)',
+          'success-content': 'oklch(23.92% 0.0901 136.87)',
+          warning: 'oklch(83.92% 0.1085 80)',
+          'warning-content': 'oklch(43.92% 0.1085 80)',
+          error: 'oklch(75.1% 0.1814 22.37)',
+          'error-content': 'oklch(35.1% 0.1814 22.37)',
           '--rounded-box': '1rem',
           '--rounded-btn': '0.5rem',
-          '--rounded-badge': '1rem',
-          '--tab-border': '1px',
+          '--rounded-badge': '2rem',
+          '--border-btn': '1px',
+          '--tab-border': '2px',
           '--tab-radius': '0.5rem',
-          '--radius-selector': '1rem',
-          '--radius-field': '0.5rem',
-          '--radius-box': '1rem',
-          '--size-selector': '0.25rem',
-          '--size-field': '0.25rem',
-          '--border': '1px',
-          '--depth': '1',
-          '--noise': '0',
         },
       },
-      {
-        soft: {
-          'color-scheme': 'light',
-          // Base colors - using Pure White and Cloud White
-          'base-100': '#FEFEFE', // Pure White
-          'base-200': '#EFEEEB', // Cloud White
-          'base-300': '#DED6DA', // Soft Orchid Tint
-          'base-content': '#4C4B4B', // Charcoal Accent
-          // Primary - using Ice Melt Blue
-          primary: '#D4E3F0', // Ice Melt Blue
-          'primary-content': '#4C4B4B', // Charcoal Accent
-          // Secondary - using Almost Aqua / Sage
-          secondary: '#C6CEBF', // Almost Aqua / Sage
-          'secondary-content': '#4C4B4B', // Charcoal Accent
-          // Accent - using Soft Orchid Tint
-          accent: '#DED6DA', // Soft Orchid Tint
-          'accent-content': '#4C4B4B', // Charcoal Accent
-          // Neutral - using Neutral Gray
-          neutral: '#8F8F8F', // Neutral Gray
-          'neutral-content': '#FEFEFE', // Pure White
-          // Info - using Ice Melt Blue
-          info: '#D4E3F0', // Ice Melt Blue
-          'info-content': '#4C4B4B', // Charcoal Accent
-          // Success - using Almost Aqua / Sage
-          success: '#C6CEBF', // Almost Aqua / Sage
-          'success-content': '#4C4B4B', // Charcoal Accent
-          // Warning - using Lemon Icing / Warm Cream
-          warning: '#F2E2CA', // Lemon Icing / Warm Cream
-          'warning-content': '#4C4B4B', // Charcoal Accent
-          // Error - using Soft Orchid Tint (darker variant)
-          error: '#DED6DA', // Soft Orchid Tint
-          'error-content': '#4C4B4B', // Charcoal Accent
-          '--rounded-box': '1rem',
-          '--rounded-btn': '0.5rem',
-          '--rounded-badge': '1rem',
-          '--tab-border': '1px',
-          '--tab-radius': '0.5rem',
-          '--radius-selector': '1rem',
-          '--radius-field': '0.5rem',
-          '--radius-box': '1rem',
-          '--size-selector': '0.25rem',
-          '--size-field': '0.25rem',
-          '--border': '1px',
-          '--depth': '1',
-          '--noise': '0',
-        },
-      },
-      'light',
-      'dark',
     ],
   },
 }

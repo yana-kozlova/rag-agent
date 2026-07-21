@@ -1,15 +1,25 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
- 
-/* Removed legacy CSS variables; daisyUI theme drives tokens now */
- 
+
+/* daisyUI drives every colour token. Nothing here may reference the old
+   shadcn CSS variables (--background, --foreground, --border, --radius) —
+   they no longer exist, and referencing them silently voids the rule. */
+
 @layer base {
-  * {
-    @apply border-border;
+  html {
+    /* Keeps the scrollbar in the theme instead of the OS default. */
+    scrollbar-color: oklch(var(--b3)) transparent;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-base-100 text-base-content antialiased;
+  }
+
+  /* Tabular figures stop times and counters from jittering as they tick. */
+  .font-mono,
+  time,
+  .countdown {
+    font-variant-numeric: tabular-nums;
   }
 }
-

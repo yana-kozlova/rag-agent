@@ -22,7 +22,7 @@ export default function CalendarSummary() {
       ) : (
         <>
           {todayEvents.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No upcoming events.</p>
+            <p className="text-sm text-base-content/60">No upcoming events.</p>
           ) : (
             <section>
               <div className="flex items-center justify-between">
@@ -33,21 +33,19 @@ export default function CalendarSummary() {
                     </button>
                   </div>
               </div>
-              <ul className="list">
+              <ul className="flex flex-col gap-1">
                 {todayEvents.map((ev) => {
                   const paletteBadge = ['badge-primary','badge-secondary','badge-accent','badge-info','badge-success','badge-warning','badge-error'];
-                  const paletteBg = ['bg-primary text-primary-content','bg-secondary text-secondary-content','bg-accent text-accent-content','bg-info text-info-content','bg-success text-success-content','bg-warning text-warning-content','bg-error text-error-content'];
                   const k = (ev.calendarId || '').toLowerCase();
                   let idx = 0;
                   for (let i = 0; i < k.length; i++) idx = (idx * 31 + k.charCodeAt(i)) % paletteBadge.length;
                   const badgeClass = paletteBadge[idx];
-                  const bgClass = paletteBg[idx];
                   const start = new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                   const end = new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                   return (
-                    <li key={ev.id} className="list-row pb-1 border-l-2 pl-2">
+                    <li key={ev.id} className="pb-1 border-l-2 pl-2">
                       <div className="flex items-center gap-2">
-                        <div className="bg-warning rounded-box text-base-content flex flex-col p-2 min-w-16 text-center text-lg">
+                        <div className="bg-base-200 rounded-box text-base-content flex flex-col p-2 min-w-16 text-center text-lg font-mono">
                           {start}
                         </div>
                         <div>
@@ -55,7 +53,7 @@ export default function CalendarSummary() {
                             <div className="font-bold text-sm md:text-md flex-1 min-w-0">{ev.title}</div>
                             {ev.calendarId !== 'primary' && <div className={`badge badge-ghost badge-xs mr-1 ${badgeClass}`}>{ev.calendarId}</div>}
                           </div>
-                          <div className="text-[11px] uppercase font-semibold opacity-60 truncate">
+                          <div className="text-[11px] uppercase font-semibold opacity-60 truncate font-mono">
                             {start} – {end}{ev.location ? ` · ${ev.location}` : ''}
                           </div>
                         </div>
