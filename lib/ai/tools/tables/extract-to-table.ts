@@ -9,30 +9,7 @@ const MAX_CANDIDATES = 10;
 const MAX_CONTENT_CHARS = 4000;
 
 export const extractToTableTool = {
-  description: `Find the user's notes/resources relevant to a specific table and prepare them
-for extraction into rows. This is the "second brain → structured data" bridge: use it when the
-user asks to populate a table from their existing notes, e.g.:
-  - "Переглянь мої нотатки про зустрічі і додай їх у таблицю Meetings"
-  - "Fill my Books table from the notes I've saved about books"
-  - "Extract all job applications from my notes into the Jobs table"
-
-What this tool returns:
-  - The target table's columns (so you know what to map into)
-  - A list of candidate resources, each with its FULL content, best-matching chunk, and
-    similarity score. A single resource appears only once even if multiple chunks matched.
-
-What you (the assistant) do next:
-  1. Read each candidate's content and extract the structured fields that match the table columns.
-  2. Call addTableRows with:
-       - tableId (from this tool's response)
-       - rows: your extracted row objects
-       - sourceResourceIdsPerRow: parallel array where each entry is [candidate.resourceId]
-         (or multiple IDs if you combined several notes into one row).
-  3. This creates bi-directional links — the notes know which rows they produced and the rows
-     know which notes they came from. Mention that in your reply so the user knows the graph
-     is being built.
-
-If no candidates come back, tell the user plainly — don't fabricate rows.`,
+  description: `Find user notes relevant to a table and return candidates with full content for extraction. Then call addTableRows with extracted rows and sourceResourceIdsPerRow for back-links.`,
   inputSchema: z.object({
     tableId: z
       .string()

@@ -52,16 +52,7 @@ function mapRowToColumnIds(
 }
 
 export const addTableRowsTool = {
-  description: `Add one or more rows to an existing user table.
-    Use this to populate a table the user asked you to fill, or to add entries the user mentions in conversation.
-    You can reference the table by its ID (from createTable or listTables) or by its title.
-    Row data keys can be either column IDs or column names — the tool will match them case-insensitively.
-    If unsure which table to use, call listTables first.
-
-    **Second-brain pattern:** when a row is derived from one or more of the user's notes/resources
-    (for example via getInformation or extractToTable), pass the originating resource IDs in
-    sourceResourceIdsPerRow. This creates a bi-directional link so the note knows which row it
-    produced and the row knows which notes it came from.`,
+  description: `Add rows to a user table (by tableId or tableTitle). Keys can be column names or IDs. Pass sourceResourceIdsPerRow to link rows back to source notes.`,
   inputSchema: z.object({
     tableId: z.string().optional().describe('The ID of the target table (preferred if known)'),
     tableTitle: z.string().optional().describe('The title of the target table (used if tableId not provided)'),

@@ -5,9 +5,7 @@ import { looksLikeCalendarCommandOrScheduleOperation } from '@/lib/privacy/sched
 import { extractStructuredInformation, formatStructuredContent } from '@/lib/ai/information-extraction';
 
 export const addResourceTool = {
-  description: `Add a resource to your knowledge base.
-    If the user provides a random piece of knowledge unprompted, use this tool without asking for confirmation.
-    Try to extract a meaningful title from the content if possible.`,
+  description: `Save info to the knowledge base. Use proactively when user shares personal facts.`,
   inputSchema: z.object({
     content: z.string().describe('The content or resource to add to the knowledge base'),
     title: z.string().optional().describe('Optional title for the resource. If not provided, will try to extract from first line of content.'),

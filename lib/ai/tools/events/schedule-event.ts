@@ -12,27 +12,7 @@ function addHours(d: Date, hours: number) {
 }
 
 export const scheduleEventTool = {
-  description: `Universal event scheduling tool: creates new events or moves existing ones. This is the ONLY tool for creating calendar events.
-
-How it works:
-- If a matching event already exists (same day, similar title), it will move it (patch time) - safe, no deletion.
-- Otherwise it will create a new event.
-- If conflicts exist, it will not change the calendar and will return alternative time options.
-
-✅ USE THIS TOOL for ALL event creation and rescheduling - it safely patches existing events without deleting them. This is the SAFE way - no data loss risk.
-
-TIMEZONE HANDLING:
-- ALWAYS provide explicit timezone offset in start/end times (e.g. +02:00, -05:00).
-- NEVER use "Z" (UTC) suffix or "+00:00" - both cause time shifts.
-- Format: YYYY-MM-DDTHH:mm:ss±HH:mm (e.g. 2025-12-26T19:00:00+02:00).
-- Use the user's local timezone offset (e.g. +02:00 for Kyiv, -05:00 for US Eastern).
-
-CONFLICT HANDLING:
-- By default, checks for conflicts and blocks creation/movement if conflicts are found.
-- Set ignoreConflicts=true to create/move the event even if conflicts exist (conflicts will still be reported in the response).
-
-IMPORTANT:
-- DO NOT delete existing events automatically - only move them if moveIfExists=true.`,
+  description: `Create or reschedule a calendar event. Patches existing event if same day+title match found. Blocks on conflicts unless ignoreConflicts=true. Times must use offset (e.g. +03:00), never "Z".`,
   inputSchema: z.object({
     calendarId: z.string().optional().describe('Google Calendar ID (defaults to primary)'),
     title: z.string().min(1, 'Title is required'),

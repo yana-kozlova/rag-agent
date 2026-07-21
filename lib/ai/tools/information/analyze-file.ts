@@ -8,10 +8,7 @@ import { extractStructuredInformation } from '@/lib/ai/information-extraction';
 import { updateResource } from '@/lib/actions/resources';
 
 export const analyzeFileTool = {
-  description: `Analyze a file/document that was previously uploaded to extract structured information, key points, facts, entities, and needs. 
-    Use this tool when the user asks to analyze a file, extract information from a document, or summarize a document.
-    The tool will analyze the file content and update it with structured information for better searchability.
-    You can provide either the resourceId or the filename/title of the file.`,
+  description: `Analyze an uploaded file by resourceId or filename. Extracts key points, facts, entities.`,
   inputSchema: z.object({
     resourceId: z.string().optional().describe('The ID of the resource/file to analyze (if you know it)'),
     filename: z.string().optional().describe('The filename or title of the file to analyze (e.g., "ЧЕК-ЛИСТ – пошуку роботи.docx")'),
