@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getSessionOrThrow } from '@/lib/utils/auth';
 import { GoogleCalendarService } from '@/lib/services/calendar';
+import { extractMeetingLink } from '@/lib/utils/meeting-link';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
@@ -129,7 +130,10 @@ Use "range" for common presets OR "date" for a specific day.
           start,
           end,
           allDay,
+          // Kept raw so the model line is unchanged; the card decides how to
+          // show a URL vs a physical place.
           location: item.location || undefined,
+          meetingLink: extractMeetingLink(item),
           description: item.description || undefined,
           htmlLink: item.htmlLink || undefined,
         };

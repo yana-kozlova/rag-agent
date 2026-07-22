@@ -1,7 +1,8 @@
 'use client';
 
-import { CalendarDays, MapPin } from 'lucide-react';
+import { CalendarDays, MapPin, Video } from 'lucide-react';
 import type { ToolCalendarEvent } from '@/types/calendar';
+import { MeetingLink, isUrl } from '@/app/components/utils/linkify';
 import { formatDay, formatTime } from './formatting';
 
 type EventsOutput = { events?: ToolCalendarEvent[]; count?: number };
@@ -25,6 +26,12 @@ function dayKey(iso?: string): string {
 
 function EventRow({ event }: { event: ToolCalendarEvent }) {
   const badge = event.calendarId && event.calendarId !== 'primary' ? badgeFor(event.calendarId) : null;
+  // A physical place is the location unless it's just a URL; the join link is
+  // the explicit meetingLink, or a URL that was dropped into location.
+  const placeText = event.location && !isUrl(event.location) ? event.location : undefined;
+  const joinLink =
+    event.meetingLink || (event.location && isUrl(event.location) ? event.location : undefined);
+  const hasMeta = (!event.allDay && event.end) || placeText || joinLink;
   return (
     <div className="flex items-start gap-2 py-1">
       <div className="font-mono text-xs bg-base-200 rounded-btn px-1.5 py-1 min-w-14 text-center shrink-0">
@@ -35,15 +42,21 @@ function EventRow({ event }: { event: ToolCalendarEvent }) {
           <span className="text-sm font-medium truncate">{event.title}</span>
           {badge && <span className={`badge badge-ghost badge-xs shrink-0 ${badge}`}>{event.calendarId}</span>}
         </div>
-        {(!event.allDay && event.end) || event.location ? (
-          <div className="text-[11px] uppercase font-semibold opacity-55 truncate font-mono flex items-center gap-1">
+        {hasMeta ? (
+          <div className="text-[11px] uppercase font-semibold opacity-55 font-mono flex items-center gap-1 min-w-0">
             {!event.allDay && event.end && (
-              <span>{formatTime(event.start)} – {formatTime(event.end)}</span>
+              <span className="shrink-0">{formatTime(event.start)} – {formatTime(event.end)}</span>
             )}
-            {event.location && (
+            {placeText && (
               <span className="inline-flex items-center gap-0.5 min-w-0">
                 <MapPin className="h-3 w-3 shrink-0" />
-                <span className="truncate">{event.location}</span>
+                <span className="truncate">{placeText}</span>
+              </span>
+            )}
+            {joinLink && (
+              <span className="inline-flex items-center gap-0.5 shrink-0">
+                <Video className="h-3 w-3 shrink-0" />
+                <MeetingLink value={joinLink} />
               </span>
             )}
           </div>

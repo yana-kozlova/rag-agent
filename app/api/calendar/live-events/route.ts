@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '../../auth/auth';
 import { GoogleCalendarService } from '@/lib/services/calendar';
+import { extractMeetingLink, isBareUrl } from '@/lib/utils/meeting-link';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
@@ -57,8 +58,12 @@ export async function GET() {
         const start = event.start?.dateTime || event.start?.date || undefined;
         const end = event.end?.dateTime || event.end?.date || undefined;
         const title = event.summary || 'No Title';
-        const location = event.location || undefined;
-        return { id: `${cid}:${event.id}`, title, start, end, location, calendarId: cid, calendarLabel: labelMap.get(cid) };
+        const meetingLink = extractMeetingLink(event);
+        // Keep `location` for the physical place; drop it when it's just the URL
+        // (that already surfaces as the meeting link).
+        const rawLocation = event.location || undefined;
+        const location = rawLocation && isBareUrl(rawLocation) ? undefined : rawLocation;
+        return { id: `${cid}:${event.id}`, title, start, end, location, meetingLink, calendarId: cid, calendarLabel: labelMap.get(cid) };
       })
       .filter(e => e.id && e.start && e.end);
 

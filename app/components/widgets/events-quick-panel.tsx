@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useCalendar } from '@/app/components/providers/CalendarContext';
+import { MeetingLink } from '@/app/components/utils/linkify';
 
 function getStartOfWeek(date: Date) {
   const d = new Date(date);
@@ -121,11 +122,19 @@ export default function EventsQuickPanel() {
           <div className="flex items-center gap-2 p-4">
             <div className="grow min-w-0">
               <div className="text-sm font-medium truncate">{featured.title}</div>
-              <div className="text-xs opacity-60 truncate font-mono">
-                {new Date(featured.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                {' – '}
-                {new Date(featured.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                {featured.location ? ` · ${featured.location}` : ''}
+              <div className="text-xs opacity-60 font-mono flex items-center gap-1 min-w-0">
+                <span className="truncate">
+                  {new Date(featured.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {' – '}
+                  {new Date(featured.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {featured.location ? ` · ${featured.location}` : ''}
+                </span>
+                {featured.meetingLink ? (
+                  <>
+                    <span className="opacity-50 shrink-0">·</span>
+                    <MeetingLink value={featured.meetingLink} />
+                  </>
+                ) : null}
               </div>
             </div>
             <div className="shrink-0">
@@ -143,11 +152,19 @@ export default function EventsQuickPanel() {
             <div key={ev.id} className="flex items-center gap-2 py-2 px-4">
                 <div className="grow min-w-0">
                   <div className="text-sm font-medium truncate">{ev.title}</div>
-                  <div className="text-xs opacity-60 truncate font-mono">
-                    {new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    {' – '}
-                    {new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    {ev.location ? ` · ${ev.location}` : ''}
+                  <div className="text-xs opacity-60 font-mono flex items-center gap-1 min-w-0">
+                    <span className="truncate">
+                      {new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {' – '}
+                      {new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {ev.location ? ` · ${ev.location}` : ''}
+                    </span>
+                    {ev.meetingLink ? (
+                      <>
+                        <span className="opacity-50 shrink-0">·</span>
+                        <MeetingLink value={ev.meetingLink} />
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </div>

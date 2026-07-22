@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
+import { Linkify } from '@/app/components/utils/linkify';
 import { CalendarEvent } from './types';
 
 export function EventListView() {
@@ -66,7 +67,7 @@ export function EventListView() {
                       <p className="text-sm text-base-content/60 mt-1">{event.description}</p>
                     )}
                     {event.location && (
-                      <p className="text-sm text-base-content/60 mt-1">📍 {event.location}</p>
+                      <p className="text-sm text-base-content/60 mt-1">📍 <Linkify value={event.location} /></p>
                     )}
                     {event.attendees && event.attendees.length > 0 && (
                       <p className="text-sm text-base-content/60 mt-1">

@@ -2,6 +2,7 @@
 
 import { useCalendar } from "@/app/components/providers/CalendarContext";
 import { isInRange } from "@/app/components/utils/calendar-utils";
+import { MeetingLink } from "@/app/components/utils/linkify";
 import type { CalendarEvent } from "@/types/calendar";
 
 export default function CalendarSummary() {
@@ -53,8 +54,14 @@ export default function CalendarSummary() {
                             <div className="font-bold text-sm md:text-md flex-1 min-w-0">{ev.title}</div>
                             {ev.calendarId !== 'primary' && <div className={`badge badge-ghost badge-xs mr-1 ${badgeClass}`}>{ev.calendarId}</div>}
                           </div>
-                          <div className="text-[11px] uppercase font-semibold opacity-60 truncate font-mono">
-                            {start} – {end}{ev.location ? ` · ${ev.location}` : ''}
+                          <div className="text-[11px] uppercase font-semibold opacity-60 font-mono flex items-center gap-1 min-w-0">
+                            <span className="truncate">{start} – {end}{ev.location ? ` · ${ev.location}` : ''}</span>
+                            {ev.meetingLink ? (
+                              <>
+                                <span className="opacity-50 shrink-0">·</span>
+                                <MeetingLink value={ev.meetingLink} />
+                              </>
+                            ) : null}
                           </div>
                         </div>
                       </div>

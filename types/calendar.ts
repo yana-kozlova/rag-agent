@@ -4,6 +4,8 @@ export type CalendarEvent = {
   start: string;
   end: string;
   location?: string;
+  /** Join URL for a video meeting (Zoom/Meet/Teams…), if the event has one. */
+  meetingLink?: string;
   calendarId?: string;
   calendarLabel?: string | null;
 };
@@ -22,6 +24,8 @@ export type ToolCalendarEvent = {
   end?: string;
   allDay: boolean;
   location?: string;
+  /** Join URL for a video meeting (Zoom/Meet/Teams…), if the event has one. */
+  meetingLink?: string;
   description?: string;
   htmlLink?: string;
 };
