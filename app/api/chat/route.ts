@@ -10,6 +10,26 @@ import { env } from '@/lib/env.mjs';
 import { SYSTEM_PROMPT } from '@/app/prompts/system';
 import { saveUserMessage } from '@/lib/middleware/save-user-message';
 import { logLlmUsage } from '@/lib/ai/telemetry';
+import { AUTO_GREETING_MARKER, isAutoGreetingText, stripAutoGreetingMarker } from '@/lib/chat/auto-greeting';
+
+/** Pull the text out of a UIMessage regardless of which shape it arrived in. */
+function extractText(m: any): string {
+  if (typeof m?.content === 'string') return m.content;
+  if (Array.isArray(m?.parts)) return m.parts.find((p: any) => p?.type === 'text')?.text ?? '';
+  if (typeof m?.text === 'string') return m.text;
+  return '';
+}
+
+/** Strip the auto-greeting marker from every place text can live on a message. */
+function stripAutoGreetingFromMessage(m: any): any {
+  const parts = Array.isArray(m?.parts)
+    ? m.parts.map((p: any) =>
+        p?.type === 'text' ? { ...p, text: stripAutoGreetingMarker(p.text ?? '') } : p
+      )
+    : m?.parts;
+  const content = typeof m?.content === 'string' ? stripAutoGreetingMarker(m.content) : m?.content;
+  return { ...m, parts, content };
+}
 
 // Allow streaming responses up to 60 seconds
 export const maxDuration = 60;
@@ -23,16 +43,14 @@ export async function POST(req: Request) {
       // Check if this is the last user message and contains resourceIds marker
       if (m.role === 'user' && idx === messages.length - 1) {
         // Get current message content
-        let currentContent = '';
-        if (typeof m.content === 'string') {
-          currentContent = m.content;
-        } else if (Array.isArray(m.parts)) {
-          const textPart = m.parts.find((p: any) => p?.type === 'text');
-          currentContent = textPart?.text || '';
-        } else if (typeof m.text === 'string') {
-          currentContent = m.text;
+        const currentContent = extractText(m);
+
+        // Auto-greeting: strip the marker so the model receives the plain
+        // prompt. Persistence is skipped separately, off the raw content.
+        if (currentContent.includes(AUTO_GREETING_MARKER)) {
+          return stripAutoGreetingFromMessage(m);
         }
-        
+
         // Check for hidden resourceIds marker: [RESOURCE_IDS:...]
         const markerMatch = currentContent.match(/\u200B\u200B\[RESOURCE_IDS:([^\]]+)\]\u200B\u200B/);
         if (markerMatch) {
@@ -60,18 +78,13 @@ export async function POST(req: Request) {
     const lastUserMessage = processedMessages
       .filter(m => m.role === 'user')
       .pop();
-    if (lastUserMessage) {
-      // UIMessage can have content as string or parts array
-      let textContent: string | undefined;
-      if (typeof (lastUserMessage as any).content === 'string') {
-        textContent = (lastUserMessage as any).content;
-      } else if (Array.isArray((lastUserMessage as any).parts)) {
-        const textPart = (lastUserMessage as any).parts.find((p: any) => p?.type === 'text');
-        textContent = textPart?.text;
-      } else if (typeof (lastUserMessage as any).text === 'string') {
-        textContent = (lastUserMessage as any).text;
-      }
-      
+    // Never persist a prompt the user didn't write. Checked on the raw message
+    // (before the marker was stripped for the model above).
+    const rawLastUser = messages.filter((m: any) => m.role === 'user').pop();
+    const isAutoGreeting = isAutoGreetingText(extractText(rawLastUser));
+    if (lastUserMessage && !isAutoGreeting) {
+      const textContent = extractText(lastUserMessage);
+
       // Remove technical info before saving to messages table
       if (textContent) {
         const textForSaving = textContent.replace(/\n\n\[FILES_UPLOADED\].*$/s, '').trim();

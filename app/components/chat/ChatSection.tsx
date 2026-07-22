@@ -8,6 +8,7 @@ import { ToolOutput } from '@/app/components/chat/ToolOutput';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { getUserInitials } from '@/lib/utils';
+import { isAutoGreetingText } from '@/lib/chat/auto-greeting';
 
 type AttachedFile = {
   file: File;
@@ -77,7 +78,9 @@ export default function ChatSection() {
   const historyRef = useRef(history);
   const loadingMoreRef = useRef(loadingMore);
   const autoGreetingHistory = history.map(h => ({ createdAt: h.createdAt, role: h.role as 'user' | 'assistant' | 'system' }));
-  const autoPrompt = useAutoGreeting({ history: autoGreetingHistory, historyLoaded, sendMessage });
+  // Called for its side effect (fires the daily greeting); the prompt it sends
+  // is hidden and never persisted, so its return value isn't needed here.
+  useAutoGreeting({ history: autoGreetingHistory, historyLoaded, sendMessage });
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
 
   const handleFiles = useCallback((files: File[]) => {
@@ -228,7 +231,11 @@ export default function ChatSection() {
           }
           
           
-          if (isUser && autoPrompt && bubbleText.trim() === autoPrompt.trim()) return null;
+          // Hide the auto-greeting prompt: it's sent on the user's behalf, not
+          // typed. Marker-tagged in this session, matched by signature for any
+          // pre-marker greetings still sitting in history.
+          const rawText = textParts.map((p: any) => p.text).join('\n');
+          if (isUser && isAutoGreetingText(rawText)) return null;
           const created = (m as any).createdAt;
           const createdDate = created ? new Date(created as any) : null;
           
