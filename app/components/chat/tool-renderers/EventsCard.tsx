@@ -3,19 +3,10 @@
 import { CalendarDays, MapPin, Video } from 'lucide-react';
 import type { ToolCalendarEvent } from '@/types/calendar';
 import { MeetingLink, isUrl } from '@/app/components/utils/linkify';
+import { tagColor } from '@/app/components/utils/tag-color';
 import { formatDay, formatTime } from './formatting';
 
 type EventsOutput = { events?: ToolCalendarEvent[]; count?: number };
-
-const BADGES = ['badge-primary', 'badge-secondary', 'badge-accent', 'badge-info', 'badge-success', 'badge-warning', 'badge-error'];
-
-// Same hashing the dashboard widgets use, so a given calendar keeps its colour.
-function badgeFor(calendarId: string): string {
-  const k = calendarId.toLowerCase();
-  let idx = 0;
-  for (let i = 0; i < k.length; i++) idx = (idx * 31 + k.charCodeAt(i)) % BADGES.length;
-  return BADGES[idx];
-}
 
 /** local YYYY-MM-DD key for grouping, tolerant of all-day date strings. */
 function dayKey(iso?: string): string {
@@ -25,7 +16,7 @@ function dayKey(iso?: string): string {
 }
 
 function EventRow({ event }: { event: ToolCalendarEvent }) {
-  const badge = event.calendarId && event.calendarId !== 'primary' ? badgeFor(event.calendarId) : null;
+  const dot = event.calendarId ? tagColor(event.calendarId) : null;
   // A physical place is the location unless it's just a URL; the join link is
   // the explicit meetingLink, or a URL that was dropped into location.
   const placeText = event.location && !isUrl(event.location) ? event.location : undefined;
@@ -33,28 +24,30 @@ function EventRow({ event }: { event: ToolCalendarEvent }) {
     event.meetingLink || (event.location && isUrl(event.location) ? event.location : undefined);
   const hasMeta = (!event.allDay && event.end) || placeText || joinLink;
   return (
-    <div className="flex items-start gap-2 py-1">
-      <div className="font-mono text-xs bg-base-200 rounded-btn px-1.5 py-1 min-w-14 text-center shrink-0">
+    <div className="grid grid-cols-[44px_1fr] items-start gap-2.5 py-1">
+      <span className="pt-0.5 font-mono text-[11px] text-base-content/50">
         {event.allDay ? 'all‑day' : formatTime(event.start) || '—'}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-sm font-medium truncate">{event.title}</span>
-          {badge && <span className={`badge badge-ghost badge-xs shrink-0 ${badge}`}>{event.calendarId}</span>}
+      </span>
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-[13px] font-medium text-base-content">{event.title}</span>
+          {dot && (
+            <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ backgroundColor: dot }} />
+          )}
         </div>
         {hasMeta ? (
-          <div className="text-[11px] uppercase font-semibold opacity-55 font-mono flex items-center gap-1 min-w-0">
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 font-mono text-[11px] text-base-content/50">
             {!event.allDay && event.end && (
               <span className="shrink-0">{formatTime(event.start)} – {formatTime(event.end)}</span>
             )}
             {placeText && (
-              <span className="inline-flex items-center gap-0.5 min-w-0">
+              <span className="inline-flex min-w-0 items-center gap-0.5">
                 <MapPin className="h-3 w-3 shrink-0" />
                 <span className="truncate">{placeText}</span>
               </span>
             )}
             {joinLink && (
-              <span className="inline-flex items-center gap-0.5 shrink-0">
+              <span className="inline-flex shrink-0 items-center gap-0.5">
                 <Video className="h-3 w-3 shrink-0" />
                 <MeetingLink value={joinLink} />
               </span>
@@ -71,7 +64,7 @@ export function EventsCard({ output }: { output: EventsOutput }) {
 
   if (events.length === 0) {
     return (
-      <div className="not-prose flex items-center gap-2 text-xs opacity-60">
+      <div className="not-prose flex items-center gap-2 text-xs text-base-content/50">
         <CalendarDays className="h-3.5 w-3.5" />
         No events in that range
       </div>
@@ -91,15 +84,15 @@ export function EventsCard({ output }: { output: EventsOutput }) {
   }
 
   return (
-    <div className="not-prose max-w-sm rounded-box border border-base-300 bg-base-100 p-3">
-      <div className="flex items-center gap-1.5 text-[11px] uppercase font-semibold opacity-50 tracking-wide mb-1.5">
-        <CalendarDays className="h-3 w-3" />
+    <div className="not-prose max-w-sm border-l-2 border-primary pl-3.5">
+      <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[11px] text-base-content/50">
+        <CalendarDays className="h-3.5 w-3.5" />
         {events.length} {events.length === 1 ? 'event' : 'events'}
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {groups.map((g) => (
           <div key={g.key}>
-            <div className="text-xs font-semibold font-mono opacity-70 border-b border-dashed border-base-300 pb-0.5 mb-0.5">
+            <div className="mb-1 border-b border-base-300 pb-1 font-mono text-xs font-medium text-base-content/60">
               {g.label}
             </div>
             {g.items.map((ev, i) => (

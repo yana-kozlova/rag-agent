@@ -31,12 +31,12 @@ export default function ClearDataPanel() {
   };
 
   return (
-    <section className="card bg-base-100 shadow">
-      <div className="card-body gap-3">
-        <h2 className="card-title">Privacy & Data</h2>
-        <p className="text-sm opacity-70">Remove all stored resources and embeddings associated with your account.</p>
-        <div className="card-actions justify-end">
-          <button type="button" className="btn btn-primary" onClick={open}>Delete my stored data</button>
+    <section className="rounded-lg border border-base-300 bg-base-100 p-5">
+      <div className="flex flex-col gap-3">
+        <h2 className="text-[15px] font-semibold">Privacy &amp; Data</h2>
+        <p className="text-sm text-base-content/60">Remove all stored resources and embeddings associated with your account.</p>
+        <div className="flex justify-end">
+          <button type="button" className="btn btn-outline btn-sm" onClick={open}>Delete my stored data</button>
         </div>
       </div>
 

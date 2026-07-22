@@ -208,7 +208,7 @@ export default function ChatSection() {
     <section className="flex flex-col w-full max-w-3xl mx-auto md:px-0">
       <div
         ref={listRef}
-        className="space-y-3 overflow-y-auto rounded-lg bg-base-100 p-3 max-w-full h-[480px] sm:h-[560px] md:h-[800px]"
+        className="space-y-4 overflow-y-auto px-1 py-2 max-w-full h-[480px] sm:h-[560px] md:h-[760px]"
         onScroll={(e) => { 
           if (e.currentTarget.scrollTop < 16 && !loadingMore && hasMore) {
             loadMore();
@@ -291,7 +291,13 @@ export default function ChatSection() {
                 {dateTimeStr && <time className="text-xs opacity-50 ml-2 font-mono">{dateTimeStr}</time>}
               </div>
               {bubbleText && (
-                <div className={`chat-bubble whitespace-pre-wrap break-words text-sm md:text-base`}>
+                <div
+                  className={`chat-bubble whitespace-pre-wrap break-words text-sm md:text-[15px] before:hidden ${
+                    isUser
+                      ? 'bg-base-200 text-base-content'
+                      : '!bg-transparent !px-0 !text-base-content'
+                  }`}
+                >
                   {renderSimpleMarkdown(bubbleText)}
                 </div>
               )}
@@ -356,7 +362,7 @@ export default function ChatSection() {
       )}
 
       <form
-        className="mt-3"
+        className="mt-3 border-t border-base-300 pt-3"
         onSubmit={async (e) => {
           e.preventDefault();
           const content = input.trim();
@@ -449,10 +455,8 @@ export default function ChatSection() {
         }}
       >
         <div
-          className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${
-            isDragging
-              ? 'border-primary bg-primary/10'
-              : 'border-base-300 bg-base-100'
+          className={`flex items-center gap-2 rounded-md p-1 transition-colors ${
+            isDragging ? 'bg-primary/5 ring-1 ring-primary/30' : ''
           }`}
         >
           <input

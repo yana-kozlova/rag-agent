@@ -83,10 +83,10 @@ export function NotificationPreferences() {
     );
 
   return (
-    <section className="card bg-base-100 shadow">
-      <div className="card-body gap-4">
+    <section className="rounded-lg border border-base-300 bg-base-100 p-5">
+      <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h2 className="card-title">Notifications</h2>
+          <h2 className="text-[15px] font-semibold">Notifications</h2>
           {saving && <span className="loading loading-spinner loading-xs" />}
         </div>
 

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useCalendar } from '@/app/components/providers/CalendarContext';
 import { MeetingLink } from '@/app/components/utils/linkify';
+import { tagColor } from '@/app/components/utils/tag-color';
 
 function getStartOfWeek(date: Date) {
   const d = new Date(date);
@@ -25,9 +26,16 @@ function isBeforeLocalDay(a: Date, b: Date) {
   return ad < bd;
 }
 
+const DAY_LABELS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+function fmt(iso?: string) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 export default function EventsQuickPanel() {
   const { events } = useCalendar();
-  const [selected, setSelected] = useState<Date>(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
+  const [selected, setSelected] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [showAllDay, setShowAllDay] = useState(true);
 
   const weekDays = useMemo(() => {
@@ -50,26 +58,14 @@ export default function EventsQuickPanel() {
       if (!start || !sameLocalDay(start, selected)) return false;
       return true;
     }).sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
-    // choose first upcoming or first
     const upcoming = dayEvents.find(ev => new Date(ev.start).getTime() >= now.getTime()) || dayEvents[0];
     return { dayEvents, featured: upcoming };
   }, [events, selected, showAllDay]);
 
   const featured = filtered.featured;
 
-  const minutesBetween = (startStr?: string, endStr?: string) => {
-    if (!startStr || !endStr) return undefined;
-    const isAllDay = !startStr.includes('T') && !endStr.includes('T');
-    if (isAllDay) return undefined;
-    const ms = new Date(endStr).getTime() - new Date(startStr).getTime();
-    if (ms <= 0) return 0;
-    return Math.round(ms / 60000);
-  };
-
-  const duration = minutesBetween(featured?.start as string | undefined, featured?.end as string | undefined);
-
-  // countdown (to start if in future, otherwise to end if ongoing)
-  const [tick, setTick] = useState(0);
+  // countdown: to start if in the future, otherwise to end if ongoing
+  const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => (t + 1) % 1_000_000), 1000);
     return () => clearInterval(id);
@@ -77,104 +73,106 @@ export default function EventsQuickPanel() {
   const nowMs = Date.now();
   const startMs = featured?.start ? new Date(featured.start).getTime() : undefined;
   const endMs = featured?.end ? new Date(featured.end).getTime() : undefined;
-  let targetMs: number | undefined = undefined;
-  if (startMs && startMs > nowMs) targetMs = startMs;
-  else if (endMs && endMs > nowMs) targetMs = endMs;
-  let h = 0, m = 0, s = 0;
+  let targetMs: number | undefined;
+  let countLabel = 'starts in';
+  if (startMs && startMs > nowMs) { targetMs = startMs; countLabel = 'starts in'; }
+  else if (endMs && endMs > nowMs) { targetMs = endMs; countLabel = 'ends in'; }
+  let h = 0, m = 0;
   if (targetMs) {
     const delta = Math.max(0, targetMs - nowMs);
     h = Math.floor(delta / 3600000);
     m = Math.floor((delta % 3600000) / 60000);
-    s = Math.floor((delta % 60000) / 1000);
   }
 
-  const dayLetters = ['S','M','T','W','T','F','S'];
-
   return (
-    <div className="card bg-base-100 card-bordered border-base-300 card-compact overflow-hidden shadow rounded-box">
-      <div className="card-body gap-4 p-4">
-        <div className="border-b-base-300 grid grid-cols-7 border-b border-dashed pb-3">
-          {weekDays.map((d) => {
-            const isSel = sameLocalDay(d, selected);
-            return (
-              <button
-                key={d.toISOString()}
-                type="button"
-                onClick={() => setSelected(new Date(d))}
-                disabled={isBeforeLocalDay(d, new Date())}
-                className={`rounded-btn flex flex-col items-center px-2 py-1 ${isSel ? 'bg-success text-success-content' : ''} ${isBeforeLocalDay(d, new Date()) ? 'opacity-50' : ''}`}
-              >
-                <span className="text-sm font-semibold font-mono">{d.getDate()}</span>
-                <span className="text-[10px] font-semibold opacity-50 font-mono">{dayLetters[d.getDay()]}</span>
-              </button>
-            );
-          })}
-        </div>
-        <div className="flex flex-col gap-2">
-          <label className="flex cursor-pointer items-center gap-2">
-            <input type="checkbox" className="toggle toggle-sm toggle-primary" checked={showAllDay} onChange={(e) => setShowAllDay(e.currentTarget.checked)} />
-            <span className="text-xs">Show all day events</span>
-          </label>
-        </div>
-      </div>
-      <div className="bg-base-300">
-        {featured && !showAllDay ? (
-          <div className="flex items-center gap-2 p-4">
-            <div className="grow min-w-0">
-              <div className="text-sm font-medium truncate">{featured.title}</div>
-              <div className="text-xs opacity-60 font-mono flex items-center gap-1 min-w-0">
-                <span className="truncate">
-                  {new Date(featured.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  {' – '}
-                  {new Date(featured.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  {featured.location ? ` · ${featured.location}` : ''}
-                </span>
-                {featured.meetingLink ? (
-                  <>
-                    <span className="opacity-50 shrink-0">·</span>
-                    <MeetingLink value={featured.meetingLink} />
-                  </>
-                ) : null}
-              </div>
-            </div>
-            <div className="shrink-0">
-              <span className="countdown font-mono text-2xl">
-                <span style={{ ['--value' as any]: h }} aria-live="polite" aria-label={String(h)}></span>
-                {' '}h{' '}
-                <span style={{ ['--value' as any]: m }} aria-live="polite" aria-label={String(m)}></span>
-                {' '}m{' '}
+    <section className="w-full">
+      <h2 className="mb-3 text-[15px] font-semibold text-base-content">This week</h2>
+
+      <div className="mb-4 grid grid-cols-7 gap-1">
+        {weekDays.map((d) => {
+          const isSel = sameLocalDay(d, selected);
+          const isPast = isBeforeLocalDay(d, new Date());
+          return (
+            <button
+              key={d.toISOString()}
+              type="button"
+              onClick={() => setSelected(new Date(d))}
+              disabled={isPast}
+              className={`flex flex-col items-center gap-0.5 rounded-md py-2 transition-colors ${
+                isSel ? 'bg-primary/10' : 'hover:bg-base-200/60'
+              } ${isPast ? 'opacity-40' : ''}`}
+            >
+              <span className={`font-mono text-[13px] ${isSel ? 'font-medium text-primary' : 'text-base-content'}`}>
+                {d.getDate()}
               </span>
+              <span className="font-mono text-[9px] tracking-wide text-base-content/50">{DAY_LABELS[d.getDay()]}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <label className="mb-3 flex cursor-pointer items-center gap-2">
+        <input
+          type="checkbox"
+          className="toggle toggle-xs toggle-primary"
+          checked={showAllDay}
+          onChange={(e) => setShowAllDay(e.currentTarget.checked)}
+        />
+        <span className="text-xs text-base-content/60">Show all-day events</span>
+      </label>
+
+      {featured && !showAllDay ? (
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-base-content">{featured.title}</div>
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 font-mono text-xs text-base-content/50">
+              <span className="truncate">
+                {fmt(featured.start)} – {fmt(featured.end)}{featured.location ? ` · ${featured.location}` : ''}
+              </span>
+              {featured.meetingLink ? (
+                <>
+                  <span className="shrink-0 opacity-50">·</span>
+                  <MeetingLink value={featured.meetingLink} />
+                </>
+              ) : null}
             </div>
           </div>
-        )
-        : showAllDay ? 
-          filtered.dayEvents.map((ev) => (
-            <div key={ev.id} className="flex items-center gap-2 py-2 px-4">
-                <div className="grow min-w-0">
-                  <div className="text-sm font-medium truncate">{ev.title}</div>
-                  <div className="text-xs opacity-60 font-mono flex items-center gap-1 min-w-0">
+          {targetMs ? (
+            <div className="flex shrink-0 flex-col items-end">
+              <span className="font-mono text-[10px] text-base-content/50">{countLabel}</span>
+              <span className="font-mono text-xl font-medium tabular-nums text-base-content">{h}h {m}m</span>
+            </div>
+          ) : null}
+        </div>
+      ) : showAllDay && filtered.dayEvents.length > 0 ? (
+        <ul className="flex flex-col">
+          {filtered.dayEvents.map((ev) => {
+            const dot = tagColor(ev.calendarId as string | undefined);
+            return (
+              <li key={ev.id} className="-mx-2 grid grid-cols-[46px_1fr] items-start gap-3 rounded-md px-2 py-2 transition-colors hover:bg-base-200/60">
+                <time className="pt-0.5 font-mono text-xs text-base-content/50">{fmt(ev.start)}</time>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-base-content">{ev.title}</div>
+                  <div className="mt-0.5 flex min-w-0 items-center gap-1.5 font-mono text-xs text-base-content/50">
+                    {dot && <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ backgroundColor: dot }} />}
                     <span className="truncate">
-                      {new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      {' – '}
-                      {new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      {ev.location ? ` · ${ev.location}` : ''}
+                      {fmt(ev.start)} – {fmt(ev.end)}{ev.location ? ` · ${ev.location}` : ''}
                     </span>
                     {ev.meetingLink ? (
                       <>
-                        <span className="opacity-50 shrink-0">·</span>
+                        <span className="shrink-0 opacity-50">·</span>
                         <MeetingLink value={ev.meetingLink} />
                       </>
                     ) : null}
                   </div>
                 </div>
-              </div>
-          ))
-         : (
-          <div className="p-4 text-xs opacity-60">No events for this day</div>
-        )}
-      </div>
-    </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="text-xs text-base-content/50">No events for this day.</p>
+      )}
+    </section>
   );
 }
-
-

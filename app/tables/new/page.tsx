@@ -130,7 +130,7 @@ export default function NewTablePage() {
 
           <div className="space-y-3">
             {columns.map((column, index) => (
-              <div key={column.id} className="card bg-base-200 p-4">
+              <div key={column.id} className="rounded-lg border border-base-300 bg-base-100 p-4">
                 <div className="grid grid-cols-12 gap-2 items-end">
                   <div className="col-span-4">
                     <label className="label">

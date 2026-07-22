@@ -50,7 +50,6 @@ export default async function RootLayout({
       >
         <PreconnectLinks />
         <Providers session={session}>
-          <div className="fixed inset-0 -z-10 bg-gradient-to-br from-base-200/80 via-base-100 to-base-200" />
           <ServiceWorkerRegister />
           <LayoutShell>
             {children}

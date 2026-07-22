@@ -30,7 +30,7 @@ export function MobileNav() {
   };
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-base-200 border-t border-base-300 md:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-base-100 border-t border-base-300 md:hidden">
       <div className="flex items-center justify-around h-14">
         {TABS.map(({ href, label, icon: Icon, match }) => {
           const active = match(pathname);

@@ -563,8 +563,8 @@ export default function ResourcesClient({
         <>
           <div className="grid gap-4">
             {filteredResources.map((resource) => (
-              <div key={resource.id} className="card bg-base-100 shadow">
-                <div className="card-body">
+              <div key={resource.id} className="rounded-lg border border-base-300 bg-base-100">
+                <div className="p-4 md:p-5">
                   {editingId === resource.id ? (
                     <div className="space-y-4">
                       <input
@@ -669,7 +669,7 @@ export default function ResourcesClient({
                         value={editContent}
                         onChange={(e) => setEditContent(e.target.value)}
                       />
-                      <div className="card-actions justify-end">
+                      <div className="flex justify-end gap-2">
                         <button
                           className="btn btn-sm btn-outline"
                           onClick={handleCancel}
@@ -689,7 +689,7 @@ export default function ResourcesClient({
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2 flex-wrap">
-                            <h2 className="card-title text-lg">
+                            <h2 className="text-base font-semibold">
                               {resource.title || '(No title)'}
                             </h2>
                             <span className="badge badge-outline badge-sm">
@@ -731,7 +731,7 @@ export default function ResourcesClient({
                           </div>
                         </div>
                       </div>
-                      <div className="card-actions justify-end mt-4">
+                      <div className="flex justify-end gap-2 mt-4">
                         <button
                           className="btn btn-sm btn-outline"
                           onClick={() => handleEdit(resource)}

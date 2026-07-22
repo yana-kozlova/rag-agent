@@ -81,11 +81,11 @@ export default function TablesListClient({ initialTables }: { initialTables: Use
       ) : (
         <div className="grid gap-4">
           {tables.map((table) => (
-            <div key={table.id} className="card bg-base-100 shadow">
-              <div className="card-body">
+            <div key={table.id} className="rounded-lg border border-base-300 bg-base-100">
+              <div className="p-4 md:p-5">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <h2 className="card-title text-lg mb-2">{table.title}</h2>
+                    <h2 className="text-base font-semibold mb-2">{table.title}</h2>
                     {table.description && (
                       <p className="text-sm text-base-content/70 mb-2">{table.description}</p>
                     )}
@@ -98,7 +98,7 @@ export default function TablesListClient({ initialTables }: { initialTables: Use
                     </p>
                   </div>
                 </div>
-                <div className="card-actions justify-end mt-4">
+                <div className="flex justify-end gap-2 mt-4">
                   <button
                     className="btn btn-sm btn-outline"
                     onClick={() => router.push(`/tables/${table.id}`)}

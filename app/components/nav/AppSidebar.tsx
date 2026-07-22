@@ -15,6 +15,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   LogOut,
+  Sparkles,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -39,15 +40,18 @@ export function AppSidebar() {
 
   return (
     <aside
-      className={`fixed left-0 top-0 h-screen bg-base-200 border-r border-base-300 z-40 hidden md:flex flex-col transition-all duration-200 ${
+      className={`fixed left-0 top-0 h-screen bg-base-100 border-r border-base-300 z-40 hidden md:flex flex-col transition-all duration-200 ${
         collapsed ? 'w-16' : 'w-60'
       }`}
     >
       {/* Top: Logo + Toggle */}
       <div className="flex items-center justify-between px-3 h-16 border-b border-base-300 shrink-0">
         {!collapsed && (
-          <Link href="/" className="text-lg font-bold truncate">
-            AI SDK RAG
+          <Link href="/" className="flex items-center gap-2 truncate">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-content">
+              <Sparkles className="h-4 w-4" />
+            </span>
+            <span className="truncate text-[15px] font-semibold">AI SDK RAG</span>
           </Link>
         )}
         <button
@@ -69,7 +73,7 @@ export function AppSidebar() {
                 <Link
                   href={href}
                   className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
-                    active ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-base-300'
+                    active ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-base-200'
                   } ${collapsed ? 'justify-center px-0' : ''}`}
                   title={collapsed ? label : undefined}
                 >
