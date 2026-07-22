@@ -1,7 +1,5 @@
 import { auth } from '@/app/api/auth/auth';
 import Link from 'next/link';
-import { ThemeSwitcher } from '@/app/components/theme/ThemeSwitcher';
-import { NotificationsToggle } from '@/app/components/notifications/NotificationsToggle';
 import { CalendarsPanel } from './CalendarsPanel';
 import { NotificationPreferences } from './NotificationPreferences';
 import ClearDataPanel from './ClearDataPanel';
@@ -43,15 +41,7 @@ export default async function SettingsPage() {
             </div>
           </div>
         </section>
- 
-        <section className="card bg-base-100 shadow">
-          <div className="card-body gap-4">
-            <h2 className="card-title">Settings</h2>
-            <NotificationsToggle />
-            <ThemeSwitcher />
-            <div className="card-actions justify-end" />
-          </div>
-        </section>
+
         <NotificationPreferences />
         <CalendarsPanel />
         <ClearDataPanel />

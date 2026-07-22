@@ -85,6 +85,13 @@
       "when": 1765000000000,
       "tag": "0011_proactive_insights",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1765100000000,
+      "tag": "0012_drop_event_reminders",
+      "breakpoints": true
     }
   ]
 }

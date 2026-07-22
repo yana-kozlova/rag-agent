@@ -24,7 +24,6 @@ export const users = pgTable("user", {
   // Local hour (0-23) at which the daily briefing is sent.
   briefingHour: integer("briefing_hour").notNull().default(9),
   briefingEnabled: boolean("briefing_enabled").notNull().default(true),
-  eventRemindersEnabled: boolean("event_reminders_enabled").notNull().default(true),
   /**
    * Proactive insights — conflicts, no-break stretches, notes about people you
    * are about to meet. Off by default: it is the only notification kind that

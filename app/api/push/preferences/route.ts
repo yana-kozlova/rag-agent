@@ -15,7 +15,6 @@ const preferencesSchema = z
   .object({
     briefingEnabled: z.boolean().optional(),
     briefingHour: hour.optional(),
-    eventRemindersEnabled: z.boolean().optional(),
     proactiveEnabled: z.boolean().optional(),
     retroEnabled: z.boolean().optional(),
     retroHour: hour.optional(),
@@ -38,7 +37,6 @@ export async function GET() {
       .select({
         briefingEnabled: users.briefingEnabled,
         briefingHour: users.briefingHour,
-        eventRemindersEnabled: users.eventRemindersEnabled,
         proactiveEnabled: users.proactiveEnabled,
         retroEnabled: users.retroEnabled,
         retroHour: users.retroHour,
