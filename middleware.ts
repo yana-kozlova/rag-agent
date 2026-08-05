@@ -29,7 +29,23 @@ export default async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  // `getToken` defaults `secureCookie` to false and then derives both the
+  // cookie name and the decryption salt from it — so without this it looks for
+  // `authjs.session-token` while an HTTPS deployment sets
+  // `__Secure-authjs.session-token`, never finds a session, and redirects every
+  // signed-in request back to /signin. Locally over HTTP the names coincide,
+  // which is why it only ever broke in production.
+  //
+  // Read from the request rather than NEXTAUTH_URL: an env var can drift from
+  // where the app is actually served, and this one already had.
+  const isSecure =
+    req.nextUrl.protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';
+
+  const token = await getToken({
+    req,
+    secret: process.env.NEXTAUTH_SECRET,
+    secureCookie: isSecure,
+  });
   const isLoggedIn = !!token;
 
   // Redirect to sign-in if not logged in
