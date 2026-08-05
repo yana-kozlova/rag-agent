@@ -71,19 +71,21 @@ export default function RecentlySaved() {
       ) : (
         <ul className="flex flex-col">
           {items.map((r) => (
-            <li
-              key={r.id}
-              className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-base-200/60"
-            >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-base-200 text-base">
-                {iconFor(r)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-base-content">{label(r)}</div>
-                <div className="truncate font-mono text-xs text-base-content/50">
-                  {(r.metadata as any)?.type ?? 'note'} · {relativeTime(r.createdAt)}
+            <li key={r.id}>
+              <Link
+                href={`/resources/${r.id}`}
+                className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-base-200/60"
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-base-200 text-base">
+                  {iconFor(r)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-base-content">{label(r)}</div>
+                  <div className="truncate font-mono text-xs text-base-content/50">
+                    {(r.metadata as any)?.type ?? 'note'} · {relativeTime(r.createdAt)}
+                  </div>
                 </div>
-              </div>
+              </Link>
             </li>
           ))}
         </ul>

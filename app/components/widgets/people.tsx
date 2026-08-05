@@ -62,17 +62,19 @@ export default function People() {
           {items.map((r) => {
             const name = displayName(r);
             return (
-              <li
-                key={r.id}
-                className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-base-200/60"
-              >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary/15 text-[13px] font-semibold text-secondary">
-                  {getUserInitials(name)}
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-base-content">{name}</div>
-                  <div className="truncate text-xs text-base-content/50">{summary(r)}</div>
-                </div>
+              <li key={r.id}>
+                <Link
+                  href={`/resources/${r.id}`}
+                  className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-base-200/60"
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary/15 text-[13px] font-semibold text-secondary">
+                    {getUserInitials(name)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-base-content">{name}</div>
+                    <div className="truncate text-xs text-base-content/50">{summary(r)}</div>
+                  </div>
+                </Link>
               </li>
             );
           })}

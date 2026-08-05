@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { deleteResource, updateResource } from '@/lib/actions/resources';
 import Link from 'next/link';
+import { renderSimpleMarkdown } from '@/app/components/utils/markdown';
 
 export type Resource = {
   id: string;
@@ -722,16 +723,25 @@ export default function ResourcesClient({
                           <p className="text-sm text-base-content/70 mb-2">
                             {formatDate(resource.createdAt)}
                           </p>
-                          <div className="prose max-w-none">
-                            <p className="whitespace-pre-wrap break-words">
-                              {resource.content.length > 500
-                                ? `${resource.content.substring(0, 500)}...`
-                                : resource.content}
-                            </p>
+                          {/* Notes are written as markdown — headings, lists,
+                              bold — so the preview renders them rather than
+                              showing the raw asterisks and hashes. */}
+                          <div className="max-w-none break-words text-sm leading-relaxed">
+                            {renderSimpleMarkdown(
+                              resource.content.length > 500
+                                ? `${resource.content.substring(0, 500)}…`
+                                : resource.content
+                            )}
                           </div>
                         </div>
                       </div>
                       <div className="flex justify-end gap-2 mt-4">
+                        <Link
+                          href={`/resources/${resource.id}`}
+                          className="btn btn-sm btn-ghost"
+                        >
+                          Open
+                        </Link>
                         <button
                           className="btn btn-sm btn-outline"
                           onClick={() => handleEdit(resource)}

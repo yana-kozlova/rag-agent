@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { FileText, Table2, CalendarDays, Search } from 'lucide-react';
+import Link from 'next/link';
+import { FileText, Table2, CalendarDays, Search, ArrowUpRight } from 'lucide-react';
 import { formatRelevance } from './formatting';
 
 type Result = {
@@ -9,8 +10,25 @@ type Result = {
   relevance?: number | null;
   rank?: number;
   source?: 'resource' | 'table' | 'calendar' | string;
+  /** Unified id of whatever was matched — the note, table or event. */
+  sourceId?: string | null;
   tableInfo?: { tableId?: string; tableTitle?: string } | null;
 };
+
+/**
+ * Where a citation leads, or null when it leads nowhere.
+ *
+ * A quoted fragment invites you to check the source, so the ones we can open —
+ * notes and tables — become links. Calendar matches stay plain: there is no
+ * page of ours to land on.
+ */
+function hrefFor(result: Result): string | null {
+  if (result.source === 'resource' && result.sourceId) return `/resources/${result.sourceId}`;
+  if (result.source === 'table' && result.tableInfo?.tableId) {
+    return `/tables/${result.tableInfo.tableId}`;
+  }
+  return null;
+}
 
 const SOURCE_ICON: Record<string, typeof FileText> = {
   resource: FileText,
@@ -29,12 +47,23 @@ function Citation({ result }: { result: Result }) {
   const Icon = SOURCE_ICON[result.source ?? ''] ?? FileText;
   const relevance = formatRelevance(result.relevance);
   const label = result.tableInfo?.tableTitle || result.source || 'note';
+  const href = hrefFor(result);
 
   return (
     <div className="rounded-box border border-base-300 bg-base-100 p-2.5">
       <div className="flex items-center gap-2 mb-1">
         <Icon className="h-3.5 w-3.5 shrink-0 opacity-60" />
-        <span className="text-[11px] uppercase font-semibold opacity-60 tracking-wide truncate">{label}</span>
+        {href ? (
+          <Link
+            href={href}
+            className="group flex min-w-0 items-center gap-1 text-[11px] uppercase font-semibold tracking-wide opacity-60 transition-colors hover:text-primary hover:opacity-100"
+          >
+            <span className="truncate">{label}</span>
+            <ArrowUpRight className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+          </Link>
+        ) : (
+          <span className="text-[11px] uppercase font-semibold opacity-60 tracking-wide truncate">{label}</span>
+        )}
         {relevance && (
           <span className="ml-auto flex items-center gap-1.5 shrink-0" title="Relevance">
             <span className="h-1 w-10 rounded-full bg-base-300 overflow-hidden">

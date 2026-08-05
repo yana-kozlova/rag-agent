@@ -2,6 +2,7 @@
 
 import { useChat } from '@ai-sdk/react';
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { Send } from 'lucide-react';
 import { renderSimpleMarkdown } from '@/app/components/utils/markdown';
 import { useAutoGreeting } from '@/app/components/chat/useAutoGreeting';
 import { ToolOutput } from '@/app/components/chat/ToolOutput';
@@ -497,10 +498,12 @@ export default function ChatSection() {
           />
           <button
             type="submit"
-            className="btn btn-primary"
+            className="btn btn-primary btn-square"
             disabled={!input.trim() && attachedFiles.length === 0}
+            aria-label="Send"
+            title="Send"
           >
-            Send
+            <Send className="h-5 w-5" />
           </button>
         </div>
       </form>

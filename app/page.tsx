@@ -27,7 +27,7 @@ const CalendarSummary = dynamic(() => import('@/app/components/widgets/calendar-
   ssr: false,
   loading: () => panelSkeleton,
 });
-const EventsQuickPanel = dynamic(() => import('@/app/components/widgets/events-quick-panel'), {
+const WeekDigest = dynamic(() => import('@/app/components/widgets/week-digest'), {
   ssr: false,
   loading: () => panelSkeleton,
 });
@@ -55,7 +55,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Panel><CalendarSummary /></Panel>
-        <Panel><EventsQuickPanel /></Panel>
+        <Panel><WeekDigest /></Panel>
         <Panel><People /></Panel>
         <Panel><RecentlySaved /></Panel>
         <Panel><TablesWidget /></Panel>
