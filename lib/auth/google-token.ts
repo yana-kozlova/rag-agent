@@ -18,6 +18,50 @@ import { env } from '@/lib/env.mjs';
  * trustworthy.
  */
 
+/**
+ * Write the tokens from a sign-in back to the `account` row.
+ *
+ * The Drizzle adapter fills that row once, when the Google account is first
+ * linked, and never touches it again — later sign-ins just find the existing
+ * row. So the stored tokens and scopes freeze at whatever the very first
+ * sign-in produced, which is how an account can sit for months carrying no
+ * calendar scope and no refresh token while the web app works perfectly off
+ * the session cookie. Calling this on every sign-in keeps the row honest.
+ */
+export async function persistGoogleAccount(params: {
+  providerAccountId: string;
+  refreshToken?: string | null;
+  accessToken?: string | null;
+  expiresAt?: number | null;
+  scope?: string | null;
+}): Promise<void> {
+  try {
+    await db
+      .update(accounts)
+      .set({
+        // Google returns a refresh token only when it re-prompts for consent.
+        // Overwriting with null on the quieter flows would throw away the one
+        // credential that cannot be re-derived.
+        ...(params.refreshToken ? { refresh_token: params.refreshToken } : {}),
+        access_token: params.accessToken ?? null,
+        expires_at: params.expiresAt ?? null,
+        scope: params.scope ?? null,
+      })
+      .where(
+        and(
+          eq(accounts.provider, 'google'),
+          eq(accounts.providerAccountId, params.providerAccountId),
+        ),
+      );
+
+    // A fresh sign-in invalidates whatever we minted from the previous one.
+    cache.clear();
+  } catch (error) {
+    // Never block a sign-in over bookkeeping.
+    console.error('[google-token] could not persist account tokens:', error);
+  }
+}
+
 type CachedToken = { token: string; expiresAt: number };
 
 /**

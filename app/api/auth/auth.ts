@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import Google from "next-auth/providers/google";
 import { OAuth2Client } from 'google-auth-library';
 import { JWT } from '@/types/auth';
+import { persistGoogleAccount } from '@/lib/auth/google-token';
 
 async function refreshAccessToken(token: JWT): Promise<JWT> {
   try {
@@ -88,6 +89,17 @@ const authOptions: NextAuthConfig = {
     async jwt({ token, account, user }) {
       // Initial sign in
       if (account && user) {
+        // Mirror the tokens into the `account` row. Session-less callers —
+        // the Telegram webhook, cron jobs — have no cookie to read and mint
+        // their Google access from the stored refresh token instead.
+        await persistGoogleAccount({
+          providerAccountId: account.providerAccountId,
+          refreshToken: account.refresh_token as string | undefined,
+          accessToken: account.access_token as string | undefined,
+          expiresAt: account.expires_at as number | undefined,
+          scope: account.scope as string | undefined,
+        });
+
         return {
           ...token,
           accessToken: account.access_token,
