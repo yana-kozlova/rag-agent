@@ -35,6 +35,11 @@ export default function ChatSection() {
           body: JSON.stringify({ role: 'assistant', content: messageText })
         });
       }
+      // Let dashboard widgets (People, Recently saved) refresh after a turn that
+      // may have mutated the knowledge base via a tool call.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('dashboard:resources-changed'));
+      }
     }
   });
   
@@ -205,10 +210,10 @@ export default function ChatSection() {
   }, [messages.length]);
 
   return (
-    <section className="flex flex-col w-full max-w-3xl mx-auto md:px-0">
+    <section className="flex h-full min-h-0 w-full flex-col md:px-0">
       <div
         ref={listRef}
-        className="space-y-4 overflow-y-auto px-1 py-2 max-w-full h-[480px] sm:h-[560px] md:h-[760px]"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-2 max-w-full"
         onScroll={(e) => { 
           if (e.currentTarget.scrollTop < 16 && !loadingMore && hasMore) {
             loadMore();

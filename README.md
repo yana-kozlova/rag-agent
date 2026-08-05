@@ -14,6 +14,9 @@
 ## Project Overview
 A Next.js (App Router) application showcasing a chat assistant powered by the Vercel AI SDK with tools, Google Calendar integration, and a modern UI using Tailwind + DaisyUI. Key features:
 - Chat with streaming answers, tool calling, and message history persisted to Postgres (with progressive loading and an auto-greeting).
+- RAG knowledge base: upload documents (PDF/DOCX) and notes; content is chunked, embedded (`text-embedding-3-small`), and stored in pgvector; retrieval uses hybrid search (cosine similarity + keyword scoring). Managed from chat via the `addResource` / `getInformation` / `forgetInformation` / `analyzeFile` tools.
+- User-defined tables: create tables and extract structured rows from content via the table tools (`createTable`, `addTableRows`, `extractToTable`, `listTables`).
+- Proactive web-push notifications: daily briefings, schedule insights, and a weekly retrospective. Queued in Postgres for durability and delivered via Upstash QStash (precise time) plus a Vercel Cron sweep; cron/QStash callbacks authenticate with `CRON_SECRET`.
 - Google Calendar integration: fetch live events across primary and followed calendars; create events via a tool.
 - Followed calendars stored directly on the user record (`user.followed_calendars` jsonb) with a settings panel to add/remove.
 - Calendar widgets: Today summary, Upcoming events (grouped by day, per-calendar badges), and an Events Quick Panel (week strip, filters, featured event with countdown).
