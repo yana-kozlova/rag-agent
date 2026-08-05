@@ -16,6 +16,17 @@ export const users = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: timestamp("emailVerified", { mode: "date" }),
   image: text("image"),
+  /**
+   * Telegram identity, when the user has linked the bot.
+   *
+   * A Telegram update carries a chat id and nothing else, so this column is
+   * what turns one into a user of this app. Unique: one chat speaks for one
+   * person, never two.
+   */
+  telegramChatId: text("telegram_chat_id").unique(),
+  /** One-shot code issued by the web app, redeemed by `/start <code>`. */
+  telegramLinkCode: text("telegram_link_code"),
+  telegramLinkExpiresAt: timestamp("telegram_link_expires_at", { mode: "date" }),
   followedCalendars: jsonb("followed_calendars").$type<Array<{ calendarId: string; summary?: string }>>().notNull().default([] as any),
   // IANA timezone (e.g. "Europe/Kyiv"), synced from the user's Google Calendar
   // settings. Cron jobs run in UTC, so this is what lets us fire notifications

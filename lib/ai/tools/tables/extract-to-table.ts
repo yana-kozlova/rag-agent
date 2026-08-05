@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { auth } from '@/app/api/auth/auth';
+import { getSessionOrNull } from '@/lib/utils/auth';
 import { db } from '@/lib/db';
 import { userTables, resources, type TableColumn } from '@/lib/db/schema';
 import { eq, and, ilike, inArray } from 'drizzle-orm';
@@ -43,7 +43,7 @@ export const extractToTableTool = {
     query: string;
     limit?: number;
   }) => {
-    const session = await auth();
+    const session = await getSessionOrNull();
     const userId = session?.user?.id;
     if (!userId) {
       throw new Error('Unauthorized');

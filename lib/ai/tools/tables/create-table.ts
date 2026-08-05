@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { auth } from '@/app/api/auth/auth';
+import { getSessionOrNull } from '@/lib/utils/auth';
 import { createUserTable } from '@/lib/actions/user-tables';
 
 const COLUMN_TYPES = ['text', 'number', 'date', 'boolean', 'email', 'url'] as const;
@@ -49,7 +49,7 @@ export const createTableTool = {
     description?: string;
     columns: Array<{ name: string; type: typeof COLUMN_TYPES[number]; required?: boolean }>;
   }) => {
-    const session = await auth();
+    const session = await getSessionOrNull();
     if (!session?.user?.id) {
       throw new Error('Unauthorized');
     }

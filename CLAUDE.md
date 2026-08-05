@@ -29,9 +29,18 @@ Tests live in `test/` and match `test/**/*.test.{ts,tsx}`. Vitest resolves the `
 
 3. **Resources** (`lib/actions/resources.ts`, `lib/db/schema/resources.ts`): User-uploaded content (documents, notes) stored with metadata. Each resource generates embedding chunks. Supports PDF and DOCX extraction (`mammoth`, `unpdf`).
 
-4. **AI Tools** (`lib/ai/tools/`): Tool-calling system with two categories:
+4. **AI Tools** (`lib/ai/tools/`): Tool-calling system with three categories:
    - **Information tools**: `addResource`, `getInformation` (RAG search), `forgetInformation`, `analyzeFile`
    - **Calendar tools**: `getEvents`, `scheduleEvent`, `deleteEvent`, `optimizeSchedule`
+   - **Table tools** (`lib/ai/tools/tables/`): `createTable`, `addTableRows`, `extractToTable`, `listTables`
+
+5. **Push / notifications** (`lib/push/`, `app/api/push/`): Proactive web-push briefings, insights, and a weekly retrospective. Notifications are written to the `notification_queue` table first (durability), then delivered two ways: precise-time callbacks via Upstash QStash (`lib/push/qstash.ts`) and a periodic Vercel Cron sweep (`vercel.json` → `/api/push/scheduled`, `/api/push/drain`, `/api/push/retrospective`). Cron- and QStash-invoked routes carry no session and authenticate with `CRON_SECRET` via `validateCronSecret` (`lib/push/utils.ts`); they must therefore be listed in `middleware.ts` `publicPaths`. `sent_notifications` is a dedupe ledger so the same briefing isn't sent twice.
+
+6. **Telegram entry point** (`app/api/telegram/`, `lib/telegram/`): A second surface onto the same assistant. `/api/telegram/webhook` validates the `x-telegram-bot-api-secret-token` header, then hands the update to QStash and returns 200 immediately (Telegram redelivers anything it doesn't get a prompt answer for); `/api/telegram/process` is the callback that actually runs the agent, authenticated with `CRON_SECRET`. Both are in `middleware.ts` `publicPaths`; `/api/telegram/link` is not, because issuing a link code requires a session. Voice notes are transcribed by Groq's `whisper-large-v3-turbo` (`lib/telegram/transcribe.ts`). Chat history is shared with the web chat — same `conversations` row — so a thread continues across surfaces.
+
+### Request context
+
+Tools used to read the NextAuth session directly, which tied them to a browser cookie. They now resolve the user through `lib/auth/context.ts`, an `AsyncLocalStorage` store that falls back to `auth()` when nothing was pushed onto it. The web path is therefore unchanged, while cookie-less callers (Telegram, cron) wrap their work in `runWithUser` and supply the user themselves. Google access tokens for those callers come from `lib/auth/google-token.ts`, which mints them from `accounts.refresh_token` — the token in `accounts.access_token` is never refreshed after sign-in and is not to be trusted. Anything running tools must be on the Node runtime; `AsyncLocalStorage` does not exist on Edge.
 
 ### Key Layers
 
@@ -49,6 +58,8 @@ Tests live in `test/` and match `test/**/*.test.{ts,tsx}`. Vitest resolves the `
 - `conversations` / `messages` — chat history per user
 - `user_tables` / `user_tables_data` — user-created custom tables
 - `push_subscriptions` — web push notification subscriptions
+- `notification_queue` — queued notifications (`pending` → `sending` → `sent`|`failed`), delivered via QStash callbacks or the cron sweep
+- `sent_notifications` — dedupe ledger of already-delivered notifications
 
 ### Path Aliases
 

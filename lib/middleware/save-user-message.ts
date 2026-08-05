@@ -1,6 +1,6 @@
 'use server';
 
-import { auth } from '@/app/api/auth/auth';
+import { getSessionOrNull } from '@/lib/utils/auth';
 import { db } from '@/lib/db';
 import { conversations, messages } from '@/lib/db/schema/chat';
 import { eq } from 'drizzle-orm';
@@ -11,7 +11,7 @@ import { eq } from 'drizzle-orm';
  */
 export async function saveUserMessage(content: string): Promise<{ saved: boolean; reason?: string; messageId?: string }> {
   try {
-    const session = await auth();
+    const session = await getSessionOrNull();
     const userId = session?.user?.id;
     if (!userId) {
       return { saved: false, reason: 'Not authenticated' };

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { deleteResource } from '@/lib/actions/resources';
 import { findRelevantContent } from '@/lib/ai/embedding';
-import { auth } from '@/app/api/auth/auth';
+import { getSessionOrNull } from '@/lib/utils/auth';
 import { db } from '@/lib/db';
 import { resources } from '@/lib/db/schema/resources';
 import { eq, and, inArray } from 'drizzle-orm';
@@ -24,7 +24,7 @@ IMPORTANT:
   }),
   execute: async ({ query }: { query: string }) => {
     try {
-      const session = await auth();
+      const session = await getSessionOrNull();
       const userId = session?.user?.id;
       if (!userId) {
         return { success: false, message: 'Unauthorized' };

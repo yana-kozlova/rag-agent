@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { findRelevantContent } from '@/lib/ai/embedding';
-import { auth } from '@/app/api/auth/auth';
+import { getSessionOrNull } from '@/lib/utils/auth';
 
 // Configuration constants
 const MIN_SIMILARITY = 0.5; // Balanced threshold for relevance
@@ -141,7 +141,7 @@ Only use results that are actually relevant to the user's question - don't inclu
     };
     
     try {
-      const session = await auth();
+      const session = await getSessionOrNull();
       const userId = session?.user?.id;
       if (!userId) {
         console.log('[getInformation] No userId found');

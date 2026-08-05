@@ -1,6 +1,6 @@
 'use server';
 
-import { auth } from '@/app/api/auth/auth';
+import { getSessionOrNull } from '@/lib/utils/auth';
 import { db } from '@/lib/db';
 import { 
   userTables, 
@@ -22,7 +22,7 @@ import { resources } from '@/lib/db/schema/resources';
 
 export const createUserTable = async (input: CreateUserTableParams) => {
   try {
-    const session = await auth();
+    const session = await getSessionOrNull();
     const userId = session?.user?.id;
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };
@@ -51,7 +51,7 @@ export const createUserTable = async (input: CreateUserTableParams) => {
 
 export const updateUserTable = async (id: string, input: UpdateUserTableParams) => {
   try {
-    const session = await auth();
+    const session = await getSessionOrNull();
     const userId = session?.user?.id;
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };
@@ -95,7 +95,7 @@ export const updateUserTable = async (id: string, input: UpdateUserTableParams) 
 
 export const deleteUserTable = async (id: string) => {
   try {
-    const session = await auth();
+    const session = await getSessionOrNull();
     const userId = session?.user?.id;
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };
@@ -169,7 +169,7 @@ const convertRowToText = (rowData: Record<string, any>, columns: TableColumn[]):
 // Table row operations
 export const createTableRow = async (input: CreateTableRowParams) => {
   try {
-    const session = await auth();
+    const session = await getSessionOrNull();
     const userId = session?.user?.id;
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };
@@ -233,7 +233,7 @@ export const createTableRow = async (input: CreateTableRowParams) => {
 
 export const updateTableRow = async (rowId: string, input: UpdateTableRowParams) => {
   try {
-    const session = await auth();
+    const session = await getSessionOrNull();
     const userId = session?.user?.id;
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };
@@ -320,7 +320,7 @@ export const createTableRowsBulk = async (input: {
   sourceResourceIdsPerRow?: Array<string[] | undefined>;
 }) => {
   try {
-    const session = await auth();
+    const session = await getSessionOrNull();
     const userId = session?.user?.id;
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };
@@ -469,7 +469,7 @@ export const createTableRowsBulk = async (input: {
 
 export const deleteTableRow = async (rowId: string) => {
   try {
-    const session = await auth();
+    const session = await getSessionOrNull();
     const userId = session?.user?.id;
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };

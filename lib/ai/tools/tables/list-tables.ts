@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { auth } from '@/app/api/auth/auth';
+import { getSessionOrNull } from '@/lib/utils/auth';
 import { db } from '@/lib/db';
 import { userTables, userTablesData, type TableColumn } from '@/lib/db/schema';
 import { eq, and, ilike, sql, desc } from 'drizzle-orm';
@@ -12,7 +12,7 @@ export const listTablesTool = {
     search: z.string().optional().describe('Optional search term to filter tables by title or description'),
   }),
   execute: async ({ search }: { search?: string }) => {
-    const session = await auth();
+    const session = await getSessionOrNull();
     if (!session?.user?.id) {
       throw new Error('Unauthorized');
     }

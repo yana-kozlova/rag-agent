@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { auth } from '@/app/api/auth/auth';
+import { getSessionOrNull } from '@/lib/utils/auth';
 import { db } from '@/lib/db';
 import { resources } from '@/lib/db/schema/resources';
 import { eq, and, or, ilike } from 'drizzle-orm';
@@ -14,7 +14,7 @@ export const analyzeFileTool = {
     filename: z.string().optional().describe('The filename or title of the file to analyze (e.g., "ЧЕК-ЛИСТ – пошуку роботи.docx")'),
   }),
   execute: async ({ resourceId, filename }: { resourceId?: string; filename?: string }) => {
-    const session = await auth();
+    const session = await getSessionOrNull();
     if (!session?.user?.id) {
       throw new Error('Unauthorized');
     }

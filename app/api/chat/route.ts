@@ -1,13 +1,9 @@
-import { openai } from '@ai-sdk/openai';
 import {
   convertToModelMessages,
   streamText,
   UIMessage,
-  stepCountIs,
 } from 'ai';
-import { tools } from '@/lib/ai/tools';
-import { env } from '@/lib/env.mjs';
-import { SYSTEM_PROMPT } from '@/app/prompts/system';
+import { agentModelName, agentOptions } from '@/lib/ai/agent';
 import { saveUserMessage } from '@/lib/middleware/save-user-message';
 import { logLlmUsage } from '@/lib/ai/telemetry';
 import { AUTO_GREETING_MARKER, isAutoGreetingText, stripAutoGreetingMarker } from '@/lib/chat/auto-greeting';
@@ -95,17 +91,13 @@ export async function POST(req: Request) {
       }
     }
 
-    const modelName = env.AI_CHAT_MODEL || 'gpt-4o-mini';
-    const toolSteps = env.AI_TOOL_STEPS ?? 5;
+    const modelName = agentModelName();
     const streamStartedAt = Date.now();
     const result = streamText({
-      model: openai(modelName),
+      // Model, prompt, tools and step budget are shared with the Telegram
+      // entry point — see lib/ai/agent.ts.
+      ...agentOptions(),
       messages: convertToModelMessages(processedMessages),
-      stopWhen: stepCountIs(toolSteps),
-      system: SYSTEM_PROMPT
-        .replace('{TOOLS}', Object.values(tools).map(t => t.description).join('\n'))
-        .replace('{TODAY_ISO}', new Date().toISOString().slice(0, 10)),
-      tools,
       abortSignal: (req as any).signal,
       onFinish: ({ usage, finishReason }: any) => {
         logLlmUsage({

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { auth } from '@/app/api/auth/auth';
+import { getSessionOrNull } from '@/lib/utils/auth';
 import { db } from '@/lib/db';
 import { userTables, type TableColumn } from '@/lib/db/schema';
 import { eq, and, ilike } from 'drizzle-orm';
@@ -78,7 +78,7 @@ export const addTableRowsTool = {
     rows: Array<Record<string, any>>;
     sourceResourceIdsPerRow?: Array<string[]>;
   }) => {
-    const session = await auth();
+    const session = await getSessionOrNull();
     if (!session?.user?.id) {
       throw new Error('Unauthorized');
     }

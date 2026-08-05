@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { createResource } from '@/lib/actions/resources';
-import { auth } from '@/app/api/auth/auth';
+import { getSessionOrNull } from '@/lib/utils/auth';
 import { looksLikeCalendarCommandOrScheduleOperation } from '@/lib/privacy/schedule-privacy';
 import { extractStructuredInformation, formatStructuredContent } from '@/lib/ai/information-extraction';
 
@@ -11,7 +11,7 @@ export const addResourceTool = {
     title: z.string().optional().describe('Optional title for the resource. If not provided, will try to extract from first line of content.'),
   }),
   execute: async ({ content, title }: { content: string; title?: string }) => {
-    const session = await auth();
+    const session = await getSessionOrNull();
     if (!session?.user?.id) {
       throw new Error('Unauthorized');
     }

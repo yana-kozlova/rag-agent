@@ -11,7 +11,7 @@ import { db } from '../db';
 import { generateEmbeddings } from '../ai/embedding';
 import { embeddings as embeddingsTable } from '../db/schema/embeddings';
 import { eq, and } from 'drizzle-orm';
-import { auth } from '@/app/api/auth/auth';
+import { getSessionOrNull } from '@/lib/utils/auth';
 import { sql } from 'drizzle-orm';
 import { embeddingCache } from '../ai/embedding-cache';
 import { autoRouteResource } from './auto-route-resource';
@@ -68,7 +68,7 @@ export const createResource = async (input: NewResourceParams) => {
 
 export const updateResource = async (resourceId: string, input: UpdateResourceParams) => {
   try {
-    const session = await auth();
+    const session = await getSessionOrNull();
     const userId = session?.user?.id;
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };
@@ -150,7 +150,7 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
 
 export const deleteResource = async (resourceId: string) => {
   try {
-    const session = await auth();
+    const session = await getSessionOrNull();
     const userId = session?.user?.id;
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };

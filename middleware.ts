@@ -2,7 +2,24 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-const publicPaths = ['/signin', '/api/auth', '/api/push/scheduled'];
+// Cron- and QStash-invoked endpoints: they carry no NextAuth session, so they
+// must bypass the session gate here and authenticate themselves with
+// validateCronSecret instead. Without this the auth redirect below swallows
+// every cron/QStash callback and notifications are enqueued but never delivered.
+const publicPaths = [
+  '/signin',
+  '/api/auth',
+  '/api/push/scheduled',
+  '/api/push/drain',
+  '/api/push/briefing-user',
+  '/api/push/retrospective',
+  // Telegram carries no session: the webhook authenticates with the secret
+  // token Telegram echoes back, its QStash callback with CRON_SECRET.
+  // `/api/telegram/link` is deliberately absent — that one needs a signed-in
+  // user, and `startsWith` would have made a bare '/api/telegram' cover it.
+  '/api/telegram/webhook',
+  '/api/telegram/process',
+];
 
 export default async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

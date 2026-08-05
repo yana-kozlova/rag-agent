@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { CalendarsPanel } from './CalendarsPanel';
 import { NotificationPreferences } from './NotificationPreferences';
 import ClearDataPanel from './ClearDataPanel';
+import { TelegramPanel } from './TelegramPanel';
 import Image from 'next/image';
 import { getUserInitials } from '@/lib/utils';
 
@@ -57,6 +58,7 @@ export default async function SettingsPage() {
 
         <NotificationPreferences />
         <CalendarsPanel />
+        <TelegramPanel />
         <ClearDataPanel />
       </div>
     </div>
