@@ -285,30 +285,75 @@ const generateChunks = (
   return chunks;
 };
 
+/**
+ * Ceilings on one embeddings request, well inside OpenAI's.
+ *
+ * The API rejects a request carrying more than 2048 inputs or 300k tokens, and
+ * a note or a PDF never came close — but a book does. A 300-page EPUB chunks
+ * into the high hundreds, so sending every chunk in one call fails outright on
+ * exactly the documents this was added for. The character budget is deliberately
+ * pessimistic: Cyrillic runs closer to two characters per token than four, and
+ * the limit that matters is tokens.
+ */
+const MAX_CHUNKS_PER_BATCH = 256;
+const MAX_CHARS_PER_BATCH = 150_000;
+
+/** Split chunks into request-sized groups, respecting both ceilings. */
+function batchChunks(chunks: string[]): string[][] {
+  const batches: string[][] = [];
+  let batch: string[] = [];
+  let chars = 0;
+
+  for (const chunk of chunks) {
+    // A single chunk over the budget still has to go somewhere; it ships alone.
+    if (batch.length > 0 && (batch.length >= MAX_CHUNKS_PER_BATCH || chars + chunk.length > MAX_CHARS_PER_BATCH)) {
+      batches.push(batch);
+      batch = [];
+      chars = 0;
+    }
+    batch.push(chunk);
+    chars += chunk.length;
+  }
+
+  if (batch.length > 0) batches.push(batch);
+  return batches;
+}
+
 export const generateEmbeddings = async (
   value: string,
   caller: string = 'generateEmbeddings',
 ): Promise<Array<{ embedding: number[]; content: string }>> => {
   const chunks = generateChunks(value);
   if (chunks.length === 0) return [];
-  const startedAt = Date.now();
-  const result = await embedMany({
-    model: embeddingModel,
-    values: chunks,
-  });
-  const inputChars = chunks.reduce((sum, c) => sum + c.length, 0);
-  logLlmUsage({
-    op: 'embedMany',
-    model: EMBED_MODEL_NAME,
-    caller,
-    inputChars,
-    batchSize: chunks.length,
-    usage: (result as any).usage
-      ? { totalTokens: (result as any).usage.tokens ?? (result as any).usage.totalTokens }
-      : undefined,
-    durationMs: Date.now() - startedAt,
-  });
-  return result.embeddings.map((e, i) => ({ content: chunks[i], embedding: e }));
+
+  const batches = batchChunks(chunks);
+  const embeddings: number[][] = [];
+
+  // Sequential on purpose: a book is hundreds of chunks, and firing every batch
+  // at once is the reliable way to hit a rate limit on the one upload that most
+  // needs to succeed.
+  for (const [index, batch] of batches.entries()) {
+    const startedAt = Date.now();
+    const result = await embedMany({
+      model: embeddingModel,
+      values: batch,
+    });
+    logLlmUsage({
+      op: 'embedMany',
+      model: EMBED_MODEL_NAME,
+      caller,
+      inputChars: batch.reduce((sum, c) => sum + c.length, 0),
+      batchSize: batch.length,
+      usage: (result as any).usage
+        ? { totalTokens: (result as any).usage.tokens ?? (result as any).usage.totalTokens }
+        : undefined,
+      durationMs: Date.now() - startedAt,
+      note: batches.length > 1 ? `batch ${index + 1}/${batches.length}` : undefined,
+    });
+    embeddings.push(...result.embeddings);
+  }
+
+  return embeddings.map((e, i) => ({ content: chunks[i], embedding: e }));
 };
 
 export const generateEmbedding = async (

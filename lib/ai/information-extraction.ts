@@ -169,15 +169,28 @@ const MAX_EXTRACTION_ATTEMPTS = 2;
  *
  * Still returns null when both attempts fail — a note saved without structure
  * beats a save that throws.
+ *
+ * Long content is read from the front only. Callers used to hand this whole
+ * resources, which was harmless while those were notes and PDFs; an EPUB is
+ * comfortably past any chat model's context window, and an over-long prompt
+ * fails on both attempts and yields a book with no tags, facts or entities at
+ * all. The opening of a book is also where its title, author and subject
+ * actually live, so the first slice is the part worth spending.
  */
+const MAX_EXTRACTION_CHARS = 60_000;
+
 export async function extractStructuredInformation(
   content: string,
   userName?: string | null,
   caller: string = 'extractStructuredInformation'
 ): Promise<ExtractedInformation | null> {
+  const input = content.length > MAX_EXTRACTION_CHARS
+    ? content.slice(0, MAX_EXTRACTION_CHARS)
+    : content;
+
   for (let attempt = 1; attempt <= MAX_EXTRACTION_ATTEMPTS; attempt++) {
     try {
-      return await runExtraction(content, userName, caller);
+      return await runExtraction(input, userName, caller);
     } catch (error) {
       const lastAttempt = attempt === MAX_EXTRACTION_ATTEMPTS;
       console.error(

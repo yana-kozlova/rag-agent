@@ -29,6 +29,8 @@ Tests live in `test/` and match `test/**/*.test.{ts,tsx}`. Vitest resolves the `
 
 3. **Resources** (`lib/actions/resources.ts`, `lib/db/schema/resources.ts`): User-uploaded content (documents, notes) stored with metadata. Each resource generates embedding chunks. Supports PDF and DOCX extraction (`mammoth`, `unpdf`).
 
+**Books are the reason embedding is batched.** A book chunks into the high hundreds, past OpenAI's per-request ceiling of 2048 inputs / 300k tokens, so `generateEmbeddings` splits into sequential batches — one request per book would fail on exactly the uploads this was built for. For the same reason `extractStructuredInformation` reads only the first 60k characters: a whole book exceeds any chat model's context, and an over-long prompt fails both attempts and leaves the book with no tags, facts or entities at all.
+
 4. **AI Tools** (`lib/ai/tools/`): Tool-calling system with three categories:
    - **Information tools**: `addResource`, `getInformation` (RAG search), `forgetInformation`, `analyzeFile`
    - **Calendar tools**: `getEvents`, `scheduleEvent`, `deleteEvent`, `optimizeSchedule`
