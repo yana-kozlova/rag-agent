@@ -2,7 +2,7 @@ import { runAgent } from '@/lib/ai/agent';
 import { runWithUser } from '@/lib/auth/context';
 import { getGoogleAccessToken } from '@/lib/auth/google-token';
 import { sendMessage, sendTyping } from '@/lib/telegram/api';
-import { findUserByChatId, redeemLinkCode } from '@/lib/telegram/link';
+import { findUserByChatId, redeemLinkCode, unlinkChat } from '@/lib/telegram/link';
 import { handleCallbackQuery, type TelegramCallbackQuery } from '@/lib/telegram/callbacks';
 import { getConversationId, loadRecentTurns, persistTurn } from '@/lib/telegram/history';
 import {
@@ -29,7 +29,7 @@ import {
 /** Only the fields this handler reads; Telegram sends far more. */
 type TelegramUpdate = {
   message?: {
-    chat?: { id?: number | string };
+    chat?: { id?: number | string; type?: string };
     from?: { first_name?: string };
     text?: string;
     voice?: { file_id?: string };
@@ -59,8 +59,24 @@ const HELP = [
   'Фото й документи (PDF, DOCX, EPUB, TXT) потрапляють у базу знань — підпис до фото стає його назвою.',
   'Саме зображення лежить за невгадуваним, але публічним посиланням — не шли те, що не можна нікому показати.',
   '/start <код> — прив’язати цей чат до акаунта',
+  '/unlink — відв’язати цей чат (база знань лишається в акаунті)',
   '/help — це повідомлення',
 ].join('\n');
+
+/**
+ * Only private chats are served.
+ *
+ * A chat id is the entire identity here — `findUserByChatId` asks nothing about
+ * *who* in that chat is speaking. In a group that would hand every member, and
+ * everyone added later, the linked account's knowledge base and calendar. There
+ * is no per-member check to add short of a second linking flow, so the answer
+ * is that groups are not a place this bot works.
+ */
+function isPrivateChat(type: string | undefined): boolean {
+  // Telegram always sends `type`; an update without one is malformed rather
+  // than private, and is treated as the group case.
+  return type === 'private';
+}
 
 export async function processUpdate(update: TelegramUpdate): Promise<void> {
   // A button press, not a message: no chat type to check and no agent to run,
@@ -78,8 +94,26 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
   const chatId = String(rawChatId);
   const text = (message.text ?? message.caption ?? '').trim();
 
+  if (!isPrivateChat(message.chat?.type)) {
+    // Answer commands, ignore the rest. Someone who typed `/start` in a group
+    // is waiting for a reply and reads silence as a broken bot; the group's
+    // ordinary chatter is not addressed to us and deserves no interruption.
+    if (text.startsWith('/')) {
+      await sendMessage(
+        chatId,
+        'Я працюю тільки в особистих повідомленнях — напиши мені напряму, і я допоможу.'
+      );
+    }
+    return;
+  }
+
   if (text.startsWith('/start')) {
     await handleStart(chatId, text);
+    return;
+  }
+
+  if (text.startsWith('/unlink')) {
+    await handleUnlink(chatId);
     return;
   }
 
@@ -179,6 +213,17 @@ async function handleStart(chatId: string, text: string): Promise<void> {
   await sendMessage(chatId, `Готово, чат прив’язано${user.name ? `, ${user.name}` : ''}. ${HELP}`);
 }
 
+async function handleUnlink(chatId: string): Promise<void> {
+  const wasLinked = await unlinkChat(chatId);
+
+  await sendMessage(
+    chatId,
+    wasLinked
+      ? 'Готово, чат відв’язано — я більше не відповідаю тут від твого імені. Нічого не видалено: база знань і календар лишились в акаунті. Щоб повернутись, згенеруй новий код у веб-застосунку і надішли «/start <код>».'
+      : 'Цей чат і так ні до чого не прив’язаний.'
+  );
+}
+
 /**
  * How much of what was read to quote back.
  *
@@ -229,10 +274,13 @@ async function handleMedia(
 
   const lines = [`${icon} Зберегла: ${result.title}`, '', excerpt];
 
-  // Only worth mentioning when it is missing, and only because the fix is an
-  // env var this user can set. A working store needs no announcement.
+  // Worth mentioning only when it is missing: the picture will not be there to
+  // look at later, which the sender should know now. The cause is a server
+  // setting, so it goes to the log — the person holding the phone is not
+  // necessarily the person who deployed this.
   if (result.kind === 'image' && !result.imageUrl) {
-    lines.push('', '⚠️ Саме зображення не збереглось — немає BLOB_READ_WRITE_TOKEN. Текст із нього вже в базі.');
+    console.warn('[telegram] image saved without a URL — BLOB_READ_WRITE_TOKEN is unset');
+    lines.push('', '⚠️ Саме зображення не збереглось, але текст із нього вже в базі.');
   }
 
   await sendMessage(chatId, lines.join('\n'));
@@ -241,14 +289,16 @@ async function handleMedia(
 /**
  * What to say for each way a transcription can come back empty.
  *
- * Only the last one is about the recording. Telling someone to "try speaking
- * again" when the key is missing sends them in a loop, so the two setup
- * failures name themselves — this bot has one user, and that user is also the
- * person who can fix them.
+ * Only the last one is about the recording, and only it should invite another
+ * try — repeating a voice note at a server that has no transcription key is a
+ * loop. The other two therefore say "write instead" rather than "try again",
+ * but they no longer name the setting: whoever is speaking into this bot may be
+ * a guest on someone else's deployment, and a missing env var is neither their
+ * business nor theirs to fix. `lib/telegram/transcribe.ts` logs the specifics.
  */
 const VOICE_FAILURE: Record<TranscriptionFailure, string> = {
-  unconfigured: 'Розшифровка голосових не налаштована — немає GROQ_API_KEY. Напиши текстом.',
-  unavailable: 'Сервіс розшифровки не відповідає — подробиці в логах. Напиши текстом, будь ласка.',
+  unconfigured: 'Розшифровка голосових тут не увімкнена. Напиши текстом, будь ласка.',
+  unavailable: 'Сервіс розшифровки зараз не відповідає. Напиши текстом, будь ласка.',
   empty: 'Не вдалось розпізнати 🤷 Спробуй ще раз або напиши текстом.',
 };
 
@@ -257,8 +307,10 @@ async function readVoice(chatId: string, fileId?: string): Promise<string | null
   if (!fileId) return null;
 
   // Checked up front only to skip a pointless download; `transcribeVoice`
-  // reports the same failure on its own.
+  // reports the same failure on its own — including the log line, which is why
+  // the short-circuit has to write one too.
   if (!isTranscriptionConfigured()) {
+    console.warn('[telegram] voice note dropped — GROQ_API_KEY is unset');
     await sendMessage(chatId, VOICE_FAILURE.unconfigured);
     return null;
   }

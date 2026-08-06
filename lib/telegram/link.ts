@@ -68,6 +68,26 @@ export async function redeemLinkCode(
   return user;
 }
 
+/**
+ * Detach a chat from whatever account it spoke for; false when it spoke for
+ * none.
+ *
+ * The counterpart to redeeming a code, and it has to live on the Telegram side:
+ * someone who no longer uses the web app — or never did, having been invited to
+ * it — still needs a way to stop the bot from answering as them, and the
+ * settings panel is not reachable from a phone in that state. Nothing is
+ * deleted here; the knowledge base belongs to the account, not to the chat.
+ */
+export async function unlinkChat(chatId: string): Promise<boolean> {
+  const rows = await db
+    .update(users)
+    .set({ telegramChatId: null })
+    .where(eq(users.telegramChatId, chatId))
+    .returning({ id: users.id });
+
+  return rows.length > 0;
+}
+
 /** The chat this account is linked to, if any. */
 export async function getLinkedChatId(userId: string): Promise<string | null> {
   const rows = await db
