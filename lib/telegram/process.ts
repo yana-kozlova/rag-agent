@@ -160,6 +160,7 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
       {
         id: user.id,
         name: user.name,
+        surface: 'telegram',
         // Deferred: most messages never reach a calendar tool, and minting a
         // token costs a round-trip to Google.
         resolveAccessToken: () => getGoogleAccessToken(user.id),

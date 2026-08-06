@@ -134,6 +134,13 @@
       "when": 1765700000000,
       "tag": "0018_notification_locale",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1765800000000,
+      "tag": "0019_wellbeing_entries",
+      "breakpoints": true
     }
   ]
 }

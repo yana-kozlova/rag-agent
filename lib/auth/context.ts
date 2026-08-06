@@ -20,6 +20,11 @@ export type UserContext = {
    * tool actually asks — most messages never touch the calendar.
    */
   resolveAccessToken?: () => Promise<string | null>;
+  /**
+   * Which door this call came in through. Only things that record where a
+   * datum originated need it — everything else treats every surface alike.
+   */
+  surface?: 'web' | 'telegram';
 };
 
 /**
@@ -53,6 +58,7 @@ export async function getUser(): Promise<UserContext | null> {
     name: session.user.name,
     email: session.user.email,
     accessToken: (session.user.accessToken as string | undefined) ?? null,
+    surface: 'web',
   };
 }
 

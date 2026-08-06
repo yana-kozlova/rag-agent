@@ -10,6 +10,10 @@ import { optimizeScheduleTool } from './events/optimize-schedule';
 import { deleteEventTool } from './events/delete-event';
 import { scheduleEventTool } from './events/schedule-event';
 
+// Wellbeing tracker tools
+import { logWellbeingTool } from './wellbeing/log-wellbeing';
+import { getWellbeingTool } from './wellbeing/get-wellbeing';
+
 // Table tools
 import { createTableTool } from './tables/create-table';
 import { listTablesTool } from './tables/list-tables';
@@ -25,6 +29,8 @@ export const tools = {
   scheduleEvent: scheduleEventTool,
   optimizeSchedule: optimizeScheduleTool,
   deleteEvent: deleteEventTool,
+  logWellbeing: logWellbeingTool,
+  getWellbeing: getWellbeingTool,
   createTable: createTableTool,
   listTables: listTablesTool,
   addTableRows: addTableRowsTool,

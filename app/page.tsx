@@ -43,6 +43,10 @@ const TablesWidget = dynamic(() => import('@/app/components/widgets/tables-widge
   ssr: false,
   loading: () => panelSkeleton,
 });
+const Wellbeing = dynamic(() => import('@/app/components/widgets/wellbeing'), {
+  ssr: false,
+  loading: () => panelSkeleton,
+});
 
 function Panel({ children }: { children: React.ReactNode }) {
   return <div className="rounded-box border border-base-300 bg-base-100 p-4">{children}</div>;
@@ -56,6 +60,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Panel><CalendarSummary /></Panel>
         <Panel><WeekDigest /></Panel>
+        <Panel><Wellbeing /></Panel>
         <Panel><People /></Panel>
         <Panel><RecentlySaved /></Panel>
         <Panel><TablesWidget /></Panel>

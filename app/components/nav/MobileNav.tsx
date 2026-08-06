@@ -5,13 +5,14 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import { getUserInitials } from '@/lib/utils';
-import { Home, BookOpen, Table2, Settings, LogOut } from 'lucide-react';
+import { Home, BookOpen, Table2, HeartPulse, Settings, LogOut } from 'lucide-react';
 import { useRef } from 'react';
 
 const TABS = [
   { href: '/', label: 'Home', icon: Home, match: (p: string) => p === '/' },
   { href: '/resources', label: 'Knowledge', icon: BookOpen, match: (p: string) => p.startsWith('/resources') },
   { href: '/tables', label: 'Tables', icon: Table2, match: (p: string) => p.startsWith('/tables') },
+  { href: '/health', label: 'Health', icon: HeartPulse, match: (p: string) => p.startsWith('/health') },
   { href: '/settings', label: 'Settings', icon: Settings, match: (p: string) => p.startsWith('/settings') },
 ];
 
