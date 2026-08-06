@@ -15,6 +15,7 @@ import { getSessionOrNull } from '@/lib/utils/auth';
 import { sql } from 'drizzle-orm';
 import { embeddingCache } from '../ai/embedding-cache';
 import { autoRouteResource } from './auto-route-resource';
+import { syncEntitiesForResource } from './entities';
 
 export const createResource = async (input: NewResourceParams) => {
   try {
@@ -48,6 +49,22 @@ export const createResource = async (input: NewResourceParams) => {
     }
 
     embeddingCache.clearForUser(userId);
+
+    // Promote the entities extraction found into shared graph nodes, so this
+    // note joins everything else that mentions the same people or projects.
+    // Non-fatal: a note without its edges is still a saved note.
+    const extractedEntities = (metadata as any)?.entities;
+    if (Array.isArray(extractedEntities) && extractedEntities.length > 0) {
+      try {
+        await syncEntitiesForResource({
+          resourceId: resource.id,
+          userId,
+          entities: extractedEntities,
+        });
+      } catch (err) {
+        console.error('[createResource] syncEntitiesForResource failed (non-fatal):', err);
+      }
+    }
 
     // Fire-and-forget: auto-route into tables whose autoRoute rule matches.
     // Never blocks or fails createResource.

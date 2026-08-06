@@ -8,55 +8,80 @@ import { z } from 'zod';
 import { logLlmUsage } from './telemetry';
 
 // Schema for structured information extraction
-const informationExtractionSchema = z.object({
+/**
+ * Deliberately forgiving: every branch has a default.
+ *
+ * This call does not run under OpenAI's strict structured output — an
+ * open-ended `z.record` used to rule it out, and removing that was not enough
+ * to switch it on. The model is therefore free to return a partial object, and
+ * it does: on a short note it answered with a complete, well-formed JSON
+ * carrying only `structuredContent` and `userName`; on a recipe it invented
+ * `ingredients` and `instructions` keys of its own.
+ *
+ * Under an all-or-nothing schema every one of those responses failed
+ * validation and the note was stored with nothing but its type — which is most
+ * of why this knowledge base reads flat. Defaults turn that into "keep
+ * whatever came back". Partial structure is worth far more than none, and the
+ * missing branches simply stay empty.
+ */
+export const informationExtractionSchema = z.object({
   // Main facts extracted from the message
   facts: z.array(z.object({
     subject: z.string().describe('Who or what this fact is about (e.g., "user", "John", "project X")'),
     predicate: z.string().describe('What is being said about the subject (e.g., "needs help with", "works at", "likes")'),
     object: z.string().describe('The object or value of the predicate (e.g., "schedule planning", "Google", "guitar")'),
-    context: z.string().optional().describe('Additional context or details'),
-  })).describe('Key facts extracted from the message'),
-  
+    context: z.string().nullish().default(null).describe('Additional context or details'),
+  })).default([]).describe('Key facts extracted from the message'),
+
   // Entities mentioned (people, places, things)
   entities: z.array(z.object({
     name: z.string().describe('Name or identifier of the entity'),
-    type: z.enum(['person', 'place', 'organization', 'project', 'skill', 'activity', 'preference', 'need', 'goal', 'other']).describe('Type of entity'),
-    relationship: z.string().optional().describe('Relationship to user (e.g., "friend", "colleague", "hobby")'),
-    attributes: z.record(z.string()).optional().describe('Additional attributes about the entity'),
-  })).describe('Entities mentioned in the message'),
-  
+    // Free-form rather than an enum: the taxonomy could not survive contact
+    // with real notes — a recipe's entities are dishes and ingredients, and a
+    // value outside the list failed the whole extraction. Unknown types land
+    // in their own group in the UI, which is a far smaller price.
+    type: z.string().default('other').describe('Type of entity: person, place, organization, project, skill, activity, or another short lowercase noun'),
+    relationship: z.string().nullish().default(null).describe('Relationship to user (e.g., "friend", "colleague", "hobby")'),
+    attributes: z
+      .array(z.object({ key: z.string(), value: z.string() }))
+      .nullish()
+      .default(null)
+      .describe('Additional attributes about the entity, as key/value pairs'),
+  })).default([]).describe('Entities mentioned in the message'),
+
   // User needs, preferences, or requests
   needs: z.array(z.object({
     need: z.string().describe('What the user needs or wants (e.g., "help with schedule planning", "learn React")'),
-    priority: z.enum(['high', 'medium', 'low']).optional().describe('Priority level if mentioned'),
-    context: z.string().optional().describe('Context or details about the need'),
-  })).describe('User needs, preferences, or requests mentioned'),
-  
+    priority: z.enum(['high', 'medium', 'low']).nullish().default(null).describe('Priority level if mentioned'),
+    context: z.string().nullish().default(null).describe('Context or details about the need'),
+  })).default([]).describe('User needs, preferences, or requests mentioned'),
+
   // Structured summary for storage
   structuredContent: z.object({
     title: z.string().describe('Clear, descriptive title summarizing the main point'),
-    summary: z.string().describe('Concise summary of the key information (2-3 sentences)'),
-    keyPoints: z.array(z.string()).describe('Key points or facts to remember (3-5 bullet points)'),
-    tags: z.array(z.string()).describe('Relevant tags for searchability (e.g., ["schedule", "daily-routine", "time-management"])'),
+    summary: z.string().default('').describe('Concise summary of the key information (2-3 sentences)'),
+    keyPoints: z.array(z.string()).default([]).describe('Key points or facts to remember (3-5 bullet points)'),
+    tags: z.array(z.string()).default([]).describe('Relevant tags for searchability (e.g., ["schedule", "daily-routine", "time-management"])'),
   }).describe('Structured content ready for storage'),
-  
+
   // User name if mentioned or inferred
-  userName: z.string().optional().describe('User name if mentioned or can be inferred from context'),
-  
+  userName: z.string().nullish().default(null).describe('User name if mentioned or can be inferred from context'),
+
   // Content type classification
-  contentType: z.enum(['note', 'document', 'schedule', 'person', 'project', 'skill', 'event', 'learning', 'preference', 'need', 'other']).describe('Type of content'),
+  contentType: z.enum(['note', 'document', 'schedule', 'person', 'project', 'skill', 'event', 'learning', 'preference', 'need', 'other']).default('note').describe('Type of content'),
 });
 
 export type ExtractedInformation = z.infer<typeof informationExtractionSchema>;
 
 /**
- * Analyzes user message and extracts structured information
+ * One extraction attempt. Throws on failure so the caller can decide whether
+ * to try again — see `extractStructuredInformation` below.
  */
-export async function extractStructuredInformation(
+async function runExtraction(
   content: string,
   userName?: string | null,
   caller: string = 'extractStructuredInformation'
-): Promise<ExtractedInformation | null> {
+): Promise<ExtractedInformation> {
   try {
     const modelName = env.AI_CHAT_MODEL || 'gpt-4o-mini';
 
@@ -124,9 +149,47 @@ Now analyze the provided message.`,
 
     return result.object;
   } catch (error) {
-    console.error('[extractStructuredInformation] Error:', error);
-    return null;
+    // Left to the retry wrapper rather than swallowed here.
+    throw error;
   }
+}
+
+/** One retry. A second failure on the same text is unlikely to be luck. */
+const MAX_EXTRACTION_ATTEMPTS = 2;
+
+/**
+ * Analyzes a user message and extracts structured information.
+ *
+ * Structured output against a schema this wide — facts, entities, needs and a
+ * summary in one call — fails validation now and then; measured at roughly one
+ * attempt in eight. That failure used to be silent and permanent: the note
+ * saved with nothing but its type, and nothing ever revisited it. Notes born
+ * during such a failure are most of why the knowledge base reads flat, so it
+ * is worth a second attempt before giving up.
+ *
+ * Still returns null when both attempts fail — a note saved without structure
+ * beats a save that throws.
+ */
+export async function extractStructuredInformation(
+  content: string,
+  userName?: string | null,
+  caller: string = 'extractStructuredInformation'
+): Promise<ExtractedInformation | null> {
+  for (let attempt = 1; attempt <= MAX_EXTRACTION_ATTEMPTS; attempt++) {
+    try {
+      return await runExtraction(content, userName, caller);
+    } catch (error) {
+      const lastAttempt = attempt === MAX_EXTRACTION_ATTEMPTS;
+      console.error(
+        `[extractStructuredInformation] attempt ${attempt}/${MAX_EXTRACTION_ATTEMPTS} failed` +
+          `${lastAttempt ? ' — giving up, saving without structure' : ', retrying'}:`,
+        error instanceof Error ? error.message : error
+      );
+      if (lastAttempt) return null;
+    }
+  }
+
+  return null;
 }
 
 /**

@@ -1,32 +1,51 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { Resource } from '@/app/resources/ResourcesClient';
 import { getUserInitials } from '@/lib/utils';
-import { useResourceList } from './use-resource-list';
 
-function displayName(r: Resource): string {
-  const meta = r.metadata as any;
-  if (meta?.personName) return meta.personName;
-  if (r.title) return r.title;
-  const firstLine = (r.content || '').split('\n')[0].trim();
-  return firstLine || 'Unnamed';
-}
+/**
+ * People, read from the entity graph rather than from notes typed 'person'.
+ *
+ * A note about someone is evidence; the person is the thing. Reading the graph
+ * means three notes mentioning Marta show one Marta with three mentions, which
+ * is what this tile was always trying to say.
+ */
 
-function summary(r: Resource): string {
-  const meta = r.metadata as any;
-  const facts = meta?.facts;
-  if (Array.isArray(facts) && facts.length) {
-    const parts = facts.map((f: any) => f?.object).filter(Boolean);
-    if (parts.length) return parts.join(' · ');
-  }
-  const keyPoints = meta?.keyPoints;
-  if (Array.isArray(keyPoints) && keyPoints.length) return keyPoints.join(' · ');
-  return (r.content || '').replace(/\s+/g, ' ').trim().slice(0, 80);
-}
+type Entity = {
+  id: string;
+  name: string;
+  relationship: string | null;
+  mentionCount: number;
+};
 
 export default function People() {
-  const { items, loading } = useResourceList('type=person&limit=6');
+  const [items, setItems] = useState<Entity[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    const load = () => {
+      fetch('/api/entities?type=person&limit=6')
+        .then((res) => (res.ok ? res.json() : { entities: [] }))
+        .then((data) => {
+          if (active) setItems(Array.isArray(data.entities) ? data.entities : []);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    };
+
+    load();
+    // Saving in the chat rail can mint new people; the rail announces it.
+    window.addEventListener('dashboard:resources-changed', load);
+    return () => {
+      active = false;
+      window.removeEventListener('dashboard:resources-changed', load);
+    };
+  }, []);
 
   return (
     <section className="w-full">
@@ -40,7 +59,7 @@ export default function People() {
           )}
         </div>
         <Link
-          href="/resources"
+          href="/entities"
           className="text-[13px] font-medium text-base-content/50 transition-colors hover:text-primary"
         >
           All →
@@ -59,25 +78,24 @@ export default function People() {
         </p>
       ) : (
         <ul className="flex flex-col">
-          {items.map((r) => {
-            const name = displayName(r);
-            return (
-              <li key={r.id}>
-                <Link
-                  href={`/resources/${r.id}`}
-                  className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-base-200/60"
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary/15 text-[13px] font-semibold text-secondary">
-                    {getUserInitials(name)}
+          {items.map((entity) => (
+            <li key={entity.id}>
+              <Link
+                href={`/entities/${entity.id}`}
+                className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-base-200/60"
+              >
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary/15 text-[13px] font-semibold text-secondary">
+                  {getUserInitials(entity.name)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-base-content">{entity.name}</div>
+                  <div className="truncate text-xs text-base-content/50">
+                    {entity.relationship ?? `${entity.mentionCount} ${entity.mentionCount === 1 ? 'note' : 'notes'}`}
                   </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-base-content">{name}</div>
-                    <div className="truncate text-xs text-base-content/50">{summary(r)}</div>
-                  </div>
-                </Link>
-              </li>
-            );
-          })}
+                </div>
+              </Link>
+            </li>
+          ))}
         </ul>
       )}
     </section>
