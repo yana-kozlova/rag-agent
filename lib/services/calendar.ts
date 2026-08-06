@@ -28,6 +28,7 @@ export class GoogleCalendarService {
     singleEvents?: boolean;
     orderBy?: 'startTime' | 'updated';
     pageToken?: string;
+    timeZone?: string;
   } = {}) {
     const params: calendar_v3.Params$Resource$Events$List = {
       calendarId,
@@ -38,6 +39,7 @@ export class GoogleCalendarService {
       orderBy: opts.orderBy ?? 'startTime',
       q: opts.q,
       pageToken: opts.pageToken,
+      timeZone: opts.timeZone,
     };
     const res = await this.calendar.events.list(params as any, { timeout: 15000 });
     return {
@@ -77,6 +79,72 @@ export class GoogleCalendarService {
       return event.data;
     } catch (error) {
       console.error('Error creating calendar event:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update (patch) an existing event's fields, typically used to move/reschedule an event.
+   * Note: Works only if the authenticated user has write access to the calendar/event.
+   */
+  async patchEvent(calendarId: string, eventId: string, patch: {
+    title?: string;
+    description?: string;
+    location?: string;
+    start?: string | Date;
+    end?: string | Date;
+  }) {
+    try {
+      const requestBody: calendar_v3.Schema$Event = {
+        summary: patch.title,
+        description: patch.description,
+        location: patch.location,
+        start: patch.start
+          ? { dateTime: typeof patch.start === 'string' ? patch.start : patch.start.toISOString() }
+          : undefined,
+        end: patch.end
+          ? { dateTime: typeof patch.end === 'string' ? patch.end : patch.end.toISOString() }
+          : undefined,
+      };
+
+      const res = await this.calendar.events.patch({
+        calendarId,
+        eventId,
+        requestBody,
+      } as any);
+
+      return res.data;
+    } catch (error) {
+      console.error('Error patching calendar event:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get the user's calendar timezone (e.g. "Europe/Kyiv").
+   * Falls back to server local timezone on error.
+   */
+  async getTimeZone(): Promise<string> {
+    try {
+      const res = await this.calendar.settings.get({ setting: 'timezone' });
+      return (res.data.value as string) || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    }
+  }
+
+  /**
+   * Delete an event from a calendar.
+   */
+  async deleteEvent(calendarId: string, eventId: string) {
+    try {
+      await this.calendar.events.delete({
+        calendarId,
+        eventId,
+      } as any);
+      return { success: true as const };
+    } catch (error) {
+      console.error('Error deleting calendar event:', error);
       throw error;
     }
   }

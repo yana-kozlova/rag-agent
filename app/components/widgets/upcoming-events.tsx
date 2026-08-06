@@ -2,6 +2,7 @@
 
 import { useCalendar } from "@/app/components/providers/CalendarContext";
 import { groupEventsByDay, isInRange } from '@/app/components/utils/calendar-utils';
+import { MeetingLink } from '@/app/components/utils/linkify';
 
 export default function UpcomingEvents() {
   const { events, loading, error, range, setRange, refresh } = useCalendar();
@@ -29,9 +30,9 @@ export default function UpcomingEvents() {
       {error ? (
         <p className="text-sm text-red-600">{error}</p>
       ) : loading ? (
-        <p className="text-muted-foreground">Loading…</p>
+        <p className="text-base-content/60">Loading…</p>
       ) : filtered.length === 0 ? (
-        <p className="text-muted-foreground">{range === 'week' ? 'No events for next 7 days' : 'No events for today.'}</p>
+        <p className="text-base-content/60">{range === 'week' ? 'No events for next 7 days' : 'No events for today.'}</p>
       ) : (
         <div className="">
           {orderedGroupKeys.map((key) => {
@@ -44,18 +45,16 @@ export default function UpcomingEvents() {
                   <li className="pb-2 text-md opacity-80 tracking-wide font-bold">{label}</li>
                   {dayEvents.map((ev) => {
                     const paletteBadge = ['badge-primary','badge-secondary','badge-accent','badge-info','badge-success','badge-warning','badge-error'];
-                    const paletteBg = ['bg-primary text-primary-content','bg-secondary text-secondary-content','bg-accent text-accent-content','bg-info text-info-content','bg-success text-success-content','bg-warning text-warning-content','bg-error text-error-content'];
                     const k = (ev.calendarId || '').toLowerCase();
                     let idx = 0;
                     for (let i = 0; i < k.length; i++) idx = (idx * 31 + k.charCodeAt(i)) % paletteBadge.length;
                     const badgeClass = paletteBadge[idx];
-                    const bgClass = paletteBg[idx];
                     const start = new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     const end = new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     return (
-                      <li key={ev.id} className="list-row pb-1 border-l-2 pl-2">
+                      <li key={ev.id} className="pb-1 border-l-2 pl-2">
                         <div className="flex items-center gap-2">
-                          <div className="bg-warning rounded-box text-base-content flex flex-col p-2 min-w-16 text-center text-lg">
+                          <div className="bg-base-200 rounded-box text-base-content flex flex-col p-2 min-w-16 text-center text-lg font-mono">
                             {start}
                           </div>
                           <div>
@@ -63,8 +62,14 @@ export default function UpcomingEvents() {
                               <div className="font-bold text-sm md:text-md flex-1 min-w-0">{ev.title}</div>
                               {ev.calendarId !== 'primary' && <div className={`badge badge-ghost badge-xs mr-1 ${badgeClass}`}>{ev.calendarId}</div>}
                             </div>
-                            <div className="text-[11px] uppercase font-semibold opacity-60 truncate">
-                              {start} – {end}{ev.location ? ` · ${ev.location}` : ''}
+                            <div className="text-[11px] uppercase font-semibold opacity-60 font-mono flex items-center gap-1 min-w-0">
+                              <span className="truncate">{start} – {end}{ev.location ? ` · ${ev.location}` : ''}</span>
+                              {ev.meetingLink ? (
+                                <>
+                                  <span className="opacity-50 shrink-0">·</span>
+                                  <MeetingLink value={ev.meetingLink} />
+                                </>
+                              ) : null}
                             </div>
                           </div>
                         </div>

@@ -33,7 +33,7 @@ export async function GET(req: Request) {
         updatedAt: userTables.updatedAt,
       })
       .from(userTables)
-      .where(eq(userTables.userId, userId as any))
+      .where(eq(userTables.userId, userId as string))
       .orderBy(desc(userTables.createdAt))
       .limit(limit)
       .offset(offset);
@@ -41,7 +41,7 @@ export async function GET(req: Request) {
     const [{ count: totalCount }] = await db
       .select({ count: sql<number>`count(*)` })
       .from(userTables)
-      .where(eq(userTables.userId, userId as any));
+      .where(eq(userTables.userId, userId as string));
 
     return NextResponse.json({
       ok: true,

@@ -66,11 +66,11 @@ export function CalendarsPanel() {
   });
 
   return (
-      <section className="card bg-base-100 shadow">
-        <div className="card-body gap-3">
+      <section className="rounded-lg border border-base-300 bg-base-100 p-5">
+        <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="card-title">Followed Calendars</h2>
-            <span className="badge badge-neutral">{items.length}</span>
+            <h2 className="text-[15px] font-semibold">Followed Calendars</h2>
+            <span className="rounded-full bg-base-200 px-2 py-0.5 font-mono text-xs text-base-content/60">{items.length}</span>
           </div>
           <input
             className="input input-bordered w-full"
@@ -95,8 +95,8 @@ export function CalendarsPanel() {
               ))}
             </div>
           )}
-          <div className="card-actions justify-end">
-            <button className="btn btn-primary" onClick={openAdd}>Add calendar</button>
+          <div className="flex justify-end">
+            <button className="btn btn-primary btn-sm" onClick={openAdd}>Add calendar</button>
           </div>
         </div>
         <dialog ref={addDialogRef} className="modal">

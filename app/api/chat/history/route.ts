@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     const convo = await db
       .select({ id: conversations.id })
       .from(conversations)
-      .where(eq(conversations.userId, userId as any))
+      .where(eq(conversations.userId, userId as string))
       .limit(1);
 
     if (convo.length === 0) return NextResponse.json({ messages: [] });
@@ -60,12 +60,12 @@ export async function POST(req: Request) {
     const existing = await db
       .select({ id: conversations.id })
       .from(conversations)
-      .where(eq(conversations.userId, userId as any))
+      .where(eq(conversations.userId, userId as string))
       .limit(1);
     if (existing.length > 0) {
       convoId = existing[0].id;
     } else {
-      const inserted = await db.insert(conversations).values({ userId: userId as any }).returning({ id: conversations.id });
+      const inserted = await db.insert(conversations).values({ userId: userId as string }).returning({ id: conversations.id });
       convoId = inserted[0].id;
     }
 

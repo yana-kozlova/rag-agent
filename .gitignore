@@ -1,7 +1,16 @@
 .env
+# Every variant too — .env.local, .env.production, hand-made backups. The bare
+# rule above matches only the exact name, so a copy like .env.bak stays visible
+# to git and is one `git add .` away from being published.
+.env.*
+!.env.example
 
 node_modules
 pnpm-lock.yaml
 yarn.lock
 /.next
 credentials.json
+
+/.idea
+tsconfig.tsbuildinfo
+.vercel

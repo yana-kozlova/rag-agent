@@ -1,12 +1,37 @@
 'use client';
 
 import { signIn, useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect } from 'react';
+import { Sparkles } from 'lucide-react';
 
+function Spinner() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-base-300 border-t-primary" />
+    </div>
+  );
+}
+
+/**
+ * `useSearchParams` opts the tree into client rendering, so it lives behind a
+ * Suspense boundary rather than in the page component itself.
+ */
 export default function SignInPage() {
+  return (
+    <Suspense fallback={<Spinner />}>
+      <SignInForm />
+    </Suspense>
+  );
+}
+
+function SignInForm() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  // NextAuth sends refusals back here as `?error=AccessDenied`. Without a word
+  // on the page, a blocked address just bounces off Google and lands on the
+  // same button, which reads as a bug rather than as a decision.
+  const denied = useSearchParams().get('error') === 'AccessDenied';
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -15,33 +40,43 @@ export default function SignInPage() {
   }, [status, router]);
 
   if (status === 'loading' || status === 'authenticated') {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-gray-900"></div>
-      </div>
-    );
+    return <Spinner />;
   }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-6 rounded-lg border p-6">
-        <div className="space-y-2 text-center">
-          <h1 className="text-2xl font-bold">Welcome back</h1>
-          <p className="text-gray-500">Sign in to continue to your account</p>
+      <div className="w-full max-w-sm">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-content">
+            <Sparkles className="h-6 w-6" />
+          </span>
+          <h1 className="text-2xl font-semibold tracking-tight text-base-content">Welcome back</h1>
+          <p className="mt-1.5 text-sm text-base-content/60">Sign in to your AI assistant</p>
         </div>
+
+        {denied && (
+          <div className="mb-4 rounded-md border border-error/30 bg-error/10 px-4 py-3 text-sm text-base-content/80">
+            This account is not on the invite list. Ask the owner of this instance to add your
+            address.
+          </div>
+        )}
+
         <button
-          className="btn btn-outline w-full"
+          className="flex w-full items-center justify-center gap-2.5 rounded-md border border-base-300 bg-base-100 px-4 py-2.5 text-sm font-medium text-base-content transition-colors hover:bg-base-200"
           onClick={() => signIn('google', { callbackUrl: '/' })}
         >
-          <svg
-            className="mr-2 h-4 w-4"
-            fill="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z" />
+          <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#4285F4" d="M23.06 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h6.2a5.3 5.3 0 0 1-2.3 3.48v2.88h3.72c2.18-2 3.44-4.96 3.44-8.37z"/>
+            <path fill="#34A853" d="M12 24c3.1 0 5.7-1.03 7.6-2.78l-3.72-2.88c-1.03.69-2.35 1.1-3.88 1.1-2.98 0-5.5-2.01-6.4-4.72H1.75v2.97A11.99 11.99 0 0 0 12 24z"/>
+            <path fill="#FBBC05" d="M5.6 14.72a7.2 7.2 0 0 1 0-4.44V7.31H1.75a12 12 0 0 0 0 10.38l3.85-2.97z"/>
+            <path fill="#EA4335" d="M12 4.76c1.68 0 3.2.58 4.4 1.72l3.3-3.3C17.7 1.2 15.1 0 12 0 7.3 0 3.25 2.7 1.75 6.62l3.85 2.97C6.5 6.87 9.02 4.76 12 4.76z"/>
           </svg>
-          Sign in with Google
+          Continue with Google
         </button>
+
+        <p className="mt-6 text-center text-xs text-base-content/40">
+          Google Calendar &amp; Drive access powers your assistant.
+        </p>
       </div>
     </div>
   );

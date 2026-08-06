@@ -6,7 +6,7 @@ vi.mock('@/app/api/auth/auth', () => ({
 }));
 
 import { auth } from '@/app/api/auth/auth';
-import { getSessionOrThrow, parseInputOrThrow } from '@/lib/ai/tools/utils';
+import { getSessionOrThrow, parseInputOrThrow } from '@/lib/utils/auth';
 
 afterEach(() => {
   vi.resetAllMocks();

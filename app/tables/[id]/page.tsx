@@ -1,339 +1,64 @@
-'use client';
+import { notFound, redirect } from 'next/navigation';
+import { auth } from '@/app/api/auth/auth';
+import { db } from '@/lib/db';
+import { userTables, userTablesData } from '@/lib/db/schema';
+import { eq, desc } from 'drizzle-orm';
+import EditTableClient, { type UserTable } from './EditTableClient';
 
-import { useEffect, useState, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import { updateUserTable } from '@/lib/actions/user-tables';
-import Link from 'next/link';
-import type { TableColumn, TableRow } from '@/lib/db/schema/user-tables';
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-type TableRowWithId = TableRow & { _id?: string };
+export default async function EditTablePage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) redirect('/api/auth/signin');
 
-type UserTable = {
-  id: string;
-  title: string;
-  description?: string | null;
-  columns: TableColumn[];
-  data: TableRowWithId[];
-  settings?: any;
-};
+  const tableId = params.id;
 
-export default function EditTablePage() {
-  const router = useRouter();
-  const params = useParams();
-  const tableId = params.id as string;
-  const [table, setTable] = useState<UserTable | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [editingRow, setEditingRow] = useState<number | null>(null);
-  const [newRow, setNewRow] = useState<TableRow>({});
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  // Fetch table metadata and rows in parallel, directly from the DB —
+  // no API roundtrips, no client-side waterfall.
+  const [tableRows, dataRows] = await Promise.all([
+    db
+      .select()
+      .from(userTables)
+      .where(eq(userTables.id, tableId))
+      .limit(1),
+    db
+      .select({
+        id: userTablesData.id,
+        rowData: userTablesData.rowData,
+        createdAt: userTablesData.createdAt,
+      })
+      .from(userTablesData)
+      .where(eq(userTablesData.userTableId, tableId))
+      .orderBy(desc(userTablesData.createdAt))
+      .limit(500),
+  ]);
 
-  // Auto-hide toast after 3 seconds
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [toast]);
+  const table = tableRows[0];
+  if (!table) notFound();
+  if (table.userId !== userId) notFound();
 
-  const loadTable = useCallback(async () => {
-    try {
-      setLoading(true);
-      // Load table metadata
-      const tableRes = await fetch(`/api/user-tables/${tableId}`);
-      const tableData = await tableRes.json();
-      
-      if (!tableData.ok) {
-        setToast({ message: 'Table not found', type: 'error' });
-        setTimeout(() => router.push('/tables'), 1500);
-        return;
-      }
+  const data = dataRows.map((r, index) => {
+    const rowData = r.rowData && typeof r.rowData === 'object' ? (r.rowData as Record<string, any>) : {};
+    return {
+      ...rowData,
+      _id: r.id || `temp-${index}`,
+    };
+  });
 
-      // Load table data separately
-      const dataRes = await fetch(`/api/user-tables/${tableId}/data`);
-      const dataData = await dataRes.json();
-      
-      if (tableData.ok && dataData.ok) {
-        // Map rows with their IDs from the API response
-        const rowsWithIds = (dataData.rows || []).map((row: any, index: number) => {
-          if (!row || typeof row !== 'object') {
-            return { _id: `temp-${index}` };
-          }
-          return {
-            ...row,
-            _id: row._id || `temp-${index}`, // Use _id if available, otherwise temp ID
-          };
-        });
-        setTable({
-          ...tableData.table,
-          data: rowsWithIds,
-        });
-      }
-    } catch (error) {
-      setToast({ message: 'Failed to load table', type: 'error' });
-    } finally {
-      setLoading(false);
-    }
-  }, [tableId, router]);
-
-  useEffect(() => {
-    if (tableId) {
-      loadTable();
-    }
-  }, [tableId, loadTable]);
-
-  const handleSave = async () => {
-    if (!table) return;
-
-    setSaving(true);
-    try {
-      // Save table metadata (columns, settings, etc.)
-      const result = await updateUserTable(tableId, {
-        title: table.title,
-        description: table.description,
-        columns: table.columns,
-        settings: table.settings,
-      });
-
-      if (result.success) {
-        setToast({ message: 'Table saved successfully', type: 'success' });
-        setEditingRow(null);
-        setNewRow({});
-      } else {
-        setToast({ message: result.message || 'Failed to save table', type: 'error' });
-      }
-    } catch (error) {
-      setToast({ message: 'Failed to save table', type: 'error' });
-    } finally {
-      setSaving(false);
-    }
+  const initialTable: UserTable = {
+    id: table.id,
+    title: table.title,
+    description: table.description,
+    columns: (table.columns as any) || [],
+    settings: table.settings,
+    data,
   };
 
-  const handleAddRow = async () => {
-    if (!table) return;
-    
-    // Validate required fields
-    for (const col of table.columns) {
-      if (col.required && !newRow[col.id]) {
-        setToast({ message: `Please fill in required field: ${col.name}`, type: 'error' });
-        return;
-      }
-    }
-
-    try {
-      const res = await fetch(`/api/user-tables/${tableId}/data`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rowData: newRow }),
-      });
-      const data = await res.json();
-
-      if (data.ok) {
-        setTable({
-          ...table,
-          data: [...table.data, { ...newRow, _id: data.id }],
-        });
-        setNewRow({});
-        setToast({ message: 'Row added successfully', type: 'success' });
-      } else {
-        setToast({ message: data.error || 'Failed to add row', type: 'error' });
-      }
-    } catch (error) {
-      setToast({ message: 'Failed to add row', type: 'error' });
-    }
-  };
-
-  const handleUpdateRow = async (rowId: string, field: string, value: any) => {
-    if (!table) return;
-    
-    // Find row by ID
-    const rowIndex = table.data.findIndex((row) => (row as any)._id === rowId);
-    if (rowIndex === -1) return;
-    
-    const updated = [...table.data];
-    updated[rowIndex] = { ...updated[rowIndex], [field]: value };
-    setTable({ ...table, data: updated });
-
-    // Save to server
-    try {
-      const row = { ...updated[rowIndex] };
-      const { _id, ...rowData } = row; // Remove _id before sending
-      const res = await fetch(`/api/user-tables/${tableId}/data/${rowId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rowData }),
-      });
-      const data = await res.json();
-
-      if (!data.ok) {
-        setToast({ message: data.error || 'Failed to update row', type: 'error' });
-        // Reload on error
-        loadTable();
-      } else {
-        setToast({ message: 'Row updated successfully', type: 'success' });
-      }
-    } catch (error) {
-      setToast({ message: 'Failed to update row', type: 'error' });
-      loadTable();
-    }
-  };
-
-  const handleDeleteRow = async (rowId: string, index: number) => {
-    if (!table) return;
-    if (!confirm('Are you sure you want to delete this row?')) return;
-    
-    try {
-      const res = await fetch(`/api/user-tables/${tableId}/data/${rowId}`, {
-        method: 'DELETE',
-      });
-      const data = await res.json();
-
-      if (data.ok) {
-        setTable({
-          ...table,
-          data: table.data.filter((_, i) => i !== index),
-        });
-        setToast({ message: 'Row deleted successfully', type: 'success' });
-      } else {
-        setToast({ message: data.error || 'Failed to delete row', type: 'error' });
-      }
-    } catch (error) {
-      setToast({ message: 'Failed to delete row', type: 'error' });
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="container mx-auto p-4 md:p-6">
-        <div className="text-center py-8">Loading table...</div>
-      </div>
-    );
-  }
-
-  if (!table) {
-    return null;
-  }
-
-  return (
-    <div className="container mx-auto p-4 md:p-6 space-y-6">
-      {/* Toast notification */}
-      {toast && (
-        <div className={`alert ${toast.type === 'success' ? 'alert-success' : 'alert-error'} shadow-lg fixed top-4 right-4 z-50 max-w-md`}>
-          <span>{toast.message}</span>
-          <button className="btn btn-sm btn-ghost" onClick={() => setToast(null)}>×</button>
-        </div>
-      )}
-      
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{table.title}</h1>
-          {table.description && (
-            <p className="text-base-content/70 mt-1">{table.description}</p>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={handleSave}
-            disabled={saving}
-          >
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
-          <Link href="/tables" className="btn btn-outline btn-sm">
-            Back to Tables
-          </Link>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="table table-zebra w-full">
-          <thead>
-            <tr>
-              {table.columns.map((col) => (
-                <th key={col.id} style={{ width: col.width ? `${col.width}px` : 'auto' }}>
-                  {col.name}
-                  {col.required && <span className="text-error ml-1">*</span>}
-                  <div className="text-xs text-base-content/60">{col.type}</div>
-                </th>
-              ))}
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {table.data.map((row, rowIndex) => {
-              const rowId = (row as any)._id || `row-${rowIndex}`;
-              return (
-                <tr key={rowId}>
-                  {table.columns.map((col) => (
-                    <td key={col.id}>
-                      {editingRow === rowIndex ? (
-                        <input
-                          type={col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}
-                          className="input input-bordered input-sm w-full"
-                          value={row[col.id] || ''}
-                          onChange={(e) => handleUpdateRow(rowId, col.id, e.target.value)}
-                        />
-                      ) : (
-                        <span>{row[col.id] || '-'}</span>
-                      )}
-                    </td>
-                  ))}
-                  <td>
-                    <div className="flex gap-1">
-                      {editingRow === rowIndex ? (
-                        <button
-                          className="btn btn-xs btn-success"
-                          onClick={() => setEditingRow(null)}
-                        >
-                          ✓
-                        </button>
-                      ) : (
-                        <button
-                          className="btn btn-xs btn-outline"
-                          onClick={() => setEditingRow(rowIndex)}
-                        >
-                          Edit
-                        </button>
-                      )}
-                      <button
-                        className="btn btn-xs btn-error"
-                        onClick={() => handleDeleteRow(rowId, rowIndex)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {/* New row form */}
-            <tr className="bg-base-200">
-              {table.columns.map((col) => (
-                <td key={col.id}>
-                  <input
-                    type={col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}
-                    className="input input-bordered input-sm w-full"
-                    placeholder={col.name}
-                    value={newRow[col.id] || ''}
-                    onChange={(e) => setNewRow({ ...newRow, [col.id]: e.target.value })}
-                    required={col.required}
-                  />
-                </td>
-              ))}
-              <td>
-                <button
-                  className="btn btn-xs btn-primary"
-                  onClick={handleAddRow}
-                >
-                  Add
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-    </div>
-  );
+  return <EditTableClient tableId={tableId} initialTable={initialTable} />;
 }
-

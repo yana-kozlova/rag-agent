@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
+import { Linkify } from '@/app/components/utils/linkify';
 import { CalendarEvent } from './types';
 
 export function EventListView() {
@@ -50,7 +51,7 @@ export function EventListView() {
       <div className="space-y-4">
         {events.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-muted-foreground">No events found. Create your first event!</p>
+            <p className="text-base-content/60">No events found. Create your first event!</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -63,13 +64,13 @@ export function EventListView() {
                   <div>
                     <h3 className="font-medium">{event.title}</h3>
                     {event.description && (
-                      <p className="text-sm text-muted-foreground mt-1">{event.description}</p>
+                      <p className="text-sm text-base-content/60 mt-1">{event.description}</p>
                     )}
                     {event.location && (
-                      <p className="text-sm text-muted-foreground mt-1">📍 {event.location}</p>
+                      <p className="text-sm text-base-content/60 mt-1">📍 <Linkify value={event.location} /></p>
                     )}
                     {event.attendees && event.attendees.length > 0 && (
-                      <p className="text-sm text-muted-foreground mt-1">
+                      <p className="text-sm text-base-content/60 mt-1">
                         👥 {event.attendees.length} attendee{event.attendees.length !== 1 ? 's' : ''}
                       </p>
                     )}
@@ -78,7 +79,7 @@ export function EventListView() {
                     <div>
                       {format(new Date(event.start), 'MMM d, yyyy')}
                     </div>
-                    <div className="text-muted-foreground">
+                    <div className="text-base-content/60">
                       {format(new Date(event.start), 'h:mm a')} - {format(new Date(event.end), 'h:mm a')}
                     </div>
                   </div>

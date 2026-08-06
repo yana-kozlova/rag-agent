@@ -6,8 +6,8 @@ import {
   integer,
   uuid,
   boolean,
-  jsonb,
 } from "drizzle-orm/pg-core";
+import { jsonb } from "../jsonb";
 import { type AdapterAccount } from "@auth/core/adapters";
 
 export const users = pgTable("user", {
@@ -16,7 +16,45 @@ export const users = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: timestamp("emailVerified", { mode: "date" }),
   image: text("image"),
+  /**
+   * Telegram identity, when the user has linked the bot.
+   *
+   * A Telegram update carries a chat id and nothing else, so this column is
+   * what turns one into a user of this app. Unique: one chat speaks for one
+   * person, never two.
+   */
+  telegramChatId: text("telegram_chat_id").unique(),
+  /** One-shot code issued by the web app, redeemed by `/start <code>`. */
+  telegramLinkCode: text("telegram_link_code"),
+  telegramLinkExpiresAt: timestamp("telegram_link_expires_at", { mode: "date" }),
   followedCalendars: jsonb("followed_calendars").$type<Array<{ calendarId: string; summary?: string }>>().notNull().default([] as any),
+  // IANA timezone (e.g. "Europe/Kyiv"), synced from the user's Google Calendar
+  // settings. Cron jobs run in UTC, so this is what lets us fire notifications
+  // at the right *local* hour instead of the server's hour.
+  timezone: text("timezone"),
+  // Local hour (0-23) at which the daily briefing is sent.
+  briefingHour: integer("briefing_hour").notNull().default(9),
+  briefingEnabled: boolean("briefing_enabled").notNull().default(true),
+  /**
+   * Proactive insights — conflicts, no-break stretches, notes about people you
+   * are about to meet. Off by default: it is the only notification kind that
+   * interrupts at times the user never picked, so it has to be asked for.
+   */
+  proactiveEnabled: boolean("proactive_enabled").notNull().default(false),
+  // Weekly retrospective, sent on the user's local Sunday at this local hour.
+  retroHour: integer("retro_hour").notNull().default(19),
+  retroEnabled: boolean("retro_enabled").notNull().default(true),
+  // Quiet hours as local hours [start, end), wrapping past midnight when
+  // start > end (e.g. 22 → 8). Null on either side disables the window.
+  quietHoursStart: integer("quiet_hours_start"),
+  quietHoursEnd: integer("quiet_hours_end"),
+  /**
+   * Language for briefings, insights and the retrospective — `uk` or `en`, see
+   * `lib/push/copy.ts`. Only these; the web UI is English regardless, because a
+   * notification is read where the bot speaks and a settings screen is not.
+   * Unrecognised values resolve to the default rather than failing a send.
+   */
+  locale: text("locale").notNull().default("uk"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

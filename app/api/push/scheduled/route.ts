@@ -1,12 +1,34 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { pushSubscriptions } from '@/lib/db/schema/push-subscriptions';
-import { sendToSubscriptions, validateCronSecret } from '@/lib/push/utils';
+import { users } from '@/lib/db/schema/auth';
+import { isNotNull } from 'drizzle-orm';
+import { validateCronSecret } from '@/lib/push/utils';
+import { pruneNotificationLedger } from '@/lib/push/dedupe';
+import { isBriefingDue } from '@/lib/push/briefing-gate';
+import { runBriefingForUser } from '@/lib/push/briefing-run';
+import { isQstashConfigured, publishJob } from '@/lib/push/qstash';
+import { mapWithConcurrency } from '@/lib/push/concurrency';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
+
+// How many QStash publishes to keep in flight at once.
+const PUBLISH_CONCURRENCY = 25;
+// Cap on users processed inline in one run (no QStash, or publish failures).
+// The heavy work is per-user seconds, so this is the guard against the 60s wall.
+const MAX_INLINE = 20;
 
 /**
- * Scheduled push notification endpoint (called daily at 9:00 AM by cron)
+ * Daily briefing dispatcher.
+ *
+ * Invoked hourly. It does no per-user I/O for users who aren't due: the cheap
+ * in-memory gate (isBriefingDue, off the cached timezone) filters ~95% of
+ * subscribers out before any token refresh or Google call. Whoever is left is
+ * handed to a per-user worker — one QStash message each, so their work
+ * parallelises across short invocations instead of sharing this one's budget.
+ *
+ * Without QStash (local dev, or a publish failure) the user is run inline here,
+ * bounded, so nothing silently drops in small deployments.
  */
 export async function GET(req: Request) {
   try {
@@ -14,38 +36,77 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const subscriptions = await db.select().from(pushSubscriptions);
+    const now = new Date();
 
-    if (subscriptions.length === 0) {
-      return NextResponse.json({
-        ok: true,
-        message: 'No subscriptions found',
-        sent: 0,
-        total: 0,
-      });
+    // Cheap: scheduling fields only. Everything expensive is deferred to the
+    // worker, which re-loads the full row for the users that survive the gate.
+    //
+    // A linked Telegram chat is what makes someone reachable — this used to
+    // join `push_subscriptions`, which quietly excluded anyone who had not
+    // granted browser notifications, i.e. nearly everyone.
+    const candidates = await db
+      .select({
+        userId: users.id,
+        timezone: users.timezone,
+        briefingHour: users.briefingHour,
+        briefingEnabled: users.briefingEnabled,
+      })
+      .from(users)
+      .where(isNotNull(users.telegramChatId));
+
+    const due = candidates.filter((c) => isBriefingDue(c, now));
+
+    if (due.length === 0) {
+      await pruneNotificationLedger();
+      return NextResponse.json({ ok: true, candidates: candidates.length, due: 0, dispatched: 0 });
     }
 
-    const now = new Date();
-    const timeString = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+    let dispatched = 0;
+    let ranInline = 0;
+    let deferred = 0;
+    let errors = 0;
 
-    const { successCount, total } = await sendToSubscriptions(
-      subscriptions.map((sub) => ({ endpoint: sub.endpoint, keys: sub.keys })),
-      {
-        title: 'Good morning! ☀️',
-        body: `Time: ${timeString}. Rise and shine!`,
-        data: { url: '/', timestamp: now.toISOString() },
-        icon: '/avatars/bot.svg',
-        badge: '/avatars/bot.svg',
-        tag: 'scheduled-reminder',
-      },
-      'push/scheduled'
-    );
+    const runInline = async (userId: string) => {
+      if (ranInline >= MAX_INLINE) {
+        deferred++;
+        return;
+      }
+      ranInline++;
+      try {
+        await runBriefingForUser(userId, now);
+      } catch (error) {
+        console.error(`[push/scheduled] Inline run failed for ${userId}:`, error);
+        errors++;
+      }
+    };
+
+    if (isQstashConfigured()) {
+      // Fan out: one message per due user, published with bounded concurrency
+      // so the publish loop itself doesn't blow the time budget at scale.
+      const ids = await mapWithConcurrency(due, PUBLISH_CONCURRENCY, (c) =>
+        publishJob({ path: '/api/push/briefing-user', body: { userId: c.userId } })
+      );
+      for (let i = 0; i < ids.length; i++) {
+        if (ids[i]) dispatched++;
+        else await runInline(due[i]!.userId); // publish failed — don't drop the user
+      }
+    } else {
+      // No QStash: process inline, bounded. Fine for a personal deployment,
+      // where the gated set is tiny; larger ones must configure QStash.
+      for (const c of due) await runInline(c.userId);
+    }
+
+    // Cheap housekeeping so the dedupe ledger stays small.
+    await pruneNotificationLedger();
 
     return NextResponse.json({
       ok: true,
-      sent: successCount,
-      failed: total - successCount,
-      total,
+      candidates: candidates.length,
+      due: due.length,
+      dispatched,
+      ranInline,
+      deferred,
+      errors,
       timestamp: now.toISOString(),
     });
   } catch (error: any) {
@@ -56,4 +117,3 @@ export async function GET(req: Request) {
     );
   }
 }
-

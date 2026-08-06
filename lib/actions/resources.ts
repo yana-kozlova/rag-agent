@@ -11,31 +11,33 @@ import { db } from '../db';
 import { generateEmbeddings } from '../ai/embedding';
 import { embeddings as embeddingsTable } from '../db/schema/embeddings';
 import { eq, and } from 'drizzle-orm';
-import { auth } from '@/app/api/auth/auth';
+import { getSessionOrNull } from '@/lib/utils/auth';
 import { sql } from 'drizzle-orm';
+import { embeddingCache } from '../ai/embedding-cache';
+import { autoRouteResource } from './auto-route-resource';
+import { syncEntitiesForResource } from './entities';
+import { deleteStoredImage } from '@/lib/storage/images';
 
 export const createResource = async (input: NewResourceParams) => {
   try {
-    const session = await auth();
-    const userId = session?.user?.id;
+    const parsed = insertResourceSchema.parse(input);
+    const { content, title, metadata, userId } = parsed;
+
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };
     }
 
-    const parsed = insertResourceSchema.parse(input);
-    const { content, title, metadata } = parsed;
-
     const [resource] = await db
       .insert(resources)
-      .values({ 
-        content, 
+      .values({
+        content,
         userId,
         title: title || null,
         metadata: metadata || null,
       })
       .returning();
 
-    const embeddings = await generateEmbeddings(content);
+    const embeddings = await generateEmbeddings(content, 'createResource');
     if (embeddings.length > 0) {
       await db.insert(embeddingsTable).values(
         embeddings.map(embedding => ({
@@ -47,20 +49,44 @@ export const createResource = async (input: NewResourceParams) => {
       );
     }
 
+    embeddingCache.clearForUser(userId);
+
+    // Promote the entities extraction found into shared graph nodes, so this
+    // note joins everything else that mentions the same people or projects.
+    // Non-fatal: a note without its edges is still a saved note.
+    const extractedEntities = (metadata as any)?.entities;
+    if (Array.isArray(extractedEntities) && extractedEntities.length > 0) {
+      try {
+        await syncEntitiesForResource({
+          resourceId: resource.id,
+          userId,
+          entities: extractedEntities,
+        });
+      } catch (err) {
+        console.error('[createResource] syncEntitiesForResource failed (non-fatal):', err);
+      }
+    }
+
+    // Fire-and-forget: auto-route into tables whose autoRoute rule matches.
+    // Never blocks or fails createResource.
+    autoRouteResource(resource.id, userId).catch((err) => {
+      console.error('[createResource] autoRouteResource failed (non-fatal):', err);
+    });
+
     return { success: true, message: 'Resource successfully created and embedded.', id: resource.id };
   } catch (error) {
-    return { 
-      success: false, 
+    return {
+      success: false,
       message: error instanceof Error && error.message.length > 0
         ? error.message
-        : 'Error, please try again.' 
+        : 'Error, please try again.'
     };
   }
 };
 
 export const updateResource = async (resourceId: string, input: UpdateResourceParams) => {
   try {
-    const session = await auth();
+    const session = await getSessionOrNull();
     const userId = session?.user?.id;
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };
@@ -74,7 +100,7 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
       .from(resources)
       .where(and(
         eq(resources.id, resourceId),
-        eq(resources.userId, userId as any)
+        eq(resources.userId, userId as string)
       ))
       .limit(1);
 
@@ -102,7 +128,7 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
       .set(updateData)
       .where(and(
         eq(resources.id, resourceId),
-        eq(resources.userId, userId as any)
+        eq(resources.userId, userId as string)
       ))
       .returning();
 
@@ -114,7 +140,7 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
         .where(eq(embeddingsTable.sourceId, resourceId));
 
       // Generate new embeddings
-      const embeddings = await generateEmbeddings(parsed.content);
+      const embeddings = await generateEmbeddings(parsed.content, 'updateResource');
       if (embeddings.length > 0) {
         await db.insert(embeddingsTable).values(
           embeddings.map(embedding => ({
@@ -126,6 +152,8 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
         );
       }
     }
+
+    embeddingCache.clearForUser(userId);
 
     return { success: true, message: 'Resource successfully updated.', resource: updated };
   } catch (error) {
@@ -140,7 +168,7 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
 
 export const deleteResource = async (resourceId: string) => {
   try {
-    const session = await auth();
+    const session = await getSessionOrNull();
     const userId = session?.user?.id;
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };
@@ -152,7 +180,7 @@ export const deleteResource = async (resourceId: string) => {
       .from(resources)
       .where(and(
         eq(resources.id, resourceId),
-        eq(resources.userId, userId as any)
+        eq(resources.userId, userId as string)
       ))
       .limit(1);
 
@@ -170,8 +198,15 @@ export const deleteResource = async (resourceId: string) => {
       .delete(resources)
       .where(and(
         eq(resources.id, resourceId),
-        eq(resources.userId, userId as any)
+        eq(resources.userId, userId as string)
       ));
+
+    embeddingCache.clearForUser(userId);
+
+    // Drop the picture too, if this resource was one. After the row is gone, so
+    // that a blob store outage cannot block the delete the user asked for.
+    const imageUrl = (existing.metadata as { imageUrl?: string } | null)?.imageUrl;
+    if (imageUrl) await deleteStoredImage(imageUrl);
 
     return { success: true, message: 'Resource successfully deleted.' };
   } catch (error) {

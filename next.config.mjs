@@ -7,6 +7,8 @@ const nextConfig = {
     remotePatterns: [
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
       { protocol: 'https', hostname: 'img.daisyui.com' },
+      // Uploaded images. The store id prefixes the hostname, so it is wildcarded.
+      { protocol: 'https', hostname: '**.public.blob.vercel-storage.com' },
     ],
   },
   // Target modern browsers only (no legacy JS)

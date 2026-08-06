@@ -2,8 +2,15 @@
   "crons": [
     {
       "path": "/api/push/scheduled",
-      "schedule": "0 9 * * *"
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/push/drain",
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/push/retrospective",
+      "schedule": "0 17 * * 0"
     }
   ]
 }
-

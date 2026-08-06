@@ -40,24 +40,26 @@ export async function GET(
     const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 100, 1), 1000) : 100;
     const offset = offsetParam ? Math.max(parseInt(offsetParam, 10) || 0, 0) : 0;
 
-    const rows = await db
-      .select({
-        id: userTablesData.id,
-        rowData: userTablesData.rowData,
-        metadata: userTablesData.metadata,
-        createdAt: userTablesData.createdAt,
-        updatedAt: userTablesData.updatedAt,
-      })
-      .from(userTablesData)
-      .where(eq(userTablesData.userTableId, params.id))
-      .orderBy(desc(userTablesData.createdAt))
-      .limit(limit)
-      .offset(offset);
-
-    const [{ count: totalCount }] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(userTablesData)
-      .where(eq(userTablesData.userTableId, params.id));
+    const [rows, countResult] = await Promise.all([
+      db
+        .select({
+          id: userTablesData.id,
+          rowData: userTablesData.rowData,
+          metadata: userTablesData.metadata,
+          createdAt: userTablesData.createdAt,
+          updatedAt: userTablesData.updatedAt,
+        })
+        .from(userTablesData)
+        .where(eq(userTablesData.userTableId, params.id))
+        .orderBy(desc(userTablesData.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(userTablesData)
+        .where(eq(userTablesData.userTableId, params.id)),
+    ]);
+    const totalCount = countResult[0]?.count ?? 0;
 
     return NextResponse.json({
       ok: true,

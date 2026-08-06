@@ -1,18 +1,24 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { auth } from "./api/auth/auth";
-import { Nav } from "./components/auth/nav";
 import { Providers } from "./providers";
-import { Sidebar } from "./components/nav/Sidebar";
-import { ServiceWorkerRegister } from "./components/notifications/ServiceWorkerRegister";
+import { LayoutShell } from "./components/nav/LayoutShell";
 import { PreconnectLinks } from "./components/head/PreconnectLinks";
+import { THEME_INIT_SCRIPT } from "./components/theme/theme";
 
-const mono = JetBrains_Mono({ 
-  subsets: ["latin"], 
-  variable: "--font-mono",
-  display: 'swap', // Reduce layout shift from font loading
+const sans = Inter({
+  subsets: ["latin", "cyrillic"],
+  variable: "--font-sans",
+  display: 'swap',
   preload: true,
+});
+
+const mono = JetBrains_Mono({
+  subsets: ["latin", "cyrillic"],
+  variable: "--font-mono",
+  display: 'swap',
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -32,25 +38,20 @@ export default async function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning data-theme="silk">
-      <body className={`${mono.className} min-h-screen`} suppressHydrationWarning>
+      <head>
+        {/* Applies the stored theme before first paint. Without this the
+            server-rendered `silk` flashes for anyone whose choice is `dark`. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+      <body
+        className={`${sans.variable} ${mono.variable} font-sans min-h-screen`}
+        suppressHydrationWarning
+      >
         <PreconnectLinks />
         <Providers session={session}>
-          {/* Background */}
-          <div className="fixed inset-0 -z-10 bg-gradient-to-br from-base-200/80 via-base-100 to-base-200" />
-          <div id="app-drawer-wrapper" className="drawer">
-            <ServiceWorkerRegister />
-            <input id="app-drawer" type="checkbox" className="drawer-toggle" />
-            <div className="drawer-content">
-              <Nav />
-              <main className="container mx-auto p-4">
-                {children}
-              </main>
-            </div>
-            <div className="drawer-side">
-              <label htmlFor="app-drawer" aria-label="close sidebar" className="drawer-overlay"></label>
-              <Sidebar />
-            </div>
-          </div>
+          <LayoutShell>
+            {children}
+          </LayoutShell>
         </Providers>
       </body>
     </html>

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { getLocalDateKey } from '@/app/components/utils/date-time';
+import { AUTO_GREETING_MARKER } from '@/lib/chat/auto-greeting';
 
 export function useAutoGreeting(params: {
   history: Array<{ createdAt?: string | Date; role: 'user' | 'assistant' | 'system' }>;
@@ -26,7 +27,9 @@ export function useAutoGreeting(params: {
     const todayLabel = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
     const prompt = `Greet the user briefly and summarize today's (${todayLabel}) schedule. Provide life-affirming phrase on the basis of busyness of the day.`;
     setAutoPrompt(prompt);
-    sendMessage({ text: prompt });
+    // Marker-tagged so the server never persists it and the UI never shows it as
+    // a user bubble — the model still receives the plain prompt (marker stripped).
+    sendMessage({ text: `${AUTO_GREETING_MARKER}${prompt}` });
   }, [historyLoaded, history, sendMessage]);
 
   return autoPrompt;

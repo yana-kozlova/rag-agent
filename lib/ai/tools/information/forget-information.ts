@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { deleteResource } from '@/lib/actions/resources';
 import { findRelevantContent } from '@/lib/ai/embedding';
-import { auth } from '@/app/api/auth/auth';
+import { getSessionOrNull } from '@/lib/utils/auth';
 import { db } from '@/lib/db';
 import { resources } from '@/lib/db/schema/resources';
 import { eq, and, inArray } from 'drizzle-orm';
@@ -24,14 +24,14 @@ IMPORTANT:
   }),
   execute: async ({ query }: { query: string }) => {
     try {
-      const session = await auth();
+      const session = await getSessionOrNull();
       const userId = session?.user?.id;
       if (!userId) {
         return { success: false, message: 'Unauthorized' };
       }
 
       // First, find relevant resources
-      const searchResults = await findRelevantContent(query, userId);
+      const searchResults = await findRelevantContent(query, userId, { caller: 'forgetInformation' });
       
       if (searchResults.length === 0) {
         return { 
@@ -59,7 +59,7 @@ IMPORTANT:
       // Get unique source IDs for resources only (not tables - they need separate handling)
       const resourceSourceIds = [...new Set(
         relevantResults
-          .filter((r: any) => r.source === 'resource' || r.source === 'calendar')
+          .filter((r: any) => r.source === 'resource')
           .map((r: any) => r.sourceId)
           .filter(Boolean)
       )];
@@ -77,7 +77,7 @@ IMPORTANT:
         .from(resources)
         .where(and(
           inArray(resources.id, idsToDelete),
-          eq(resources.userId, userId as any)
+          eq(resources.userId, userId as string)
         ));
 
       if (resourcesToDelete.length === 0) {

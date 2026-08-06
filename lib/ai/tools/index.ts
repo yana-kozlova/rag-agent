@@ -2,17 +2,33 @@
 import { addResourceTool } from './information/add-resource';
 import { getInformationTool } from './information/get-information';
 import { forgetInformationTool } from './information/forget-information';
+import { analyzeFileTool } from './information/analyze-file';
 
 // Calendar/Events tools
 import { getEventsTool } from './events/get-events';
-import { createEventTool } from './events/create-event';
+import { optimizeScheduleTool } from './events/optimize-schedule';
+import { deleteEventTool } from './events/delete-event';
+import { scheduleEventTool } from './events/schedule-event';
+
+// Table tools
+import { createTableTool } from './tables/create-table';
+import { listTablesTool } from './tables/list-tables';
+import { addTableRowsTool } from './tables/add-table-rows';
+import { extractToTableTool } from './tables/extract-to-table';
 
 export const tools = {
   addResource: addResourceTool,
   getInformation: getInformationTool,
   forgetInformation: forgetInformationTool,
+  analyzeFile: analyzeFileTool,
   getEvents: getEventsTool,
-  createEvent: createEventTool,
+  scheduleEvent: scheduleEventTool,
+  optimizeSchedule: optimizeScheduleTool,
+  deleteEvent: deleteEventTool,
+  createTable: createTableTool,
+  listTables: listTablesTool,
+  addTableRows: addTableRowsTool,
+  extractToTable: extractToTableTool,
 } as const;
 
 export type { ToolDefinition } from './types';
