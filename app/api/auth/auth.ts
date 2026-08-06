@@ -5,6 +5,7 @@ import Google from "next-auth/providers/google";
 import { OAuth2Client } from 'google-auth-library';
 import { JWT } from '@/types/auth';
 import { persistGoogleAccount } from '@/lib/auth/google-token';
+import { isEmailAllowed, warnIfOpen } from '@/lib/auth/allowlist';
 
 async function refreshAccessToken(token: JWT): Promise<JWT> {
   try {
@@ -77,6 +78,25 @@ const authOptions: NextAuthConfig = {
     strategy: "jwt",
   },
   callbacks: {
+    /**
+     * The one place an account is created. Runs before the adapter writes a
+     * user row, so a refused address leaves nothing behind.
+     *
+     * Note what this does *not* do: sessions are JWTs and are never checked
+     * against the database again, so adding someone to the list lets them in
+     * immediately, while removing them only stops the next sign-in. Evicting a
+     * live session means rotating NEXTAUTH_SECRET.
+     */
+    async signIn({ user, profile }) {
+      const allowed = process.env.ALLOWED_EMAILS;
+      warnIfOpen(allowed);
+
+      const email = profile?.email ?? user?.email;
+      if (isEmailAllowed(email, allowed)) return true;
+
+      console.warn(`[auth] sign-in refused for ${email ?? 'an account with no email'}`);
+      return false;
+    },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.sub as string;

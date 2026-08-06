@@ -1,13 +1,37 @@
 'use client';
 
 import { signIn, useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect } from 'react';
 import { Sparkles } from 'lucide-react';
 
+function Spinner() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-base-300 border-t-primary" />
+    </div>
+  );
+}
+
+/**
+ * `useSearchParams` opts the tree into client rendering, so it lives behind a
+ * Suspense boundary rather than in the page component itself.
+ */
 export default function SignInPage() {
+  return (
+    <Suspense fallback={<Spinner />}>
+      <SignInForm />
+    </Suspense>
+  );
+}
+
+function SignInForm() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  // NextAuth sends refusals back here as `?error=AccessDenied`. Without a word
+  // on the page, a blocked address just bounces off Google and lands on the
+  // same button, which reads as a bug rather than as a decision.
+  const denied = useSearchParams().get('error') === 'AccessDenied';
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -16,11 +40,7 @@ export default function SignInPage() {
   }, [status, router]);
 
   if (status === 'loading' || status === 'authenticated') {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-base-300 border-t-primary" />
-      </div>
-    );
+    return <Spinner />;
   }
 
   return (
@@ -33,6 +53,13 @@ export default function SignInPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-base-content">Welcome back</h1>
           <p className="mt-1.5 text-sm text-base-content/60">Sign in to your AI assistant</p>
         </div>
+
+        {denied && (
+          <div className="mb-4 rounded-md border border-error/30 bg-error/10 px-4 py-3 text-sm text-base-content/80">
+            This account is not on the invite list. Ask the owner of this instance to add your
+            address.
+          </div>
+        )}
 
         <button
           className="flex w-full items-center justify-center gap-2.5 rounded-md border border-base-300 bg-base-100 px-4 py-2.5 text-sm font-medium text-base-content transition-colors hover:bg-base-200"
