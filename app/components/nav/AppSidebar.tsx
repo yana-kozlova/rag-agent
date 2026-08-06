@@ -11,6 +11,7 @@ import {
   Home,
   BookOpen,
   Table2,
+  HeartPulse,
   Settings,
   PanelLeftClose,
   PanelLeft,
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: Home, match: (p: string) => p === '/' },
   { href: '/resources', label: 'Knowledge Base', icon: BookOpen, match: (p: string) => p.startsWith('/resources') },
   { href: '/tables', label: 'Tables', icon: Table2, match: (p: string) => p.startsWith('/tables') },
+  { href: '/health', label: 'Health', icon: HeartPulse, match: (p: string) => p.startsWith('/health') },
   { href: '/settings', label: 'Settings', icon: Settings, match: (p: string) => p.startsWith('/settings') },
 ];
 
