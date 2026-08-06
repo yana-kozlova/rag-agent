@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { notFound, redirect } from 'next/navigation';
 import { and, eq } from 'drizzle-orm';
 import { auth } from '@/app/api/auth/auth';
@@ -24,6 +25,8 @@ type Metadata = {
   personName?: string;
   keyPoints?: string[];
   facts?: Array<{ fact?: string; text?: string }>;
+  /** Absent when the blob store was unconfigured at upload time. */
+  imageUrl?: string;
 };
 
 const TYPE_ICON: Record<string, string> = {
@@ -37,6 +40,7 @@ const TYPE_ICON: Record<string, string> = {
   schedule: '🗓️',
   learning: '🎓',
   document: '🔗',
+  image: '🖼️',
   other: '📄',
 };
 
@@ -103,6 +107,22 @@ export default async function ResourcePage({ params }: { params: { id: string } 
             </div>
           )}
         </header>
+
+        {/* For an image the text below describes a picture, and this is the
+            page someone lands on from a search result — so the picture comes
+            first and the description reads as a caption for it. */}
+        {meta.imageUrl && (
+          <a href={meta.imageUrl} target="_blank" rel="noreferrer" className="mb-5 block w-fit">
+            <Image
+              src={meta.imageUrl}
+              alt={title}
+              width={768}
+              height={576}
+              className="max-h-[28rem] w-auto rounded-box border border-base-300 object-contain"
+              unoptimized
+            />
+          </a>
+        )}
 
         {/* The stored text is written as markdown — headings, lists, bold — so
             it is rendered as such rather than dumped as one preformatted block. */}

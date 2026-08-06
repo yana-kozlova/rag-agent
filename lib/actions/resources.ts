@@ -16,6 +16,7 @@ import { sql } from 'drizzle-orm';
 import { embeddingCache } from '../ai/embedding-cache';
 import { autoRouteResource } from './auto-route-resource';
 import { syncEntitiesForResource } from './entities';
+import { deleteStoredImage } from '@/lib/storage/images';
 
 export const createResource = async (input: NewResourceParams) => {
   try {
@@ -201,6 +202,11 @@ export const deleteResource = async (resourceId: string) => {
       ));
 
     embeddingCache.clearForUser(userId);
+
+    // Drop the picture too, if this resource was one. After the row is gone, so
+    // that a blob store outage cannot block the delete the user asked for.
+    const imageUrl = (existing.metadata as { imageUrl?: string } | null)?.imageUrl;
+    if (imageUrl) await deleteStoredImage(imageUrl);
 
     return { success: true, message: 'Resource successfully deleted.' };
   } catch (error) {

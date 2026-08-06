@@ -87,14 +87,21 @@ export const analyzeFileTool = {
       };
     }
 
-    // Check if it's a document type file
+    // Check if it's a file the tool can speak to.
+    //
+    // Images count regardless of length: their content is a vision model's
+    // description, which is routinely under the length threshold — a photo of a
+    // receipt reads as three lines. Without the type check, the chat flow that
+    // uploads an image and is then told to call this tool would be answered
+    // with "not a document file" for the ordinary case.
     const metadata = resource.metadata as any;
-    const isDocument = metadata?.type === 'document' || resource.content.length > 1000;
+    const analysable =
+      metadata?.type === 'document' || metadata?.type === 'image' || resource.content.length > 1000;
 
-    if (!isDocument) {
+    if (!analysable) {
       return {
         success: false,
-        message: 'This resource is not a document file. Only document files can be analyzed.',
+        message: 'This resource is not a document or image file. Only those can be analyzed.',
       };
     }
 

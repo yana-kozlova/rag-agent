@@ -10,6 +10,11 @@ import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { getUserInitials } from '@/lib/utils';
 import { isAutoGreetingText } from '@/lib/chat/auto-greeting';
+import {
+  UPLOAD_ACCEPT_ATTRIBUTE,
+  isUploadableImage,
+  rejectionReason,
+} from '@/lib/utils/uploadable';
 
 type AttachedFile = {
   file: File;
@@ -17,11 +22,14 @@ type AttachedFile = {
   uploading?: boolean;
   resourceId?: string;
   error?: string;
+  /** Object URL, images only. Revoked when the attachment goes away. */
+  previewUrl?: string;
 };
 
 export default function ChatSection() {
   const [input, setInput] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { data: session } = useSession();
@@ -90,29 +98,50 @@ export default function ChatSection() {
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
 
   const handleFiles = useCallback((files: File[]) => {
-    const MAX_FILE_SIZE_MB = 10;
-    const validFiles = files.filter((file) => {
-      const maxSizeBytes = MAX_FILE_SIZE_MB * 1024 * 1024;
-      if (file.size > maxSizeBytes) {
-        console.warn(`File ${file.name} exceeds ${MAX_FILE_SIZE_MB}MB limit`);
-        return false;
-      }
-      const ext = file.name.split('.').pop()?.toLowerCase();
-      const allowedExts = ['pdf', 'docx', 'txt', 'md'];
-      if (!ext || !allowedExts.includes(ext)) {
-        console.warn(`File ${file.name} has unsupported extension`);
-        return false;
-      }
-      return true;
+    const rejected: string[] = [];
+    const accepted = files.filter((file) => {
+      const reason = rejectionReason(file);
+      if (reason) rejected.push(reason);
+      return !reason;
     });
 
-    const newFiles: AttachedFile[] = validFiles.map((file) => ({
+    // A dropped file that simply vanishes reads as a broken drop zone, so the
+    // reason is shown rather than only logged.
+    setAttachError(rejected.length > 0 ? rejected.join('; ') : null);
+
+    const newFiles: AttachedFile[] = accepted.map((file) => ({
       file,
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      // A filename is a poor way to tell two screenshots apart; a thumbnail is
+      // how you know you attached the right one before hitting send. The MIME
+      // type is checked too because a pasted screenshot may arrive unnamed.
+      previewUrl:
+        file.type.startsWith('image/') || isUploadableImage(file.name)
+          ? URL.createObjectURL(file)
+          : undefined,
     }));
 
     setAttachedFiles((prev) => [...prev, ...newFiles]);
   }, []);
+
+  /** Object URLs live until revoked, so every removal path goes through here. */
+  const releasePreviews = useCallback((files: AttachedFile[]) => {
+    for (const file of files) {
+      if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
+    }
+  }, []);
+
+  // Navigating away is the one removal path with no click behind it. Read
+  // through a ref so the cleanup sees the attachments as they are at unmount
+  // rather than as they were when the effect was set up.
+  const attachedFilesRef = useRef(attachedFiles);
+  useEffect(() => {
+    attachedFilesRef.current = attachedFiles;
+  }, [attachedFiles]);
+
+  useEffect(() => {
+    return () => releasePreviews(attachedFilesRef.current);
+  }, [releasePreviews]);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -316,6 +345,12 @@ export default function ChatSection() {
         )}
       </div>
 
+      {attachError && (
+        <div className="mt-2 text-xs text-error" role="alert">
+          {attachError}
+        </div>
+      )}
+
       {/* Attached files preview */}
       {attachedFiles.length > 0 && (
         <div className="mt-2 p-2 bg-base-200 rounded-lg space-y-2">
@@ -324,9 +359,20 @@ export default function ChatSection() {
               key={attached.id}
               className="flex items-center gap-2 p-2 bg-base-100 rounded border border-base-300"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" className="w-4 h-4 stroke-current text-primary">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-              </svg>
+              {attached.previewUrl ? (
+                // An object URL for a file that never left the browser:
+                // next/image has nothing to optimise and no host to allow.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={attached.previewUrl}
+                  alt={attached.file.name}
+                  className="h-10 w-10 rounded object-cover border border-base-300"
+                />
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" className="w-4 h-4 stroke-current text-primary">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+              )}
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium truncate">{attached.file.name}</div>
                 <div className="text-xs text-base-content/60">
@@ -352,6 +398,7 @@ export default function ChatSection() {
                   <button
                   type="button"
                   onClick={() => {
+                    releasePreviews([attached]);
                     setAttachedFiles((prev) => prev.filter((f) => f.id !== attached.id));
                   }}
                   className="btn btn-ghost btn-xs btn-circle"
@@ -443,6 +490,8 @@ export default function ChatSection() {
           }
 
           setInput('');
+          setAttachError(null);
+          releasePreviews(attachedFiles);
           setAttachedFiles([]);
         }}
         onDragOver={(e) => {
@@ -470,7 +519,7 @@ export default function ChatSection() {
             type="file"
             className="hidden"
             multiple
-            accept=".pdf,.docx,.txt,.md"
+            accept={UPLOAD_ACCEPT_ATTRIBUTE}
             onChange={(e) => {
               const files = Array.from(e.target.files || []);
               handleFiles(files);
@@ -484,7 +533,7 @@ export default function ChatSection() {
             onClick={() => fileInputRef.current?.click()}
             className="btn btn-outline"
             aria-label="Attach file"
-            title="Attach file (PDF, DOCX, TXT, MD)"
+            title="Attach file (PDF, DOCX, EPUB, TXT, MD, images)"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" className="w-5 h-5 stroke-current">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
@@ -495,6 +544,16 @@ export default function ChatSection() {
             value={input}
             placeholder={isDragging ? 'Drop files here...' : 'Say something...'}
             onChange={(e) => setInput(e.currentTarget.value)}
+            // Screenshots are taken to the clipboard far more often than to a
+            // file, and Cmd-V is the only way to attach one without saving it
+            // first.
+            onPaste={(e) => {
+              const pasted = Array.from(e.clipboardData.files);
+              if (pasted.length > 0) {
+                e.preventDefault();
+                handleFiles(pasted);
+              }
+            }}
           />
           <button
             type="submit"

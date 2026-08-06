@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/app/api/auth/auth';
 import { extractTextFromFile, validateFileSize, getFileExtension, getMimeTypeFromExtension } from '@/lib/utils/file-extraction';
+import { MAX_UPLOAD_SIZE_MB } from '@/lib/utils/uploadable';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
-
-const MAX_FILE_SIZE_MB = 10;
 
 export async function POST(req: Request) {
   try {
@@ -28,7 +27,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const sizeValidation = validateFileSize(file, MAX_FILE_SIZE_MB);
+    const sizeValidation = validateFileSize(file, MAX_UPLOAD_SIZE_MB);
     if (!sizeValidation.valid) {
       return NextResponse.json(
         { ok: false, message: sizeValidation.error }, 
@@ -40,7 +39,7 @@ export async function POST(req: Request) {
     const fileExtension = getFileExtension(fileName);
     const mimeType = file.type || getMimeTypeFromExtension(fileExtension);
 
-    const extractionResult = await extractTextFromFile(file, mimeType, fileName);
+    const extractionResult = await extractTextFromFile(file, mimeType, fileName, 'extract-text');
 
     if (!extractionResult.success) {
       return NextResponse.json({

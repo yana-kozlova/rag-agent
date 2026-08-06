@@ -3,7 +3,9 @@
 import { useEffect, useState, useRef } from 'react';
 import { deleteResource, updateResource } from '@/lib/actions/resources';
 import Link from 'next/link';
+import Image from 'next/image';
 import { renderSimpleMarkdown } from '@/app/components/utils/markdown';
+import { UPLOAD_ACCEPT_ATTRIBUTE, rejectionReason } from '@/lib/utils/uploadable';
 
 export type Resource = {
   id: string;
@@ -48,7 +50,7 @@ export default function ResourcesClient({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
-  const [editType, setEditType] = useState<'note' | 'document' | 'person' | 'project' | 'skill' | 'learning' | 'schedule' | 'event' | 'other'>('note');
+  const [editType, setEditType] = useState<'note' | 'document' | 'image' | 'person' | 'project' | 'skill' | 'learning' | 'schedule' | 'event' | 'other'>('note');
   const [editTags, setEditTags] = useState<string[]>([]);
   const [editCategory, setEditCategory] = useState<string>('');
   const [newTagInput, setNewTagInput] = useState('');
@@ -158,7 +160,7 @@ export default function ResourcesClient({
     setEditTitle(resource.title || '');
     setEditContent(resource.content);
     const currentType = getTypeLabel(resource.metadata);
-    setEditType(currentType as 'note' | 'document' | 'person' | 'project' | 'skill' | 'learning' | 'schedule' | 'event' | 'other');
+    setEditType(currentType as 'note' | 'document' | 'image' | 'person' | 'project' | 'skill' | 'learning' | 'schedule' | 'event' | 'other');
     const meta = resource.metadata as any;
     setEditTags(Array.isArray(meta?.tags) ? [...meta.tags] : []);
     setEditCategory(meta?.category || '');
@@ -266,18 +268,13 @@ export default function ResourcesClient({
     if (!files || files.length === 0) return;
 
     const file = files[0];
-    const MAX_FILE_SIZE_MB = 10;
-    const maxSizeBytes = MAX_FILE_SIZE_MB * 1024 * 1024;
 
-    if (file.size > maxSizeBytes) {
-      alert(`File size exceeds maximum allowed size of ${MAX_FILE_SIZE_MB}MB`);
-      return;
-    }
-
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    const allowedExts = ['pdf', 'docx', 'txt', 'md'];
-    if (!ext || !allowedExts.includes(ext)) {
-      alert(`Unsupported file type. Supported types: ${allowedExts.join(', ').toUpperCase()}`);
+    const rejection = rejectionReason(file);
+    if (rejection) {
+      alert(rejection);
+      // Without this the same file cannot be picked again after fixing nothing,
+      // because the input still holds it and fires no change event.
+      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
@@ -326,7 +323,7 @@ export default function ResourcesClient({
             ref={fileInputRef}
             type="file"
             className="hidden"
-            accept=".pdf,.docx,.txt,.md"
+            accept={UPLOAD_ACCEPT_ATTRIBUTE}
             onChange={handleFileUpload}
             disabled={uploading}
           />
@@ -582,6 +579,7 @@ export default function ResourcesClient({
                       >
                         <option value="note">Note</option>
                         <option value="document">Document</option>
+                        <option value="image">Image</option>
                         <option value="person">Person</option>
                         <option value="project">Project</option>
                         <option value="skill">Skill</option>
@@ -723,6 +721,27 @@ export default function ResourcesClient({
                           <p className="text-sm text-base-content/70 mb-2">
                             {formatDate(resource.createdAt)}
                           </p>
+                          {/* For an image resource the content below is a
+                              description of a picture, which is close to
+                              useless without the picture. Opens full size in a
+                              new tab — the card is too small to judge one. */}
+                          {(resource.metadata as any)?.imageUrl && (
+                            <a
+                              href={(resource.metadata as any).imageUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block mb-3 w-fit"
+                            >
+                              <Image
+                                src={(resource.metadata as any).imageUrl}
+                                alt={resource.title || 'Uploaded image'}
+                                width={320}
+                                height={240}
+                                className="max-h-60 w-auto rounded-lg border border-base-300 object-contain"
+                                unoptimized
+                              />
+                            </a>
+                          )}
                           {/* Notes are written as markdown — headings, lists,
                               bold — so the preview renders them rather than
                               showing the raw asterisks and hashes. */}

@@ -1,5 +1,7 @@
 import { extractText, getDocumentProxy } from 'unpdf';
 import mammoth from 'mammoth';
+import { describeImage, isSupportedImageMimeType, SUPPORTED_IMAGE_EXTENSIONS } from '@/lib/ai/vision';
+import { extractTextFromEpub } from '@/lib/utils/epub';
 
 export type ExtractionResult = {
   success: boolean;
@@ -37,11 +39,31 @@ export function getMimeTypeFromExtension(extension: string): string {
     pdf: 'application/pdf',
     docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     doc: 'application/msword',
+    epub: 'application/epub+zip',
     txt: 'text/plain',
     md: 'text/markdown',
     rtf: 'application/rtf',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    gif: 'image/gif',
   };
   return mimeTypes[extension] || 'application/octet-stream';
+}
+
+/**
+ * Is this an image, by either signal?
+ *
+ * Browsers set `file.type` reliably, but Telegram photos and a few desktop
+ * clients send `application/octet-stream` and leave only the extension to go
+ * on, so both are checked.
+ */
+export function isImageFile(mimeType: string, fileName: string): boolean {
+  if (isSupportedImageMimeType(mimeType)) return true;
+
+  const extension = getFileExtension(fileName);
+  return (SUPPORTED_IMAGE_EXTENSIONS as readonly string[]).includes(extension);
 }
 
 /**
@@ -50,7 +72,9 @@ export function getMimeTypeFromExtension(extension: string): string {
 export async function extractTextFromFile(
   file: File,
   mimeType: string,
-  fileName: string
+  fileName: string,
+  /** Tagged onto telemetry when reading the file costs an LLM call. */
+  caller = 'file-extraction'
 ): Promise<ExtractionResult> {
   try {
     // PDF files
@@ -66,6 +90,12 @@ export async function extractTextFromFile(
       return await extractTextFromDOCX(file);
     }
 
+    // EPUB e-books. Checked before the text branch because some clients label
+    // them `text/xml` — the extension is the reliable signal here.
+    if (mimeType === 'application/epub+zip' || fileName.toLowerCase().endsWith('.epub')) {
+      return await extractTextFromEpubFile(file);
+    }
+
     // Plain text files
     if (
       mimeType.startsWith('text/') ||
@@ -75,9 +105,17 @@ export async function extractTextFromFile(
       return await extractTextFromText(file);
     }
 
+    // Images have no text to pull out, so one is written for them: a vision
+    // model describes the image and transcribes anything written on it, and
+    // that description becomes the resource's content. Everything downstream —
+    // chunking, embedding, fact extraction — then works unchanged.
+    if (isImageFile(mimeType, fileName)) {
+      return await extractTextFromImage(file, mimeType, fileName, caller);
+    }
+
     return {
       success: false,
-      error: `Unsupported file type: ${mimeType}. Supported types: PDF, DOCX, TXT, MD`,
+      error: `Unsupported file type: ${mimeType}. Supported types: PDF, DOCX, EPUB, TXT, MD, JPEG, PNG, WebP, GIF`,
     };
   } catch (error) {
     return {
@@ -158,6 +196,70 @@ async function extractTextFromDOCX(file: File): Promise<ExtractionResult> {
     return {
       success: false,
       error: `Failed to extract text from DOCX: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
+  }
+}
+
+/**
+ * Extracts text from an EPUB e-book.
+ *
+ * The book's own title and author are prepended when the package document
+ * carries them. A book's first page is rarely its title page in any useful
+ * sense, so without this the only place the author's name appears may be a
+ * copyright notice halfway through — and "what did I read by X?" then misses.
+ */
+async function extractTextFromEpubFile(file: File): Promise<ExtractionResult> {
+  try {
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const book = await extractTextFromEpub(bytes);
+
+    if (!book.ok) {
+      return { success: false, error: book.error };
+    }
+
+    const heading = [book.title, book.author].filter(Boolean).join(' — ');
+    return {
+      success: true,
+      text: heading ? `${heading}\n\n${book.text}` : book.text,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: `Failed to read EPUB: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
+  }
+}
+
+/**
+ * Describes an image with a vision model.
+ *
+ * The MIME type is re-derived from the extension when the caller's is useless:
+ * Telegram and some desktop clients send `application/octet-stream`, and the
+ * vision endpoint needs to be told what it is being handed.
+ */
+async function extractTextFromImage(
+  file: File,
+  mimeType: string,
+  fileName: string,
+  caller: string
+): Promise<ExtractionResult> {
+  try {
+    const resolvedType = isSupportedImageMimeType(mimeType)
+      ? mimeType
+      : getMimeTypeFromExtension(getFileExtension(fileName));
+
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const description = await describeImage(bytes, resolvedType, caller);
+
+    if (!description.ok) {
+      return { success: false, error: description.error };
+    }
+
+    return { success: true, text: description.text };
+  } catch (error) {
+    return {
+      success: false,
+      error: `Failed to read image: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
 }

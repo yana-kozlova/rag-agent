@@ -31,7 +31,7 @@ export const resources = pgTable("resources", {
 
 // Metadata schema for content types
 export const resourceMetadataSchema = z.object({
-  type: z.enum(['note', 'document', 'schedule', 'person', 'project', 'skill', 'event', 'learning', 'preference', 'need', 'other']).optional(),
+  type: z.enum(['note', 'document', 'image', 'schedule', 'person', 'project', 'skill', 'event', 'learning', 'preference', 'need', 'other']).optional(),
   items: z.array(z.object({
     title: z.string().optional(),
     time: z.string().optional(),
@@ -63,6 +63,19 @@ export const resourceMetadataSchema = z.object({
   })).optional(),
   keyPoints: z.array(z.string()).optional(),
   userName: z.string().optional(),
+  // Images. `content` holds the vision model's description — these point back
+  // at the picture it describes, so the UI can show the thing itself.
+  // `imageUrl` is absent when the blob store was unconfigured or unreachable:
+  // the image was still read and indexed, it just cannot be displayed.
+  imageUrl: z.string().optional(),
+  /**
+   * Blob's own path. Nothing reads it today — deletion goes through `imageUrl`,
+   * which is what `del()` takes — but it is the only durable handle on the
+   * object if a URL is ever lost, so it is recorded rather than recomputed.
+   */
+  imagePathname: z.string().optional(),
+  /** What the user wrote alongside the image, if anything. */
+  caption: z.string().optional(),
   // Bi-directional link: rows in user tables that were derived from this resource.
   // Written by createTableRowsBulk when sourceResourceIds is passed.
   linkedRows: z.array(z.object({
