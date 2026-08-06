@@ -6,7 +6,7 @@ export * from './user-tables';
 export * from "./embeddings";
 export * from "./auth";
 export * from "./chat";
-export * from "./push-subscriptions";
+// push_subscriptions removed with Web Push; notifications go to Telegram.
 export * from "./sent-notifications";
 export * from "./notification-queue";
 export * from "./entities";

@@ -83,7 +83,8 @@ describe('scanDay', () => {
     });
 
     expect(insight.kind).toBe('insight-conflict');
-    expect(insight.payload.body).toContain('30m');
+    // Ukrainian is the default locale, so the duration comes back in it.
+    expect(insight.payload.body).toContain('30 хв');
     expect(insight.payload.body).toContain('10:30');
     // Conflicts need acting on, so they go out at scan time.
     expect(insight.notifyAt).toEqual(NOW);
@@ -103,7 +104,7 @@ describe('scanDay', () => {
     });
 
     expect(insight.kind).toBe('insight-no-break');
-    expect(insight.payload.body).toContain('4h');
+    expect(insight.payload.body).toContain('4 год');
     expect(insight.notifyAt.toISOString()).toBe('2026-07-21T10:50:00.000Z');
   });
 
@@ -214,5 +215,36 @@ describe('scanDay', () => {
     expect(new Set(keys).size).toBe(keys.length);
     // Keys carry the local day, so tomorrow's scan re-notifies.
     expect(keys.every((k) => k.includes('2026-07-21'))).toBe(true);
+  });
+
+  it('writes the nudge in the requested language', () => {
+    const events = [ev('Standup', '10:00', '11:00'), ev('Review', '10:30', '11:30')];
+    const args = { events, notes: [], now: NOW, tz: TZ, quietHours: NO_QUIET };
+
+    const [uk] = scanDay({ ...args, locale: 'uk' });
+    const [en] = scanDay({ ...args, locale: 'en' });
+
+    expect(uk.payload.title).toBe('⚠️ Накладка');
+    expect(uk.payload.body).toContain('перетинаються на 30 хв');
+
+    expect(en.payload.title).toBe('⚠️ Double-booked');
+    expect(en.payload.body).toContain('overlap by 30m');
+
+    // The times themselves are digits in both, deliberately.
+    expect(uk.payload.body).toContain('10:30');
+    expect(en.payload.body).toContain('10:30');
+  });
+
+  it('falls back to the default language rather than failing on a bad locale', () => {
+    const [insight] = scanDay({
+      events: [ev('Standup', '10:00', '11:00'), ev('Review', '10:30', '11:30')],
+      notes: [],
+      now: NOW,
+      tz: TZ,
+      quietHours: NO_QUIET,
+      locale: 'klingon',
+    });
+
+    expect(insight.payload.title).toBe('⚠️ Накладка');
   });
 });

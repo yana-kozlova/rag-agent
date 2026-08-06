@@ -1,7 +1,7 @@
 import { pgTable, text, timestamp, uuid, index } from "drizzle-orm/pg-core";
 import { jsonb } from "../jsonb";
 import { users } from "./auth";
-import type { PushPayload } from "@/lib/push/utils";
+import type { NotificationPayload } from "@/lib/push/utils";
 
 /**
  * Notifications to deliver later.
@@ -21,7 +21,7 @@ export const notificationQueue = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     /** Earliest instant this may be delivered. */
     notifyAt: timestamp("notify_at").notNull(),
-    payload: jsonb("payload").$type<PushPayload>().notNull(),
+    payload: jsonb("payload").$type<NotificationPayload>().notNull(),
     kind: text("kind").notNull(),
     /**
      * pending | sending | sent | failed

@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { pushSubscriptions } from '@/lib/db/schema/push-subscriptions';
 import { users } from '@/lib/db/schema/auth';
-import { eq } from 'drizzle-orm';
-import { sendToSubscriptions, validateCronSecret } from '@/lib/push/utils';
+import { isNotNull } from 'drizzle-orm';
+import { validateCronSecret } from '@/lib/push/utils';
+import { deliverToUser } from '@/lib/push/deliver';
 import { getAccessTokenForUser, resolveUserTimezone } from '@/lib/push/google-token';
 import { getLocalHour, getLocalDateKey, getLocalDayOfWeek } from '@/lib/push/timezone';
 import { claimNotification } from '@/lib/push/dedupe';
@@ -40,18 +40,20 @@ export async function GET(req: Request) {
 
     const now = new Date();
 
+    // Reachability is a linked Telegram chat, same as the daily briefing.
     const candidates = await db
-      .selectDistinct({
+      .select({
         userId: users.id,
         timezone: users.timezone,
         retroHour: users.retroHour,
         retroEnabled: users.retroEnabled,
+        locale: users.locale,
       })
-      .from(pushSubscriptions)
-      .innerJoin(users, eq(users.id, pushSubscriptions.userId));
+      .from(users)
+      .where(isNotNull(users.telegramChatId));
 
     if (candidates.length === 0) {
-      return NextResponse.json({ ok: true, message: 'No subscriptions found', sent: 0 });
+      return NextResponse.json({ ok: true, message: 'No linked chats found', sent: 0 });
     }
 
     let sent = 0;
@@ -104,37 +106,31 @@ export async function GET(req: Request) {
           weekStartInstant(now, tz)
         );
 
-        const retro = await generateRetrospective(candidate.userId, events, notes, tz);
+        const retro = await generateRetrospective(
+          candidate.userId,
+          events,
+          notes,
+          tz,
+          candidate.locale
+        );
 
-        const subs = await db
-          .select({ endpoint: pushSubscriptions.endpoint, keys: pushSubscriptions.keys })
-          .from(pushSubscriptions)
-          .where(eq(pushSubscriptions.userId, candidate.userId));
-
-        const { successCount } = await sendToSubscriptions(
-          subs.map((s) => ({ endpoint: s.endpoint, keys: s.keys })),
+        const delivered = await deliverToUser(
+          candidate.userId,
           {
             title: retro.title,
             body: retro.body,
+            actions: ['snooze', 'save'],
+            snoozeMinutes: 120,
             data: {
-              url: '/',
               type: 'weekly-retro',
               weekEnding: getLocalDateKey(now, tz),
               stats: retro.stats,
-              snoozeMinutes: 120,
             },
-            icon: '/avatars/bot.svg',
-            badge: '/avatars/bot.svg',
-            tag: 'weekly-retro',
-            actions: [
-              { action: 'snooze', title: 'Later' },
-              { action: 'save-note', title: 'Save' },
-            ],
           },
           'push/retrospective'
         );
 
-        sent += successCount;
+        if (delivered === 'sent') sent++;
       } catch (error: any) {
         console.error(`[push/retrospective] Error for user ${candidate.userId}:`, error);
         errors.push(candidate.userId);

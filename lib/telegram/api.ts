@@ -92,23 +92,69 @@ function cutPoint(window: string): number {
  * Telegram's MarkdownV2 demands that a dozen characters be backslash-escaped
  * and rejects the whole message otherwise. Sending an unstyled message that
  * always arrives beats a styled one that intermittently 400s.
+ *
+ * Returns whether every piece went out. Replies ignore this — there is nobody
+ * to tell — but scheduled notifications need it: the queue marks a row `sent`
+ * or `failed` on the strength of this answer, and a silent `void` would retire
+ * rows that never reached anyone.
  */
 export async function sendMessage(
   chatId: string | number,
   text: string,
   options: { replyMarkup?: unknown } = {}
-): Promise<void> {
+): Promise<boolean> {
   const pieces = splitForTelegram(text.trim() || '…');
+  let delivered = true;
 
   for (const [index, piece] of pieces.entries()) {
-    await call('sendMessage', {
+    const sent = await call('sendMessage', {
       chat_id: chatId,
       text: piece,
       // Buttons belong on the last piece, where the reply actually ends.
       reply_markup: index === pieces.length - 1 ? options.replyMarkup : undefined,
       disable_web_page_preview: true,
     });
+
+    // `sendMessage` answers with the Message it created, so null is `call`
+    // reporting a rejected request rather than an empty success.
+    if (sent === null) delivered = false;
   }
+
+  return delivered;
+}
+
+/**
+ * Acknowledge a button press.
+ *
+ * Telegram shows a loading state on the button until this is called, so it has
+ * to happen whatever the outcome — including on failure, where the `text` is
+ * the only place the user learns that nothing happened.
+ */
+export async function answerCallbackQuery(
+  callbackQueryId: string,
+  text?: string
+): Promise<void> {
+  await call('answerCallbackQuery', {
+    callback_query_id: callbackQueryId,
+    text,
+  });
+}
+
+/**
+ * Take the buttons off a message that has already been acted on.
+ *
+ * Without this the keyboard stays live forever, and "Save" on a week-old
+ * briefing quietly writes a second copy into the knowledge base.
+ */
+export async function clearReplyMarkup(
+  chatId: string | number,
+  messageId: number
+): Promise<void> {
+  await call('editMessageReplyMarkup', {
+    chat_id: chatId,
+    message_id: messageId,
+    reply_markup: { inline_keyboard: [] },
+  });
 }
 
 /** The "typing…" indicator. Expires after ~5s on its own. */

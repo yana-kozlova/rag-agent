@@ -11,9 +11,16 @@ import {
   fetchEventsBetween,
   localDayBounds,
 } from './calendar-window';
+import { copyFor, type NotificationCopy } from './copy';
 
 /** The retrospective covers the seven local days ending on the day it is sent. */
 const WINDOW_DAYS = 7;
+
+/**
+ * Ceiling on the model's reflection, with the week's numbers printed beneath it.
+ * Was 180 for the whole notification, back when the medium was a browser toast.
+ */
+const MAX_RETRO_TEXT = 400;
 
 export type WeekStats = {
   eventCount: number;
@@ -72,7 +79,9 @@ export async function fetchWeekNotes(
 export function summarizeWeek(
   events: CalendarEvent[],
   notes: Array<{ title: string | null; content: string }>,
-  tz: string
+  tz: string,
+  /** Only weekday names depend on it; everything else here is a number. */
+  intlTag = 'en-GB'
 ): WeekStats {
   const timed = events.filter((e) => !e.allDay && e.end);
 
@@ -84,7 +93,7 @@ export function summarizeWeek(
 
   const perDay = new Map<string, number>();
   for (const e of events) {
-    const day = new Intl.DateTimeFormat('en-US', {
+    const day = new Intl.DateTimeFormat(intlTag, {
       timeZone: tz,
       weekday: 'long',
     }).format(new Date(e.start));
@@ -125,21 +134,15 @@ export function summarizeWeek(
  * call fails, or when the week was too empty to be worth a token.
  * A retrospective that always arrives matters more than a clever one.
  */
-function plainRetrospective(stats: WeekStats): string {
+function plainRetrospective(stats: WeekStats, copy: NotificationCopy): string {
   const parts: string[] = [];
 
-  if (stats.eventCount > 0) {
-    parts.push(`${stats.eventCount} ${stats.eventCount === 1 ? 'event' : 'events'}`);
-  }
-  if (stats.scheduledHours > 0) parts.push(`${stats.scheduledHours}h scheduled`);
-  if (stats.busiestDay) parts.push(`busiest ${stats.busiestDay}`);
-  if (stats.notesSaved > 0) {
-    parts.push(`${stats.notesSaved} ${stats.notesSaved === 1 ? 'note' : 'notes'} saved`);
-  }
+  if (stats.eventCount > 0) parts.push(copy.retro.events(stats.eventCount));
+  if (stats.scheduledHours > 0) parts.push(copy.retro.scheduled(stats.scheduledHours));
+  if (stats.busiestDay) parts.push(copy.retro.busiest(stats.busiestDay));
+  if (stats.notesSaved > 0) parts.push(copy.retro.notesSaved(stats.notesSaved));
 
-  return parts.length > 0
-    ? parts.join(' · ')
-    : 'A quiet week — nothing scheduled and nothing saved.';
+  return parts.length > 0 ? parts.join(' · ') : copy.retro.quietWeek;
 }
 
 /**
@@ -150,21 +153,23 @@ export async function generateRetrospective(
   userId: string,
   events: CalendarEvent[],
   notes: Array<{ title: string | null; content: string }>,
-  tz: string
+  tz: string,
+  locale?: string | null
 ): Promise<Retrospective> {
-  const stats = summarizeWeek(events, notes, tz);
+  const copy = copyFor(locale);
+  const stats = summarizeWeek(events, notes, tz, copy.intlTag);
 
   // Nothing happened; there is no insight to draw and no reason to pay for one.
   if (stats.eventCount === 0 && stats.notesSaved === 0) {
     return {
-      title: '🗓️ Your week',
-      body: plainRetrospective(stats),
+      title: copy.retro.weekTitle,
+      body: plainRetrospective(stats, copy),
       stats,
     };
   }
 
   if (!env.OPENAI_API_KEY) {
-    return { title: '🗓️ Your week', body: plainRetrospective(stats), stats };
+    return { title: copy.retro.weekTitle, body: plainRetrospective(stats, copy), stats };
   }
 
   const modelName = env.AI_CHAT_MODEL || 'gpt-4o-mini';
@@ -174,11 +179,13 @@ export async function generateRetrospective(
     const { text, usage } = await generateText({
       model: openai(modelName),
       system: [
-        'You write a single-sentence weekly retrospective for a push notification.',
-        'Hard limit: 180 characters. No greeting, no emoji, no markdown, no preamble.',
+        'You write a short weekly retrospective.',
+        `Hard limit: ${MAX_RETRO_TEXT} characters. Two or three sentences at most. No greeting, no emoji, no markdown, no preamble.`,
         'Lead with the most telling pattern: where the hours actually went, a lopsided day, or a commitment that dominated the week.',
         'Ground every claim in the numbers given. Never invent events, hours, or trends you were not given.',
         'Write plainly and factually, like a competent assistant. Do not congratulate, coach, or moralise.',
+        'The raw numbers are printed under your text by the application, so do not simply restate them.',
+        copy.writeIn,
       ].join(' '),
       prompt: [
         `Week just ended (timezone ${tz}):`,
@@ -209,15 +216,19 @@ export async function generateRetrospective(
       note: `events=${stats.eventCount} notes=${stats.notesSaved}`,
     });
 
-    const body = text.trim().slice(0, 180);
+    const reflection = text.trim().slice(0, MAX_RETRO_TEXT);
+    const numbers = plainRetrospective(stats, copy);
 
     return {
-      title: `🗓️ Week in review · ${stats.scheduledHours}h`,
-      body: body || plainRetrospective(stats),
+      title: copy.retro.weekInReview(stats.scheduledHours),
+      // The numbers go out under the reflection rather than instead of it: what
+      // the model says is only worth reading if the week it says it about is
+      // there to check it against.
+      body: reflection ? `${reflection}\n\n${numbers}` : numbers,
       stats,
     };
   } catch (error) {
     console.error('[push/retrospective] Generation failed, using plain summary:', error);
-    return { title: '🗓️ Your week', body: plainRetrospective(stats), stats };
+    return { title: copy.retro.weekTitle, body: plainRetrospective(stats, copy), stats };
   }
 }

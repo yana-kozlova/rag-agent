@@ -48,6 +48,13 @@ export const users = pgTable("user", {
   // start > end (e.g. 22 → 8). Null on either side disables the window.
   quietHoursStart: integer("quiet_hours_start"),
   quietHoursEnd: integer("quiet_hours_end"),
+  /**
+   * Language for briefings, insights and the retrospective — `uk` or `en`, see
+   * `lib/push/copy.ts`. Only these; the web UI is English regardless, because a
+   * notification is read where the bot speaks and a settings screen is not.
+   * Unrecognised values resolve to the default rather than failing a send.
+   */
+  locale: text("locale").notNull().default("uk"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

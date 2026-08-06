@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { NotificationsToggle } from '@/app/components/notifications/NotificationsToggle';
+import type { NotificationLocale } from '@/lib/push/copy';
 
 type Preferences = {
   briefingEnabled: boolean;
@@ -12,13 +12,32 @@ type Preferences = {
   quietHoursStart: number | null;
   quietHoursEnd: number | null;
   timezone: string | null;
+  locale: NotificationLocale;
 };
+
+/**
+ * A label per language. Typed as a total record so that adding a locale to
+ * `lib/push/copy.ts` fails the build here until it has a name to show — the
+ * previous hand-kept array would silently have gone on offering two.
+ */
+const LOCALE_LABELS: Record<NotificationLocale, string> = {
+  uk: 'Українська',
+  en: 'English',
+};
+
+/** Where notifications go, and whether that route is actually open. */
+type Delivery = { configured: boolean; linked: boolean };
+
+/** When the next briefing lands, in the user's own zone. */
+type NextRun = { nextScheduledLocal: string | null; timezone: string | null };
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const label = (h: number) => `${String(h).padStart(2, '0')}:00`;
 
 export function NotificationPreferences() {
   const [prefs, setPrefs] = useState<Preferences | null>(null);
+  const [delivery, setDelivery] = useState<Delivery | null>(null);
+  const [nextRun, setNextRun] = useState<NextRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +64,48 @@ export function NotificationPreferences() {
     void load();
   }, [load]);
 
+  // Read-only, and independent of the form, so a failure here leaves the
+  // preferences below editable rather than blocking the whole panel. Linking
+  // happens in another panel and cannot change under this one, so it is asked
+  // once.
+  useEffect(() => {
+    fetch('/api/telegram/link')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) =>
+        setDelivery(data ? { configured: !!data.configured, linked: !!data.linked } : null)
+      )
+      .catch(() => setDelivery(null));
+  }, []);
+
+  /**
+   * When the next briefing actually lands, computed server-side from the stored
+   * hour and the user's zone.
+   *
+   * Called after a save rather than from an effect on `prefs`: the form is
+   * optimistic, so an effect would fire while the PUT was still in flight and
+   * paint the *old* time next to the new hour — and then never correct itself.
+   */
+  const refreshNextRun = useCallback(async () => {
+    try {
+      const res = await fetch('/api/push/next-scheduled');
+      const data = res.ok ? await res.json() : null;
+      setNextRun(
+        data?.enabled
+          ? {
+              nextScheduledLocal: data.nextScheduledLocal ?? null,
+              timezone: data.timezone ?? null,
+            }
+          : null
+      );
+    } catch {
+      setNextRun(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshNextRun();
+  }, [refreshNextRun]);
+
   // Optimistic: the control reflects the change immediately and rolls back only
   // if the server rejects it, so toggles never feel laggy.
   const save = async (patch: Partial<Preferences>) => {
@@ -64,6 +125,8 @@ export function NotificationPreferences() {
       if (!data.ok) {
         setPrefs(previous);
         setError(data.error ?? 'Could not save');
+      } else if (patch.briefingHour !== undefined || patch.briefingEnabled !== undefined) {
+        await refreshNextRun();
       }
     } catch {
       setPrefs(previous);
@@ -90,8 +153,23 @@ export function NotificationPreferences() {
           {saving && <span className="loading loading-spinner loading-xs" />}
         </div>
 
-        {/* Device-level: enable push on this browser, see status and next run. */}
-        <NotificationsToggle />
+        {/* Where these go. There is one channel now, and it either works or it
+            doesn't — so this states the fact instead of offering a switch. */}
+        {delivery && !delivery.configured ? (
+          <div className="text-sm text-warning">
+            No Telegram bot is configured on the server, so nothing can be delivered.
+          </div>
+        ) : delivery && !delivery.linked ? (
+          <div className="text-sm text-warning">
+            Notifications are delivered to Telegram, and this account has no chat linked
+            yet. Link one in the Telegram panel below — until then, everything here is
+            generated and discarded.
+          </div>
+        ) : (
+          <div className="text-sm text-base-content/70">
+            Delivered to your linked Telegram chat.
+          </div>
+        )}
 
         <div className="divider my-0" />
 
@@ -134,8 +212,34 @@ export function NotificationPreferences() {
                 <span className="label-text-alt mt-1 opacity-70">
                   Your local time{prefs.timezone ? ` — ${prefs.timezone}` : ''}
                 </span>
+                {nextRun?.nextScheduledLocal && (
+                  <span className="label-text-alt mt-1 opacity-70">
+                    Next: {nextRun.nextScheduledLocal}
+                  </span>
+                )}
               </div>
             )}
+
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">Language</span>
+              </label>
+              <select
+                className="select select-bordered"
+                value={prefs.locale}
+                onChange={(e) => save({ locale: e.currentTarget.value as NotificationLocale })}
+              >
+                {Object.entries(LOCALE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <span className="label-text-alt mt-1 opacity-70">
+                Applies to briefings, insights and the retrospective. This screen stays
+                in English.
+              </span>
+            </div>
 
             <div className="form-control">
               <label className="label cursor-pointer justify-between">

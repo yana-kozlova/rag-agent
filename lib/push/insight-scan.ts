@@ -11,7 +11,8 @@ import {
   type PersonRef,
 } from './insights';
 import type { DayNote } from './day-notes';
-import type { PushPayload } from './utils';
+import type { NotificationAction, NotificationPayload } from './utils';
+import { copyFor, type NotificationCopy } from './copy';
 
 /**
  * Turns a day's calendar into the handful of notifications worth sending.
@@ -28,10 +29,10 @@ export type ScheduledInsight = {
   kind: string;
   dedupeKey: string;
   notifyAt: Date;
-  payload: PushPayload;
+  payload: NotificationPayload;
 };
 
-/** HH:mm on the user's wall clock. */
+/** HH:mm on the user's wall clock, in every language — see `formatEventTime`. */
 function clock(date: Date, tz: string): string {
   return new Intl.DateTimeFormat('en-GB', {
     timeZone: tz,
@@ -39,14 +40,6 @@ function clock(date: Date, tz: string): string {
     minute: '2-digit',
     hourCycle: 'h23',
   }).format(date);
-}
-
-/** "3h", "3h 30m", "45m" — durations as a person would say them. */
-function humanDuration(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h === 0) return `${m}m`;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
 /**
@@ -93,55 +86,59 @@ function peopleOn(event: DayEvent): PersonRef[] {
 function renderPayload(
   insight: Insight,
   tz: string,
-  note: string | null
-): PushPayload {
-  const base = {
-    icon: '/avatars/bot.svg',
-    badge: '/avatars/bot.svg',
-    actions: [
-      { action: 'snooze', title: 'Later' },
-      { action: 'dismiss', title: 'Dismiss' },
-    ],
-  };
+  note: string | null,
+  copy: NotificationCopy
+): NotificationPayload {
+  // A nudge is an interruption, so both ways of ending it are always offered:
+  // push it to a better moment, or say it has served its purpose.
+  const base = { actions: ['snooze', 'dismiss'] satisfies NotificationAction[] };
 
   switch (insight.kind) {
     case 'conflict':
       return {
         ...base,
-        title: '⚠️ Double-booked',
-        body: `${clock(new Date(insight.b.start), tz)} — "${insight.a.title}" and "${insight.b.title}" overlap by ${humanDuration(insight.overlapMinutes)}`,
-        tag: `insight-conflict-${insight.a.id}`,
+        title: copy.insight.conflictTitle,
+        body: copy.insight.conflictBody(
+          clock(new Date(insight.b.start), tz),
+          insight.a.title,
+          insight.b.title,
+          copy.duration(insight.overlapMinutes)
+        ),
+        snoozeMinutes: 30,
         data: {
-          url: '/',
           type: 'insight-conflict',
           eventId: insight.b.id,
           calendarId: insight.b.calendarId,
-          snoozeMinutes: 30,
         },
       };
 
     case 'no-break':
       return {
         ...base,
-        title: '🌀 No gaps ahead',
-        body: `${humanDuration(insight.totalMinutes)} back-to-back from ${clock(insight.start, tz)} — ${insight.events.length} meetings, no break`,
-        tag: `insight-nobreak-${insight.start.toISOString()}`,
-        data: { url: '/', type: 'insight-no-break', snoozeMinutes: 15 },
+        title: copy.insight.noBreakTitle,
+        body: copy.insight.noBreakBody(
+          copy.duration(insight.totalMinutes),
+          clock(insight.start, tz),
+          insight.events.length
+        ),
+        snoozeMinutes: 15,
+        data: { type: 'insight-no-break' },
       };
 
     case 'person-context':
       return {
         ...base,
-        title: `📝 ${insight.person.name} at ${clock(new Date(insight.event.start), tz)}`,
+        title: copy.insight.personTitle(
+          insight.person.name,
+          clock(new Date(insight.event.start), tz)
+        ),
         // The note is the entire reason to interrupt, so it gets the body.
         body: note ? note.slice(0, 160) : insight.event.title,
-        tag: `insight-person-${insight.event.id}`,
+        snoozeMinutes: 10,
         data: {
-          url: '/',
           type: 'insight-person',
           eventId: insight.event.id,
           calendarId: insight.event.calendarId,
-          snoozeMinutes: 10,
         },
       };
   }
@@ -160,8 +157,10 @@ export function scanDay(params: {
   tz: string;
   quietHours: QuietHours;
   cap?: number;
+  locale?: string | null;
 }): ScheduledInsight[] {
   const { events, notes, now, tz, quietHours } = params;
+  const copy = copyFor(params.locale);
 
   const insights: Insight[] = [
     ...findConflicts(events, now, tz),
@@ -207,7 +206,8 @@ export function scanDay(params: {
       tz,
       insight.kind === 'person-context'
         ? noteByPerson.get(insight.person.key) ?? null
-        : null
+        : null,
+      copy
     ),
   }));
 }

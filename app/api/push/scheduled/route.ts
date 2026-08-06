@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { pushSubscriptions } from '@/lib/db/schema/push-subscriptions';
 import { users } from '@/lib/db/schema/auth';
-import { eq } from 'drizzle-orm';
+import { isNotNull } from 'drizzle-orm';
 import { validateCronSecret } from '@/lib/push/utils';
 import { pruneNotificationLedger } from '@/lib/push/dedupe';
 import { isBriefingDue } from '@/lib/push/briefing-gate';
@@ -41,15 +40,19 @@ export async function GET(req: Request) {
 
     // Cheap: scheduling fields only. Everything expensive is deferred to the
     // worker, which re-loads the full row for the users that survive the gate.
+    //
+    // A linked Telegram chat is what makes someone reachable — this used to
+    // join `push_subscriptions`, which quietly excluded anyone who had not
+    // granted browser notifications, i.e. nearly everyone.
     const candidates = await db
-      .selectDistinct({
+      .select({
         userId: users.id,
         timezone: users.timezone,
         briefingHour: users.briefingHour,
         briefingEnabled: users.briefingEnabled,
       })
-      .from(pushSubscriptions)
-      .innerJoin(users, eq(users.id, pushSubscriptions.userId));
+      .from(users)
+      .where(isNotNull(users.telegramChatId));
 
     const due = candidates.filter((c) => isBriefingDue(c, now));
 

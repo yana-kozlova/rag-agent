@@ -113,9 +113,20 @@ export async function fetchEventsBetween(
   );
 }
 
-/** Formats an event's start as HH:mm in the user's zone. */
-export function formatEventTime(event: CalendarEvent, tz: string): string {
-  if (event.allDay) return 'all day';
+/**
+ * Formats an event's start as HH:mm in the user's zone.
+ *
+ * The clock is `en-GB` in every language — 24-hour digits are digits, and a
+ * locale that formats them differently would only make the briefing's aligned
+ * column of times ragged. Only the all-day label is words, so only it is passed
+ * in.
+ */
+export function formatEventTime(
+  event: CalendarEvent,
+  tz: string,
+  allDayLabel = 'all day'
+): string {
+  if (event.allDay) return allDayLabel;
   return new Intl.DateTimeFormat('en-GB', {
     timeZone: tz,
     hour: '2-digit',

@@ -4,6 +4,7 @@ import { env } from '@/lib/env.mjs';
 import { logLlmUsage } from '@/lib/ai/telemetry';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 import type { DayNote } from './day-notes';
+import { copyFor, type NotificationCopy } from './copy';
 import {
   type CalendarEvent,
   fetchEventsBetween,
@@ -31,20 +32,65 @@ export async function fetchTodayEvents(
 }
 
 /**
- * Deterministic fallback body — used when there's no LLM key, when the model
- * call fails, or when there's simply nothing worth spending a token on.
- * A briefing that always arrives matters more than a clever one.
+ * How many events get a line of their own before the rest collapse into a
+ * count. Past this the briefing stops being scannable and becomes the calendar.
  */
-function plainBriefing(events: BriefingEvent[], tz: string): string {
-  if (events.length === 0) return 'Nothing scheduled today. Your calendar is clear.';
+const MAX_EVENT_LINES = 8;
 
-  const lines = events
-    .slice(0, 4)
-    .map((e) => `${formatEventTime(e, tz)} ${e.title}`);
+/**
+ * Ceiling on the model's lead paragraph.
+ *
+ * It used to be 180 characters for the whole notification, because a browser
+ * notification shows two lines and truncates the rest. Telegram shows 4096, so
+ * the constraint is now editorial rather than technical: long enough to name a
+ * clash and work in a detail from a note, short enough that the schedule below
+ * is still the first thing the eye lands on.
+ */
+const MAX_HEADLINE = 400;
 
-  if (events.length > 4) lines.push(`+${events.length - 4} more`);
+/**
+ * Ceiling on one event's title.
+ *
+ * Calendar titles are user data and can run to a thousand characters. Eight of
+ * those overflow Telegram's 4096-character message, which `splitForTelegram`
+ * then breaks in two — and since a keyboard can only ride on the last piece,
+ * "Save" would file half a briefing and "Later" would postpone the other half.
+ * Truncating is also simply what a scannable list needs.
+ */
+const MAX_TITLE = 80;
 
-  return lines.join(' · ');
+/**
+ * The schedule itself — built here, never asked of the model.
+ *
+ * A model that is handed times and asked to repeat them will eventually repeat
+ * one wrong, and a briefing that misstates when a meeting starts is worse than
+ * no briefing. So the model writes the sentence about the day and this writes
+ * the day.
+ *
+ * A briefing that always arrives matters more than a clever one, so this is
+ * also what goes out on its own when there is no model to call.
+ */
+function scheduleLines(
+  events: BriefingEvent[],
+  tz: string,
+  copy: NotificationCopy
+): string {
+  const shown = events.slice(0, MAX_EVENT_LINES);
+  const lines = shown.map(
+    (e) => `${formatEventTime(e, tz, copy.briefing.allDay)} ${truncate(e.title)}`
+  );
+
+  const hidden = events.length - shown.length;
+  if (hidden > 0) lines.push(copy.briefing.more(hidden));
+
+  return lines.join('\n');
+}
+
+function truncate(title: string): string {
+  const trimmed = title.trim();
+  return trimmed.length > MAX_TITLE
+    ? `${trimmed.slice(0, MAX_TITLE).trimEnd()}…`
+    : trimmed;
 }
 
 /**
@@ -58,20 +104,27 @@ export async function generateBriefing(
    * Notes already retrieved for this day. Passed in rather than fetched here so
    * the morning pass performs one retrieval total — see `fetchDayNotes`.
    */
-  dayNotes: DayNote[] = []
+  dayNotes: DayNote[] = [],
+  locale?: string | null
 ): Promise<Briefing> {
+  const copy = copyFor(locale);
   const eventCount = events.length;
 
   if (eventCount === 0) {
     return {
-      title: '☀️ Good morning',
-      body: plainBriefing(events, tz),
+      title: copy.briefing.morningTitle,
+      body: copy.briefing.nothingScheduled,
       eventCount: 0,
     };
   }
 
+  const schedule = scheduleLines(events, tz, copy);
+
   const scheduleText = events
-    .map((e) => `- ${formatEventTime(e, tz)} ${e.title}${e.location ? ` (${e.location})` : ''}`)
+    .map(
+      (e) =>
+        `- ${formatEventTime(e, tz, copy.briefing.allDay)} ${e.title}${e.location ? ` (${e.location})` : ''}`
+    )
     .join('\n');
 
   const notes = dayNotes
@@ -80,7 +133,7 @@ export async function generateBriefing(
     .join('\n');
 
   if (!env.OPENAI_API_KEY) {
-    return { title: '☀️ Good morning', body: plainBriefing(events, tz), eventCount };
+    return { title: copy.briefing.thingsToday(eventCount), body: schedule, eventCount };
   }
 
   const modelName = env.AI_CHAT_MODEL || 'gpt-4o-mini';
@@ -90,11 +143,13 @@ export async function generateBriefing(
     const { text, usage } = await generateText({
       model: openai(modelName),
       system: [
-        'You write a single-sentence morning briefing for a push notification.',
-        'Hard limit: 180 characters. No greeting, no emoji, no markdown, no preamble.',
-        'Lead with what matters most: the first commitment, or a clash, or a tight gap.',
-        'Mention times as HH:mm. If saved notes are relevant to a meeting, work in one concrete detail.',
+        'You write the opening paragraph of a morning briefing.',
+        'The schedule is listed underneath your text by the application, so never list or enumerate the events yourself — say what the shape of the day is.',
+        `Hard limit: ${MAX_HEADLINE} characters. Two or three sentences at most. No greeting, no emoji, no markdown, no preamble.`,
+        'Lead with what matters most: a clash, a tight gap, a long unbroken stretch, or the one commitment the day turns on.',
+        'Mention times as HH:mm, and only when the point needs one. If saved notes are relevant to a meeting, work in one concrete detail.',
         'Write plainly, like a competent assistant. Never invent events or details.',
+        copy.writeIn,
       ].join(' '),
       prompt: [
         `Today's schedule (timezone ${tz}):`,
@@ -118,15 +173,17 @@ export async function generateBriefing(
       note: `events=${eventCount}`,
     });
 
-    const body = text.trim().slice(0, 180);
+    const headline = text.trim().slice(0, MAX_HEADLINE);
 
     return {
-      title: `☀️ ${eventCount} ${eventCount === 1 ? 'thing' : 'things'} today`,
-      body: body || plainBriefing(events, tz),
+      title: copy.briefing.thingsToday(eventCount),
+      // The schedule is the briefing; the headline is what to make of it. A
+      // failed generation costs the sentence, never the list.
+      body: headline ? `${headline}\n\n${schedule}` : schedule,
       eventCount,
     };
   } catch (error) {
     console.error('[push/briefing] Generation failed, using plain briefing:', error);
-    return { title: '☀️ Good morning', body: plainBriefing(events, tz), eventCount };
+    return { title: copy.briefing.thingsToday(eventCount), body: schedule, eventCount };
   }
 }

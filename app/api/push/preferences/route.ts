@@ -6,6 +6,7 @@ import { users } from '@/lib/db/schema/auth';
 import { eq } from 'drizzle-orm';
 import { getAccessTokenForUser, resolveUserTimezone } from '@/lib/push/google-token';
 import { isValidTimezone } from '@/lib/push/timezone';
+import { NOTIFICATION_LOCALES } from '@/lib/push/copy';
 
 export const runtime = 'nodejs';
 
@@ -22,6 +23,9 @@ const preferencesSchema = z
     quietHoursStart: hour.nullable().optional(),
     quietHoursEnd: hour.nullable().optional(),
     timezone: z.string().min(1).max(64).optional(),
+    // Which language notifications are written in. The web UI is English
+    // either way — this is only the bot's voice.
+    locale: z.enum(NOTIFICATION_LOCALES).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update' });
 
@@ -43,6 +47,7 @@ export async function GET() {
         quietHoursStart: users.quietHoursStart,
         quietHoursEnd: users.quietHoursEnd,
         timezone: users.timezone,
+        locale: users.locale,
       })
       .from(users)
       .where(eq(users.id, userId))

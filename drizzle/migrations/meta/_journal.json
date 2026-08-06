@@ -120,6 +120,20 @@
       "when": 1765500000000,
       "tag": "0016_drop_calendar_source",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1765600000000,
+      "tag": "0017_drop_push_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1765700000000,
+      "tag": "0018_notification_locale",
+      "breakpoints": true
     }
   ]
 }

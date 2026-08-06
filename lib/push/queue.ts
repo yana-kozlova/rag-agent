@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { notificationQueue } from '@/lib/db/schema/notification-queue';
 import { and, eq, inArray, lt, lte } from 'drizzle-orm';
-import type { PushPayload } from './utils';
+import type { NotificationPayload } from './utils';
 import { scheduleDelivery } from './qstash';
 
 /**
@@ -24,7 +24,7 @@ export type QueueStatus = 'pending' | 'sending' | 'sent' | 'failed';
 export async function enqueueNotification(params: {
   userId: string;
   notifyAt: Date;
-  payload: PushPayload;
+  payload: NotificationPayload;
   kind: string;
 }): Promise<string | null> {
   let id: string | null = null;
@@ -131,6 +131,54 @@ export async function reclaimStaleDeliveries(olderThanMinutes = 15): Promise<num
   } catch (error) {
     console.error('[push/queue] Failed to reclaim stale deliveries:', error);
     return 0;
+  }
+}
+
+/**
+ * How many times a delivery that failed for a transient reason is worth
+ * repeating. Bounded because "retry until it works" against a chat the user has
+ * blocked is a loop with no exit.
+ */
+const MAX_DELIVERY_ATTEMPTS = 3;
+
+/**
+ * A delivery that failed for a reason that might not repeat — a network blip, a
+ * 5xx from Telegram.
+ *
+ * The row goes back to `pending` so the next sweep tries again, unless it has
+ * spent its attempts, at which point it is retired for good. Without this a
+ * single failed request retired the notification permanently: `failed` is
+ * terminal, and `reclaimStaleDeliveries` only rescues rows still sitting in
+ * `sending`. The `attempts` column has been on this table since it was created
+ * and nothing ever wrote to it; this is what it was for.
+ */
+export async function recordFailedAttempt(id: string): Promise<'retrying' | 'gave-up'> {
+  try {
+    const [row] = await db
+      .select({ attempts: notificationQueue.attempts })
+      .from(notificationQueue)
+      .where(eq(notificationQueue.id, id))
+      .limit(1);
+
+    const previous = Number(row?.attempts);
+    const attempts = (Number.isFinite(previous) ? previous : 0) + 1;
+    const giveUp = attempts >= MAX_DELIVERY_ATTEMPTS;
+
+    await db
+      .update(notificationQueue)
+      .set(
+        giveUp
+          ? { status: 'failed', attempts: String(attempts), sentAt: new Date() }
+          : { status: 'pending', attempts: String(attempts), claimedAt: null }
+      )
+      .where(eq(notificationQueue.id, id));
+
+    return giveUp ? 'gave-up' : 'retrying';
+  } catch (error) {
+    // The row is still claimed, so `reclaimStaleDeliveries` will free it — the
+    // attempt simply goes uncounted, which is the safe direction to err in.
+    console.error(`[push/queue] Failed to record a failed attempt for ${id}:`, error);
+    return 'retrying';
   }
 }
 

@@ -4,7 +4,6 @@ import "./globals.css";
 import { auth } from "./api/auth/auth";
 import { Providers } from "./providers";
 import { LayoutShell } from "./components/nav/LayoutShell";
-import { ServiceWorkerRegister } from "./components/notifications/ServiceWorkerRegister";
 import { PreconnectLinks } from "./components/head/PreconnectLinks";
 import { THEME_INIT_SCRIPT } from "./components/theme/theme";
 
@@ -50,7 +49,6 @@ export default async function RootLayout({
       >
         <PreconnectLinks />
         <Providers session={session}>
-          <ServiceWorkerRegister />
           <LayoutShell>
             {children}
           </LayoutShell>

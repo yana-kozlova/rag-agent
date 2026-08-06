@@ -1,8 +1,7 @@
 import { db } from '@/lib/db';
-import { pushSubscriptions } from '@/lib/db/schema/push-subscriptions';
 import { users } from '@/lib/db/schema/auth';
 import { eq } from 'drizzle-orm';
-import { sendToSubscriptions } from '@/lib/push/utils';
+import { deliverToUser } from '@/lib/push/deliver';
 import { getAccessTokenForUser, resolveUserTimezone } from '@/lib/push/google-token';
 import { getLocalHour, getLocalDateKey } from '@/lib/push/timezone';
 import { claimNotification } from '@/lib/push/dedupe';
@@ -36,6 +35,7 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
       proactiveEnabled: users.proactiveEnabled,
       quietHoursStart: users.quietHoursStart,
       quietHoursEnd: users.quietHoursEnd,
+      locale: users.locale,
     })
     .from(users)
     .where(eq(users.id, userId))
@@ -65,31 +65,16 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
   // scan matches it against who the user is meeting.
   const notes = await fetchDayNotes(userId, events);
 
-  const briefing = await generateBriefing(events, tz, notes);
+  const briefing = await generateBriefing(events, tz, notes, u.locale);
 
-  const subs = await db
-    .select({ endpoint: pushSubscriptions.endpoint, keys: pushSubscriptions.keys })
-    .from(pushSubscriptions)
-    .where(eq(pushSubscriptions.userId, userId));
-
-  const { successCount } = await sendToSubscriptions(
-    subs.map((s) => ({ endpoint: s.endpoint, keys: s.keys })),
+  const delivered = await deliverToUser(
+    userId,
     {
       title: briefing.title,
       body: briefing.body,
-      data: {
-        url: '/',
-        type: 'daily-briefing',
-        date: getLocalDateKey(now, tz),
-        snoozeMinutes: 60,
-      },
-      icon: '/avatars/bot.svg',
-      badge: '/avatars/bot.svg',
-      tag: 'daily-briefing',
-      actions: [
-        { action: 'snooze', title: 'Later' },
-        { action: 'save-note', title: 'Save' },
-      ],
+      actions: ['snooze', 'save'],
+      snoozeMinutes: 60,
+      data: { type: 'daily-briefing', date: getLocalDateKey(now, tz) },
     },
     'push/briefing-user'
   );
@@ -109,6 +94,7 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
         quietHoursStart: u.quietHoursStart,
         quietHoursEnd: u.quietHoursEnd,
       },
+      locale: u.locale,
     });
 
     for (const insight of insights) {
@@ -125,5 +111,5 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
     }
   }
 
-  return { status: 'sent', sent: successCount, queued };
+  return { status: 'sent', sent: delivered === 'sent' ? 1 : 0, queued };
 }

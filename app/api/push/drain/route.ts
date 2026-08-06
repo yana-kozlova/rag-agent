@@ -1,47 +1,41 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { db } from '@/lib/db';
-import { pushSubscriptions } from '@/lib/db/schema/push-subscriptions';
-import { eq } from 'drizzle-orm';
-import { sendToSubscriptions, validateCronSecret } from '@/lib/push/utils';
+import { validateCronSecret } from '@/lib/push/utils';
+import { deliverToUser, type DeliveryResult } from '@/lib/push/deliver';
 import {
   claimDueNotifications,
   claimQueueRow,
   markQueueRow,
+  recordFailedAttempt,
   reclaimStaleDeliveries,
 } from '@/lib/push/queue';
-import type { PushPayload } from '@/lib/push/utils';
+import type { NotificationPayload } from '@/lib/push/utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-type QueueRow = { id: string; userId: string; payload: PushPayload };
+type QueueRow = { id: string; userId: string; payload: NotificationPayload };
 
 /**
  * Delivers one already-claimed row. The caller owns it, so this is free to
  * mark the outcome without re-checking status.
+ *
+ * The two failures are not the same failure. An account with no Telegram chat
+ * linked is retired immediately — nothing about the next sweep would make a
+ * missing link appear. A request Telegram did not accept goes back in the queue
+ * with its attempt counted, because the alternative is that one bad moment on
+ * the network silently discards a reminder the user asked for.
  */
-async function deliver(row: QueueRow): Promise<'sent' | 'failed'> {
-  const subs = await db
-    .select({ endpoint: pushSubscriptions.endpoint, keys: pushSubscriptions.keys })
-    .from(pushSubscriptions)
-    .where(eq(pushSubscriptions.userId, row.userId));
+async function deliver(row: QueueRow): Promise<DeliveryResult> {
+  const result = await deliverToUser(row.userId, row.payload, 'push/drain');
 
-  if (subs.length === 0) {
-    // Nothing to deliver to; retiring the row stops it being retried forever.
-    await markQueueRow(row.id, 'failed');
-    return 'failed';
+  if (result === 'sent' || result === 'unreachable') {
+    await markQueueRow(row.id, result === 'sent' ? 'sent' : 'failed');
+    return result;
   }
 
-  const { successCount } = await sendToSubscriptions(
-    subs.map((s) => ({ endpoint: s.endpoint, keys: s.keys })),
-    row.payload,
-    'push/drain'
-  );
-
-  const outcome = successCount > 0 ? 'sent' : 'failed';
-  await markQueueRow(row.id, outcome);
-  return outcome;
+  await recordFailedAttempt(row.id);
+  return 'failed';
 }
 
 /**
@@ -123,15 +117,19 @@ export async function GET(req: Request) {
 
     let sent = 0;
     let failed = 0;
+    let unreachable = 0;
 
     for (const row of due) {
       try {
         const outcome = await deliver(row);
         if (outcome === 'sent') sent++;
+        else if (outcome === 'unreachable') unreachable++;
         else failed++;
       } catch (error) {
+        // A throw here is as likely to be transient as a rejected send, so it
+        // is counted the same way rather than retiring the row outright.
         console.error(`[push/drain] Failed row ${row.id}:`, error);
-        await markQueueRow(row.id, 'failed');
+        await recordFailedAttempt(row.id);
         failed++;
       }
     }
@@ -140,6 +138,7 @@ export async function GET(req: Request) {
       ok: true,
       sent,
       failed,
+      unreachable,
       reclaimed,
       due: due.length,
       timestamp: now.toISOString(),

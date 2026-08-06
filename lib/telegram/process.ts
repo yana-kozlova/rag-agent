@@ -3,6 +3,7 @@ import { runWithUser } from '@/lib/auth/context';
 import { getGoogleAccessToken } from '@/lib/auth/google-token';
 import { sendMessage, sendTyping } from '@/lib/telegram/api';
 import { findUserByChatId, redeemLinkCode } from '@/lib/telegram/link';
+import { handleCallbackQuery, type TelegramCallbackQuery } from '@/lib/telegram/callbacks';
 import { getConversationId, loadRecentTurns, persistTurn } from '@/lib/telegram/history';
 import {
   isTranscriptionConfigured,
@@ -36,6 +37,8 @@ type TelegramUpdate = {
     document?: TelegramDocument;
     caption?: string;
   };
+  /** A button pressed under a notification this app sent. */
+  callback_query?: TelegramCallbackQuery;
 };
 
 /**
@@ -60,6 +63,14 @@ const HELP = [
 ].join('\n');
 
 export async function processUpdate(update: TelegramUpdate): Promise<void> {
+  // A button press, not a message: no chat type to check and no agent to run,
+  // and Telegram keeps the button spinning until it is acknowledged — so it
+  // goes first and ends the turn.
+  if (update?.callback_query) {
+    await handleCallbackQuery(update.callback_query);
+    return;
+  }
+
   const message = update?.message;
   const rawChatId = message?.chat?.id;
   if (!message || rawChatId === undefined || rawChatId === null) return;
