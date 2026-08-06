@@ -1,45 +1,11 @@
 import { z } from 'zod';
 import { findRelevantContent } from '@/lib/ai/embedding';
+import { expandQuery } from '@/lib/ai/query-expansion';
 import { getSessionOrNull } from '@/lib/utils/auth';
 
 // Configuration constants
 const MIN_SIMILARITY = 0.5; // Balanced threshold for relevance
 const MAX_RESULTS = 5; // Limit to top 5 most relevant results
-const MAX_QUERY_VARIATIONS = 4; // Maximum number of query variations to try
-
-// Helper function to generate query variations
-function generateQueryVariations(question: string): string[] {
-  const trimmed = question.trim();
-  const words = trimmed.split(/\s+/).filter(w => w.length > 0);
-  const variations: string[] = [trimmed]; // Always include original
-  
-  // If it's a short query (1-2 words), add context
-  if (words.length <= 2) {
-    variations.push(`information about ${trimmed}`);
-    variations.push(`details about ${trimmed}`);
-  }
-  
-  // If it's a question, try as a statement
-  if (trimmed.endsWith('?')) {
-    const statement = trimmed.slice(0, -1).trim();
-    variations.push(statement);
-    variations.push(`information about ${statement}`);
-  }
-  
-  // Extract key terms (remove common words)
-  const commonWords = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'when', 'where', 'who', 'why', 'how', 'about', 'my', 'me', 'i']);
-  const keyTerms = words
-    .filter(w => !commonWords.has(w.toLowerCase()))
-    .slice(0, 3); // Take up to 3 key terms
-  
-  if (keyTerms.length > 0) {
-    variations.push(keyTerms.join(' '));
-  }
-  
-  // Remove duplicates and limit
-  const unique = Array.from(new Set(variations));
-  return unique.slice(0, MAX_QUERY_VARIATIONS);
-}
 
 // Helper function to filter out negative responses
 function isNegativeResponse(content: string): boolean {
@@ -150,11 +116,11 @@ Only use results that are actually relevant to the user's question - don't inclu
       
       logContext.userId = userId;
       
-      // Generate multiple query variations
-      const queryVariations = generateQueryVariations(question);
+      // Rewrite the question into the queries actually worth searching.
+      const queryVariations = await expandQuery(question, 'getInformation');
       logContext.queryVariations = queryVariations;
-      
-      console.log(`[getInformation] Searching with ${queryVariations.length} query variations for: "${question}"`);
+
+      console.log(`[getInformation] Searching ${queryVariations.length} queries for "${question}": ${queryVariations.slice(1).join(' | ') || '(no expansion)'}`);
       
       // Execute all queries in parallel for better performance
       const queryPromises = queryVariations.map((query, idx) =>

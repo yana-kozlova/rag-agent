@@ -7,6 +7,7 @@ import { embeddings } from '@/lib/db/schema';
 import { resources } from '@/lib/db/schema';
 import { userTablesData, userTables } from '@/lib/db/schema';
 import { logLlmUsage } from './telemetry';
+import { fuseByRrf, recencyBoost, toTsQuery } from './retrieval';
 
 const EMBED_MODEL_NAME = env.AI_EMBED_MODEL || 'text-embedding-3-small';
 const embeddingModel = openai.embedding(EMBED_MODEL_NAME);
@@ -379,34 +380,16 @@ export const generateEmbedding = async (
   return result.embedding;
 };
 
-// Helper function to extract keywords from query for text search
-function extractKeywords(query: string): string[] {
-  const commonWords = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'when', 'where', 'who', 'why', 'how', 'about', 'my', 'me', 'i', 'you', 'your', 'this', 'that', 'these', 'those']);
-  return query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(word => word.length > 2 && !commonWords.has(word))
-    .slice(0, 5); // Limit to 5 keywords
-}
-
-// Helper function to calculate keyword match score
-function calculateKeywordScore(content: string, keywords: string[]): number {
-  if (keywords.length === 0) return 0;
-  
-  const lowerContent = content.toLowerCase();
-  let matches = 0;
-  for (const keyword of keywords) {
-    if (lowerContent.includes(keyword)) {
-      matches++;
-    }
-  }
-  return matches / keywords.length; // Normalize to 0-1
-}
-
-// Helper function to combine semantic and keyword scores
-function combineScores(semanticScore: number, keywordScore: number, semanticWeight = 0.7, keywordWeight = 0.3): number {
-  return semanticScore * semanticWeight + keywordScore * keywordWeight;
-}
+/**
+ * How many candidates each retriever contributes before fusion.
+ *
+ * Wider than the number returned, and necessarily so: a document that only one
+ * retriever ranks well has to appear in that retriever's list at all before
+ * fusion can promote it. Cutting each list at `topK` would throw away exactly
+ * the results the second retriever was added to find.
+ */
+const CANDIDATE_MULTIPLIER = 4;
+const MIN_CANDIDATES = 24;
 
 export const findRelevantContent = async (
   userQuery: string,
@@ -447,8 +430,9 @@ export const findRelevantContent = async (
 
     const vectorString = `[${userQueryEmbedded.join(',')}]`;
 
-    // Extract keywords for hybrid search
-    const keywords = useHybridSearch ? extractKeywords(userQuery) : [];
+    // The lexical half of the pair. Null when the query holds nothing to match
+    // on — punctuation, a bare emoji — in which case the vector search runs alone.
+    const tsQuery = useHybridSearch ? toTsQuery(userQuery) : null;
 
     // Cosine distance (<=>) matches the HNSW index built with vector_cosine_ops,
     // which lets Postgres use the index for ORDER BY instead of a sequential scan.
@@ -456,10 +440,10 @@ export const findRelevantContent = async (
     const distance = sql<number>`${embeddings.embedding} <=> ${sql.raw(`'${vectorString}'::vector`)}`;
     const similarity = sql<number>`1 - (${embeddings.embedding} <=> ${sql.raw(`'${vectorString}'::vector`)})`;
     const topK = env.RAG_TOP_K ?? 8;
-    
+
     // Build where clause
     let whereClause: any = sql`(
-      (${embeddings.source} IN ('resource', 'calendar') AND ${resources.userId} = ${userId}) OR
+      (${embeddings.source} = 'resource' AND ${resources.userId} = ${userId}) OR
       (${embeddings.source} = 'table' AND ${userTables.userId} = ${userId})
     )`;
     
@@ -473,7 +457,7 @@ export const findRelevantContent = async (
         dateConditions.push(sql`${resources.createdAt} <= ${sql.raw(`'${options.maxDate.toISOString()}'::timestamp`)}`);
       }
       
-      // Apply date filters only to resources/calendar, not tables
+      // Apply date filters only to resources, not tables
       const dateFilter = dateConditions.length === 1 
         ? dateConditions[0]
         : dateConditions.length > 1
@@ -488,76 +472,104 @@ export const findRelevantContent = async (
       }
     }
     
-    // Fetch more results than needed for hybrid ranking
-    const fetchLimit = useHybridSearch ? topK * 2 : topK;
-    
-    const rows = await db
-      .select({
-        content: embeddings.content,
-        similarity,
-        source: embeddings.source,
-        sourceId: embeddings.sourceId,
-        googleEventId: resources.googleEventId,
-        resourceMetadata: resources.metadata,
-        embeddingMetadata: embeddings.metadata,
-        createdAt: resources.createdAt,
-        updatedAt: resources.updatedAt,
-      })
-      .from(embeddings)
-      .leftJoin(resources, sql`${resources.id} = ${embeddings.sourceId} AND ${embeddings.source} IN ('resource', 'calendar')`)
-      .leftJoin(userTablesData, sql`${userTablesData.id} = ${embeddings.sourceId} AND ${embeddings.source} = 'table'`)
-      .leftJoin(userTables, sql`${userTables.id} = ${userTablesData.userTableId}`)
+    const candidateLimit = Math.max(topK * CANDIDATE_MULTIPLIER, MIN_CANDIDATES);
+
+    // Both retrievers select the same shape, so fusion can treat their rows
+    // interchangeably. `similarity` is computed on the lexical side too: a row
+    // found only by keyword still needs a real cosine score, because callers
+    // threshold on it.
+    const selection = {
+      id: embeddings.id,
+      content: embeddings.content,
+      similarity,
+      source: embeddings.source,
+      sourceId: embeddings.sourceId,
+      resourceMetadata: resources.metadata,
+      embeddingMetadata: embeddings.metadata,
+      createdAt: resources.createdAt,
+      updatedAt: resources.updatedAt,
+    };
+
+    const withOwnershipJoins = (query: any) =>
+      query
+        .from(embeddings)
+        .leftJoin(resources, sql`${resources.id} = ${embeddings.sourceId} AND ${embeddings.source} = 'resource'`)
+        .leftJoin(userTablesData, sql`${userTablesData.id} = ${embeddings.sourceId} AND ${embeddings.source} = 'table'`)
+        .leftJoin(userTables, sql`${userTables.id} = ${userTablesData.userTableId}`);
+
+    const vectorSearch = withOwnershipJoins(db.select(selection))
       .where(whereClause)
       .orderBy(distance)
-      .limit(fetchLimit);
-    
-    // Apply hybrid search ranking if enabled
-    let rankedResults = rows;
-    if (useHybridSearch && keywords.length > 0) {
-      rankedResults = rows.map(row => {
-        const semanticScore = typeof row.similarity === 'number' ? row.similarity : 0;
-        const keywordScore = calculateKeywordScore(row.content || '', keywords);
-        const combinedScore = combineScores(semanticScore, keywordScore);
-        
-        return {
-          ...row,
-          similarity: combinedScore,
-          semanticScore,
-          keywordScore,
-        };
-      }).sort((a, b) => {
-        const scoreA = typeof a.similarity === 'number' ? a.similarity : 0;
-        const scoreB = typeof b.similarity === 'number' ? b.similarity : 0;
-        return scoreB - scoreA;
-      });
+      .limit(candidateLimit);
+
+    // `content_tsv` is a generated column (migration 0015) and is not modelled
+    // in the Drizzle schema, so it is referenced by name. `to_tsquery` takes
+    // the query as a bound parameter — never interpolated text.
+    const lexicalSearch = tsQuery
+      ? withOwnershipJoins(
+          db.select({
+            ...selection,
+            lexicalRank: sql<number>`ts_rank_cd(${embeddings}.content_tsv, to_tsquery('simple', ${tsQuery}))`,
+          })
+        )
+          .where(and(whereClause, sql`${embeddings}.content_tsv @@ to_tsquery('simple', ${tsQuery})`))
+          .orderBy(sql`ts_rank_cd(${embeddings}.content_tsv, to_tsquery('simple', ${tsQuery})) DESC`)
+          .limit(candidateLimit)
+      : Promise.resolve([] as any[]);
+
+    // Independent queries against different indexes; there is nothing to
+    // serialise them for. A lexical failure must not take the search down with
+    // it — the vector half alone is the old behaviour, which is still useful.
+    const [vectorRows, lexicalRows] = await Promise.all([
+      vectorSearch,
+      Promise.resolve(lexicalSearch).catch((err) => {
+        console.error('[RAG Search] Lexical search failed, falling back to vector only:', err);
+        return [] as any[];
+      }),
+    ]);
+
+    const fused = fuseByRrf<any>([vectorRows, lexicalRows], (row) => row.id);
+
+    // One row object per chunk, whichever list it arrived in.
+    const byId = new Map<string, any>();
+    for (const row of [...vectorRows, ...lexicalRows]) {
+      if (!byId.has(row.id)) byId.set(row.id, row);
     }
-    
-    // Take top K results
-    const topResults = rankedResults.slice(0, topK);
-    
-    // Format results to match expected structure
-    const formattedResults = topResults.map(row => ({
+
+    const now = new Date();
+    const ranked = [...byId.values()]
+      .map((row) => ({
+        row,
+        score: (fused.get(row.id) ?? 0) + recencyBoost(row.createdAt, now),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
+
+    // `similarity` stays what its name says — cosine similarity, 0 to 1 — so
+    // that the thresholds callers apply to it keep meaning something. The
+    // fusion score rides alongside as `score`; it is a rank-derived number and
+    // is not comparable across queries.
+    const formattedResults = ranked.map(({ row, score }) => ({
       content: row.content,
       similarity: row.similarity,
+      score,
       source: row.source,
       sourceId: row.sourceId,
-      googleEventId: row.googleEventId,
       metadata: row.embeddingMetadata || row.resourceMetadata || null,
     }));
-    
+
     // Cache results
     if (useCache) {
       const { embeddingCache } = await import('./embedding-cache');
       embeddingCache.set(userId, userQuery, formattedResults);
     }
-    
+
     const executionTime = Date.now() - startTime;
-    if (useHybridSearch && keywords.length > 0) {
-      console.log(`[RAG Search] Found ${formattedResults.length} results using hybrid search (keywords: ${keywords.join(', ')}) in ${executionTime}ms`);
-    } else {
-      console.log(`[RAG Search] Found ${formattedResults.length} results in ${executionTime}ms`);
-    }
-    
+    console.log(
+      `[RAG Search] ${formattedResults.length} results in ${executionTime}ms ` +
+        `(vector ${vectorRows.length}, lexical ${lexicalRows.length}${tsQuery ? '' : ' — no lexical terms'})`
+    );
+
     return formattedResults;
   } catch (error) {
     console.error('[RAG Search] Error finding relevant content:', error);

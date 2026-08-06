@@ -2,15 +2,15 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { FileText, Table2, CalendarDays, Search, ArrowUpRight } from 'lucide-react';
+import { FileText, Table2, Search, ArrowUpRight } from 'lucide-react';
 import { formatRelevance } from './formatting';
 
 type Result = {
   content?: string;
   relevance?: number | null;
   rank?: number;
-  source?: 'resource' | 'table' | 'calendar' | string;
-  /** Unified id of whatever was matched — the note, table or event. */
+  source?: 'resource' | 'table' | string;
+  /** Unified id of whatever was matched — the note or the table row. */
   sourceId?: string | null;
   tableInfo?: { tableId?: string; tableTitle?: string } | null;
 };
@@ -19,7 +19,7 @@ type Result = {
  * Where a citation leads, or null when it leads nowhere.
  *
  * A quoted fragment invites you to check the source, so the ones we can open —
- * notes and tables — become links. Calendar matches stay plain: there is no
+ * notes and tables — become links. Anything else stays plain text: there is no
  * page of ours to land on.
  */
 function hrefFor(result: Result): string | null {
@@ -33,7 +33,6 @@ function hrefFor(result: Result): string | null {
 const SOURCE_ICON: Record<string, typeof FileText> = {
   resource: FileText,
   table: Table2,
-  calendar: CalendarDays,
 };
 
 const COLLAPSED_CHARS = 180;

@@ -59,7 +59,7 @@ IMPORTANT:
       // Get unique source IDs for resources only (not tables - they need separate handling)
       const resourceSourceIds = [...new Set(
         relevantResults
-          .filter((r: any) => r.source === 'resource' || r.source === 'calendar')
+          .filter((r: any) => r.source === 'resource')
           .map((r: any) => r.sourceId)
           .filter(Boolean)
       )];

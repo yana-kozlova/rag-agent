@@ -11,7 +11,6 @@ export type Resource = {
   id: string;
   title?: string | null;
   content: string;
-  source: string;
   metadata?: any;
   createdAt: string | Date;
   updatedAt: string | Date;

@@ -50,7 +50,6 @@ export async function GET(req: Request) {
         id: resources.id,
         title: resources.title,
         content: resources.content,
-        source: resources.source,
         metadata: resources.metadata,
         createdAt: resources.createdAt,
         updatedAt: resources.updatedAt,
