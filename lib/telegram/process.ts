@@ -4,7 +4,11 @@ import { getGoogleAccessToken } from '@/lib/auth/google-token';
 import { sendMessage, sendTyping } from '@/lib/telegram/api';
 import { findUserByChatId, redeemLinkCode } from '@/lib/telegram/link';
 import { getConversationId, loadRecentTurns, persistTurn } from '@/lib/telegram/history';
-import { isTranscriptionConfigured, transcribeVoice } from '@/lib/telegram/transcribe';
+import {
+  isTranscriptionConfigured,
+  transcribeVoice,
+  type TranscriptionFailure,
+} from '@/lib/telegram/transcribe';
 import { downloadFile } from '@/lib/telegram/api';
 
 /**
@@ -133,12 +137,28 @@ async function handleStart(chatId: string, text: string): Promise<void> {
   await sendMessage(chatId, `Готово, чат прив’язано${user.name ? `, ${user.name}` : ''}. ${HELP}`);
 }
 
+/**
+ * What to say for each way a transcription can come back empty.
+ *
+ * Only the last one is about the recording. Telling someone to "try speaking
+ * again" when the key is missing sends them in a loop, so the two setup
+ * failures name themselves — this bot has one user, and that user is also the
+ * person who can fix them.
+ */
+const VOICE_FAILURE: Record<TranscriptionFailure, string> = {
+  unconfigured: 'Розшифровка голосових не налаштована — немає GROQ_API_KEY. Напиши текстом.',
+  unavailable: 'Сервіс розшифровки не відповідає — подробиці в логах. Напиши текстом, будь ласка.',
+  empty: 'Не вдалось розпізнати 🤷 Спробуй ще раз або напиши текстом.',
+};
+
 /** Voice note → text, echoed back so a misheard word is visible immediately. */
 async function readVoice(chatId: string, fileId?: string): Promise<string | null> {
   if (!fileId) return null;
 
+  // Checked up front only to skip a pointless download; `transcribeVoice`
+  // reports the same failure on its own.
   if (!isTranscriptionConfigured()) {
-    await sendMessage(chatId, 'Голосові поки не налаштовані — напиши текстом, будь ласка.');
+    await sendMessage(chatId, VOICE_FAILURE.unconfigured);
     return null;
   }
 
@@ -150,12 +170,12 @@ async function readVoice(chatId: string, fileId?: string): Promise<string | null
     return null;
   }
 
-  const transcript = await transcribeVoice(audio);
-  if (!transcript) {
-    await sendMessage(chatId, 'Не вдалось розпізнати 🤷 Спробуй ще раз або напиши текстом.');
+  const result = await transcribeVoice(audio);
+  if (!result.ok) {
+    await sendMessage(chatId, VOICE_FAILURE[result.failure]);
     return null;
   }
 
-  await sendMessage(chatId, `🎤 ${transcript}`);
-  return transcript;
+  await sendMessage(chatId, `🎤 ${result.text}`);
+  return result.text;
 }
