@@ -5,6 +5,7 @@ import { generateObject } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { env } from '@/lib/env.mjs';
 import { z } from 'zod';
+import { EXTRACTABLE_RESOURCE_TYPES } from '@/lib/utils/resource-types';
 import { logLlmUsage } from './telemetry';
 
 // Schema for structured information extraction
@@ -68,7 +69,7 @@ export const informationExtractionSchema = z.object({
   userName: z.string().nullish().default(null).describe('User name if mentioned or can be inferred from context'),
 
   // Content type classification
-  contentType: z.enum(['note', 'document', 'schedule', 'person', 'project', 'skill', 'event', 'learning', 'preference', 'need', 'other']).default('note').describe('Type of content'),
+  contentType: z.enum(EXTRACTABLE_RESOURCE_TYPES).default('note').describe('Type of content'),
 });
 
 export type ExtractedInformation = z.infer<typeof informationExtractionSchema>;

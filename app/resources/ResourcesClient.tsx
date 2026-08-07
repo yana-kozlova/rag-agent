@@ -6,6 +6,13 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { renderSimpleMarkdown } from '@/app/components/utils/markdown';
 import { UPLOAD_ACCEPT_ATTRIBUTE, rejectionReason } from '@/lib/utils/uploadable';
+import type { TypeFacet } from '@/lib/utils/resource-facets';
+import {
+  RESOURCE_TYPES,
+  resourceTypeIcon,
+  resourceTypeLabel,
+  type ResourceType,
+} from '@/lib/utils/resource-types';
 
 export type Resource = {
   id: string;
@@ -21,12 +28,14 @@ export default function ResourcesClient({
   initialTotalCount,
   initialTags,
   initialCategories,
+  initialTypes,
   pageSize,
 }: {
   initialResources: Resource[];
   initialTotalCount: number;
   initialTags: string[];
   initialCategories: string[];
+  initialTypes: TypeFacet[];
   pageSize: number;
 }) {
   const [resources, setResources] = useState<Resource[]>(initialResources);
@@ -40,6 +49,7 @@ export default function ResourcesClient({
   const [categoryFilterInput, setCategoryFilterInput] = useState<string>('');
   const [allTags, setAllTags] = useState<string[]>(initialTags);
   const [allCategories, setAllCategories] = useState<string[]>(initialCategories);
+  const [allTypes, setAllTypes] = useState<TypeFacet[]>(initialTypes);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -49,7 +59,7 @@ export default function ResourcesClient({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
-  const [editType, setEditType] = useState<'note' | 'document' | 'image' | 'person' | 'project' | 'skill' | 'learning' | 'schedule' | 'event' | 'other'>('note');
+  const [editType, setEditType] = useState<ResourceType>('note');
   const [editTags, setEditTags] = useState<string[]>([]);
   const [editCategory, setEditCategory] = useState<string>('');
   const [newTagInput, setNewTagInput] = useState('');
@@ -57,16 +67,20 @@ export default function ResourcesClient({
   const [uploadProgress, setUploadProgress] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadTagsAndCategories = async () => {
+  // Reloads every filterable value at once — an edit can introduce a tag,
+  // a category or a type, and the type it moves a note *away* from may have
+  // just lost its last member.
+  const loadFacets = async () => {
     try {
       const res = await fetch('/api/resources/tags');
       const data = await res.json();
       if (data.ok) {
         setAllTags(data.tags || []);
         setAllCategories(data.categories || []);
+        setAllTypes(data.types || []);
       }
     } catch (error) {
-      console.error('Error loading tags:', error);
+      console.error('Error loading filters:', error);
     }
   };
 
@@ -141,7 +155,9 @@ export default function ResourcesClient({
     if (result.success) {
       setResources(prev => prev.filter(r => r.id !== id));
       setTotalCount(prev => Math.max(0, prev - 1));
-      
+      loadFacets();
+
+
       // If current page becomes empty and not first page, go to previous page
       if (resources.length === 1 && currentPage > 1) {
         loadResources(currentPage - 1);
@@ -158,8 +174,7 @@ export default function ResourcesClient({
     setEditingId(resource.id);
     setEditTitle(resource.title || '');
     setEditContent(resource.content);
-    const currentType = getTypeLabel(resource.metadata);
-    setEditType(currentType as 'note' | 'document' | 'image' | 'person' | 'project' | 'skill' | 'learning' | 'schedule' | 'event' | 'other');
+    setEditType(getTypeLabel(resource.metadata) as ResourceType);
     const meta = resource.metadata as any;
     setEditTags(Array.isArray(meta?.tags) ? [...meta.tags] : []);
     setEditCategory(meta?.category || '');
@@ -197,8 +212,7 @@ export default function ResourcesClient({
       setEditTags([]);
       setEditCategory('');
       setNewTagInput('');
-      // Reload tags to get updated list
-      loadTagsAndCategories();
+      loadFacets();
     } else {
       alert(result.message || 'Failed to update resource');
     }
@@ -251,16 +265,15 @@ export default function ResourcesClient({
     return metadata.type || 'note';
   };
 
-  const formatDate = (date: string | Date) => {
-    const d = new Date(date);
-    return d.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
+  // Short by necessity: the card footer shares one line with two buttons, and
+  // "August 7, 2026, 10:23 PM" pushed them off it. The exact minute a note was
+  // saved is a detail for the note's own page, not for a grid.
+  const formatCardDate = (date: string | Date) =>
+    new Date(date).toLocaleDateString('en-GB', {
+      year: 'numeric',
+      month: 'short',
       day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
     });
-  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -376,19 +389,32 @@ export default function ResourcesClient({
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
+          {/* Options are the types this user's notes actually carry, counted —
+              a hand-written list is how this dropdown came to omit `image`,
+              `event`, `preference` and `need` while happily offering types
+              nothing had. If the current filter's last note was just deleted or
+              retyped it is kept as an option, so the select never shows a blank
+              value next to a filtered-down list. */}
           <select
             className="select select-bordered"
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
           >
-            <option value="">All types</option>
-            <option value="note">Notes</option>
-            <option value="document">Documents</option>
-            <option value="person">People</option>
-            <option value="project">Projects</option>
-            <option value="skill">Skills</option>
-            <option value="learning">Learning</option>
-            <option value="schedule">Schedule</option>
+            {/* Not `totalCount` — that one narrows to the active filter, so it
+                would report "All types (3)" while sitting on a filter. */}
+            <option value="">
+              All types ({allTypes.reduce((n, t) => n + t.count, 0)})
+            </option>
+            {allTypes.map(({ type, count }) => (
+              <option key={type} value={type}>
+                {resourceTypeIcon(type)} {resourceTypeLabel(type)} ({count})
+              </option>
+            ))}
+            {typeFilter && !allTypes.some(t => t.type === typeFilter) && (
+              <option value={typeFilter}>
+                {resourceTypeIcon(typeFilter)} {resourceTypeLabel(typeFilter)} (0)
+              </option>
+            )}
           </select>
           <div className="relative min-w-[200px]">
             <input
@@ -558,10 +584,26 @@ export default function ResourcesClient({
         </div>
       ) : (
         <>
-          <div className="grid gap-4">
+          {/* Square cards, four across on a wide screen. A note is scanned by
+              its title, type and tags far more often than it is read here, so
+              the grid trades preview length for how many are in front of you at
+              once. The card being edited breaks out to the full width — a form
+              does not fit in a quarter-width square.
+
+              The square starts at `sm`: in a single column it would be as tall
+              as the phone is wide, which is one note per screen — the opposite
+              of the point. */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredResources.map((resource) => (
-              <div key={resource.id} className="rounded-lg border border-base-300 bg-base-100">
-                <div className="p-4 md:p-5">
+              <div
+                key={resource.id}
+                className={
+                  editingId === resource.id
+                    ? 'col-span-full rounded-lg border border-base-300 bg-base-100'
+                    : 'relative flex h-56 flex-col overflow-hidden rounded-lg border border-base-300 bg-base-100 transition-colors hover:border-base-content/25 sm:h-auto sm:aspect-square'
+                }
+              >
+                <div className={editingId === resource.id ? 'p-4 md:p-5' : 'flex h-full flex-col p-4'}>
                   {editingId === resource.id ? (
                     <div className="space-y-4">
                       <input
@@ -571,21 +613,20 @@ export default function ResourcesClient({
                         value={editTitle}
                         onChange={(e) => setEditTitle(e.target.value)}
                       />
+                      {/* Every type the extractor can assign, so re-saving a
+                          note never silently reclassifies it: this list used to
+                          be missing `preference` and `need`, and opening one of
+                          those in the editor showed "Note". */}
                       <select
                         className="select select-bordered w-full"
                         value={editType}
-                        onChange={(e) => setEditType(e.target.value as typeof editType)}
+                        onChange={(e) => setEditType(e.target.value as ResourceType)}
                       >
-                        <option value="note">Note</option>
-                        <option value="document">Document</option>
-                        <option value="image">Image</option>
-                        <option value="person">Person</option>
-                        <option value="project">Project</option>
-                        <option value="skill">Skill</option>
-                        <option value="learning">Learning</option>
-                        <option value="schedule">Schedule</option>
-                        <option value="event">Event</option>
-                        <option value="other">Other</option>
+                        {RESOURCE_TYPES.map(type => (
+                          <option key={type} value={type}>
+                            {resourceTypeIcon(type)} {resourceTypeLabel(type)}
+                          </option>
+                        ))}
                       </select>
                       <div>
                         <label className="label">
@@ -682,99 +723,116 @@ export default function ResourcesClient({
                         </button>
                       </div>
                     </div>
-                  ) : (
+                  ) : (() => {
+                    const meta = (resource.metadata ?? {}) as any;
+                    const type = getTypeLabel(resource.metadata);
+                    const tags: string[] = Array.isArray(meta.tags) ? meta.tags : [];
+                    const title = resource.title || meta.personName || 'Untitled';
+                    return (
                     <>
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2 flex-wrap">
-                            <h2 className="text-base font-semibold">
-                              {resource.title || '(No title)'}
-                            </h2>
-                            <span className="badge badge-outline badge-sm">
-                              {getTypeLabel(resource.metadata)}
-                            </span>
-                            {(resource.metadata as any)?.category && (
-                              <span className="badge badge-secondary badge-sm">
-                                {(resource.metadata as any).category}
-                              </span>
-                            )}
-                          </div>
-                          {(resource.metadata as any)?.tags && Array.isArray((resource.metadata as any).tags) && (resource.metadata as any).tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mb-2">
-                              {(resource.metadata as any).tags.map((tag: string) => (
-                                <span
-                                  key={tag}
-                                  className="badge badge-primary badge-sm cursor-pointer"
-                                  onClick={() => {
-                                    if (!tagFilters.includes(tag)) {
-                                      addTagFilter(tag);
-                                    }
-                                  }}
-                                  title="Click to filter by this tag"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
+                      {/* The whole card opens the note. Laid over the card
+                          rather than wrapped around it, so the tag and action
+                          controls below stay real buttons instead of
+                          interactive elements nested inside a link. They sit on
+                          z-10 to stay above it. */}
+                      <Link
+                        href={`/resources/${resource.id}`}
+                        className="absolute inset-0 z-0"
+                        aria-label={`Open ${title}`}
+                      />
+
+                      <div className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wide text-base-content/45">
+                        <span aria-hidden>{resourceTypeIcon(type)}</span>
+                        <span>{type}</span>
+                        {meta.category && (
+                          <span className="min-w-0 truncate normal-case">· {meta.category}</span>
+                        )}
+                      </div>
+
+                      <h2 className="mt-1.5 line-clamp-2 text-sm font-semibold leading-snug">
+                        {title}
+                      </h2>
+
+                      {meta.imageUrl ? (
+                        /* An image resource's text is a description of the
+                           picture, which is close to useless without it — so
+                           the card shows the picture and the description waits
+                           on the note's own page. */
+                        <div className="relative mt-2 min-h-0 flex-1 overflow-hidden rounded-md border border-base-300 bg-base-200">
+                          <Image
+                            src={meta.imageUrl}
+                            alt={title}
+                            fill
+                            sizes="(max-width: 640px) 100vw, (max-width: 1280px) 33vw, 25vw"
+                            className="object-cover"
+                            unoptimized
+                          />
+                        </div>
+                      ) : (
+                        /* Notes are written as markdown — headings, lists,
+                           bold — so the preview renders them rather than
+                           showing the raw asterisks and hashes. */
+                        <div className="relative mt-2 min-h-0 flex-1 overflow-hidden break-words text-[13px] leading-relaxed text-base-content/70">
+                          {renderSimpleMarkdown(
+                            resource.content.length > 400
+                              ? `${resource.content.substring(0, 400)}…`
+                              : resource.content
                           )}
-                          <p className="text-sm text-base-content/70 mb-2">
-                            {formatDate(resource.createdAt)}
-                          </p>
-                          {/* For an image resource the content below is a
-                              description of a picture, which is close to
-                              useless without the picture. Opens full size in a
-                              new tab — the card is too small to judge one. */}
-                          {(resource.metadata as any)?.imageUrl && (
-                            <a
-                              href={(resource.metadata as any).imageUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="block mb-3 w-fit"
+                          {/* The square clips mid-line; fading it out says
+                              "there is more" where a hard cut reads as the end
+                              of the note. */}
+                          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-base-100 to-transparent" />
+                        </div>
+                      )}
+
+                      {tags.length > 0 && (
+                        <div className="mt-2 flex flex-nowrap gap-1 overflow-hidden">
+                          {tags.slice(0, 3).map((tag: string) => (
+                            <button
+                              key={tag}
+                              type="button"
+                              className="badge badge-ghost badge-sm relative z-10 max-w-[7rem] shrink-0 truncate hover:badge-primary"
+                              onClick={() => {
+                                if (!tagFilters.includes(tag)) addTagFilter(tag);
+                              }}
+                              title="Click to filter by this tag"
                             >
-                              <Image
-                                src={(resource.metadata as any).imageUrl}
-                                alt={resource.title || 'Uploaded image'}
-                                width={320}
-                                height={240}
-                                className="max-h-60 w-auto rounded-lg border border-base-300 object-contain"
-                                unoptimized
-                              />
-                            </a>
+                              {tag}
+                            </button>
+                          ))}
+                          {tags.length > 3 && (
+                            <span className="shrink-0 self-center font-mono text-[11px] text-base-content/40">
+                              +{tags.length - 3}
+                            </span>
                           )}
-                          {/* Notes are written as markdown — headings, lists,
-                              bold — so the preview renders them rather than
-                              showing the raw asterisks and hashes. */}
-                          <div className="max-w-none break-words text-sm leading-relaxed">
-                            {renderSimpleMarkdown(
-                              resource.content.length > 500
-                                ? `${resource.content.substring(0, 500)}…`
-                                : resource.content
-                            )}
-                          </div>
+                        </div>
+                      )}
+
+                      <div className="mt-2 flex items-center justify-between gap-2 border-t border-base-200 pt-2">
+                        <span className="truncate font-mono text-[11px] text-base-content/40">
+                          {formatCardDate(resource.createdAt)}
+                        </span>
+                        {/* Compact and quiet: on a grid this dense, three
+                            full-size buttons per card would outweigh the
+                            content. Opening is the card itself. */}
+                        <div className="flex shrink-0 gap-1">
+                          <button
+                            className="btn btn-ghost btn-xs relative z-10"
+                            onClick={() => handleEdit(resource)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-xs relative z-10 text-error"
+                            onClick={() => handleDelete(resource.id)}
+                          >
+                            Delete
+                          </button>
                         </div>
                       </div>
-                      <div className="flex justify-end gap-2 mt-4">
-                        <Link
-                          href={`/resources/${resource.id}`}
-                          className="btn btn-sm btn-ghost"
-                        >
-                          Open
-                        </Link>
-                        <button
-                          className="btn btn-sm btn-outline"
-                          onClick={() => handleEdit(resource)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="btn btn-sm btn-error"
-                          onClick={() => handleDelete(resource.id)}
-                        >
-                          Delete
-                        </button>
-                      </div>
                     </>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
             ))}

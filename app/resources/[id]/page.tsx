@@ -6,6 +6,7 @@ import { auth } from '@/app/api/auth/auth';
 import { db } from '@/lib/db';
 import { resources } from '@/lib/db/schema';
 import { renderSimpleMarkdown } from '@/app/components/utils/markdown';
+import { resourceTypeIcon } from '@/lib/utils/resource-types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,21 +30,6 @@ type Metadata = {
   imageUrl?: string;
 };
 
-const TYPE_ICON: Record<string, string> = {
-  note: '📝',
-  person: '🧑',
-  preference: '💡',
-  need: '⏰',
-  project: '📁',
-  skill: '🛠️',
-  event: '📅',
-  schedule: '🗓️',
-  learning: '🎓',
-  document: '🔗',
-  image: '🖼️',
-  other: '📄',
-};
-
 export default async function ResourcePage({ params }: { params: { id: string } }) {
   const session = await auth();
   const userId = session?.user?.id;
@@ -61,7 +47,7 @@ export default async function ResourcePage({ params }: { params: { id: string } 
 
   const meta = (resource.metadata ?? {}) as Metadata;
   const title = resource.title || meta.personName || 'Untitled';
-  const icon = (meta.type && TYPE_ICON[meta.type]) || '📄';
+  const icon = resourceTypeIcon(meta.type ?? 'note');
   const facts = (meta.facts ?? []).map((f) => f.fact ?? f.text).filter(Boolean) as string[];
 
   return (

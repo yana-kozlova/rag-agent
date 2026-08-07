@@ -3,12 +3,15 @@ import { auth } from '@/app/api/auth/auth';
 import { db } from '@/lib/db';
 import { resources } from '@/lib/db/schema/resources';
 import { eq, desc, sql } from 'drizzle-orm';
+import { collectFacets } from '@/lib/utils/resource-facets';
 import ResourcesClient, { type Resource } from './ResourcesClient';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const PAGE_SIZE = 20;
+// Cards are square and laid out up to four across, so a page is 6 full rows.
+// Divisible by 2, 3 and 4 — no ragged last row at any breakpoint.
+const PAGE_SIZE = 24;
 
 export default async function ResourcesPage() {
   const session = await auth();
@@ -53,27 +56,17 @@ export default async function ResourcesPage() {
     updatedAt: r.updatedAt.toISOString(),
   }));
 
-  // Derive unique tags and categories from metadata
-  const tagSet = new Set<string>();
-  const categorySet = new Set<string>();
-  for (const row of tagRows) {
-    const meta = row.metadata as any;
-    if (meta?.tags && Array.isArray(meta.tags)) {
-      for (const tag of meta.tags) {
-        if (tag && typeof tag === 'string') tagSet.add(tag.trim());
-      }
-    }
-    if (meta?.category && typeof meta.category === 'string') {
-      categorySet.add(meta.category.trim());
-    }
-  }
+  // What the filters can offer, derived from the rows themselves rather than
+  // from a hand-written list that drifts away from them.
+  const facets = collectFacets(tagRows);
 
   return (
     <ResourcesClient
       initialResources={initialResources}
       initialTotalCount={totalCount}
-      initialTags={Array.from(tagSet).sort()}
-      initialCategories={Array.from(categorySet).sort()}
+      initialTags={facets.tags}
+      initialCategories={facets.categories}
+      initialTypes={facets.types}
       pageSize={PAGE_SIZE}
     />
   );
