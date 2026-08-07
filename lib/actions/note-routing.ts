@@ -25,6 +25,11 @@ import type { GraphCandidate } from './entities';
  * A pasted document mentions many people in passing; folding it into someone's
  * dossier would bury the dossier. Length is a blunt signal, but it is the one
  * that distinguishes "Андрій got a new job" from a wall of text he appears in.
+ *
+ * Measured against what the user actually wrote. Callers must not pass the
+ * length of anything they generated from it — a summariser that turns one line
+ * into six clears this ceiling on its own, and the note is then declined as an
+ * import for being verbose about a single fact.
  */
 const MAX_ROUTABLE_LENGTH = 600;
 

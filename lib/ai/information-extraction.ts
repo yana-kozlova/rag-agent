@@ -207,59 +207,106 @@ export async function extractStructuredInformation(
 }
 
 /**
- * Formats extracted information into content for storage
- * Only saves structured information, not the original message
+ * The note as text: the summary, and the key points under it.
+ *
+ * This used to append the facts, the entities and the needs as well, so one
+ * sentence came back out of the base said five times over — a prose summary,
+ * the same thing as bullets, the same thing again as subject-predicate-object,
+ * once more as "name - type (relationship)", and a last time as a need. A
+ * message asking for a pediatrician's certificate stored 743 characters of
+ * which 190 carried anything; the other 550 were restatements, and every one
+ * of them was embedded and searched as if it were a separate claim.
+ *
+ * All three dropped sections are already in `metadata`, in a machine-readable
+ * form the graph and the merge check read directly. Prose copies of them were
+ * never the source of anything — only volume. Three second-order costs went
+ * with them: the inflated length pushed notes past `MAX_ROUTABLE_LENGTH` so
+ * dossier routing declined them as imports and wrote a new note instead (the
+ * exact duplication the routing exists to prevent), retrieval scored five
+ * near-identical chunks against a query that deserved one, and the resource
+ * page printed the key points a second time under text that already had them.
+ *
+ * `keyPoints` stays because it is the note, not a projection of it: these are
+ * the specifics — dates, names, amounts — and the embedding is built from this
+ * string, so dropping them would take the searchable detail out with the
+ * repetition.
  */
 export function formatStructuredContent(extracted: ExtractedInformation, originalContent: string, includeOriginal = false): string {
   const parts: string[] = [];
-  
-  // Add structured summary
+
   parts.push(extracted.structuredContent.summary);
-  parts.push('');
-  
-  // Add key points
+
   if (extracted.structuredContent.keyPoints.length > 0) {
+    parts.push('');
     extracted.structuredContent.keyPoints.forEach(point => {
       parts.push(`- ${point}`);
     });
-    parts.push('');
   }
-  
-  // Add facts if any (formatted as natural statements)
-  if (extracted.facts.length > 0) {
-    extracted.facts.forEach(fact => {
-      const contextPart = fact.context ? `. ${fact.context}` : '';
-      parts.push(`${fact.subject} ${fact.predicate} ${fact.object}${contextPart}`);
-    });
-    parts.push('');
-  }
-  
-  // Add entities if any (as contextual information)
-  if (extracted.entities.length > 0) {
-    extracted.entities.forEach(entity => {
-      const relPart = entity.relationship ? ` (${entity.relationship})` : '';
-      parts.push(`${entity.name} - ${entity.type}${relPart}`);
-    });
-    parts.push('');
-  }
-  
-  // Add needs if any
-  if (extracted.needs.length > 0) {
-    extracted.needs.forEach(need => {
-      const priorityPart = need.priority ? ` [${need.priority} priority]` : '';
-      const contextPart = need.context ? `. ${need.context}` : '';
-      parts.push(`${need.need}${priorityPart}${contextPart}`);
-    });
-    parts.push('');
-  }
-  
+
   // Only include original content if explicitly requested (for debugging/reference)
   if (includeOriginal) {
+    parts.push('');
     parts.push('---');
     parts.push('Original message:');
     parts.push(originalContent);
   }
-  
+
   return parts.join('\n').trim();
+}
+
+/** The three blocks the formatter above used to append, rendered as they were. */
+const legacyProseSections = {
+  facts: (fact: { subject?: unknown; predicate?: unknown; object?: unknown; context?: unknown }) =>
+    `${fact.subject} ${fact.predicate} ${fact.object}${fact.context ? `. ${fact.context}` : ''}`,
+
+  entities: (entity: { name?: unknown; type?: unknown; relationship?: unknown }) =>
+    `${entity.name} - ${entity.type}${entity.relationship ? ` (${entity.relationship})` : ''}`,
+
+  needs: (need: { need?: unknown; priority?: unknown; context?: unknown }) =>
+    `${need.need}${need.priority ? ` [${need.priority} priority]` : ''}${need.context ? `. ${need.context}` : ''}`,
+};
+
+/**
+ * A stored note with the old restatements taken back out, or null if there were
+ * none to take.
+ *
+ * Used by `pnpm kb:compact` on notes written before the formatter stopped
+ * producing them. The text being cleaned has in some cases since been merged,
+ * rewritten by a model and edited by hand, so the only safe way to know a line
+ * was generated rather than typed is to generate it again from that same note's
+ * metadata and match it character for character. Nothing is matched by pattern;
+ * a sentence the user wrote cannot collide with this.
+ *
+ * Returns null rather than an empty note when the lines are all there is:
+ * `summary` defaults to an empty string, so an extraction that returned only
+ * facts produced a note made of nothing else, and emptying it would delete it
+ * in all but name. It keeps its repetition instead.
+ */
+export function stripLegacyProseSections(content: string, metadata: unknown): string | null {
+  const meta = (metadata ?? {}) as Record<string, unknown>;
+  const generated = new Set<string>();
+
+  for (const [key, render] of Object.entries(legacyProseSections)) {
+    const items = meta[key];
+    if (!Array.isArray(items)) continue;
+    for (const item of items) {
+      if (item && typeof item === 'object') generated.add(render(item as never).trim());
+    }
+  }
+
+  generated.delete('');
+  if (generated.size === 0) return null;
+
+  const lines = content.split('\n');
+  const kept = lines.filter((line) => !generated.has(line.trim()));
+  if (kept.length === lines.length) return null;
+
+  const result = kept
+    .join('\n')
+    // The removed blocks leave their separating blank lines behind.
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return result.length > 0 ? result : null;
 }
 

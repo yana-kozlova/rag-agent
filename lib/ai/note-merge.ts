@@ -44,20 +44,70 @@ function normalize(text: string): string {
 }
 
 /**
+ * Words too common to prove anything by their presence.
+ *
+ * An anchor is checked by its content words; matching on "for" or "від" would
+ * pass a rewrite that kept the grammar and lost the fact.
+ */
+const STOPWORDS = new Set([
+  'a', 'an', 'the', 'of', 'for', 'from', 'to', 'in', 'on', 'at', 'by', 'with',
+  'and', 'or', 'is', 'are', 'was', 'were', 'be', 'been', 'has', 'have', 'had',
+  'it', 'its', 'his', 'her', 'their',
+  'і', 'й', 'та', 'в', 'у', 'на', 'з', 'із', 'до', 'від', 'для', 'про', 'що',
+  'як', 'це',
+]);
+
+/** The content words of an anchor, in no particular order. */
+function anchorTokens(anchor: string): string[] {
+  return anchor
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((token) => token.length >= 2 && !STOPWORDS.has(token));
+}
+
+/**
  * Is this fact still in the text?
  *
  * Subject and object are checked, never the predicate: "was born on" may
  * legitimately become "birthday", but if "Андрій" or "04.12.1985" has gone,
  * the fact has gone with it. Very short values are skipped — a one-character
  * object matches everything and would make the check meaningless.
+ *
+ * The anchors are matched word by word rather than as one string. Whole-string
+ * matching only ever passed because the note being checked *contained the fact
+ * list verbatim* — `formatStructuredContent` used to append every fact as
+ * prose, so "medical certificate from pediatrician for Artem" was findable in
+ * the note as exactly that. With those restatements gone the anchor has to be
+ * recognised in the summary that carries it, where the same fact is written
+ * "a medical certificate from a pediatrician for her child, Artem" — every
+ * content word present, not one contiguous run. Matching the string would now
+ * reject every rewrite and quietly turn merging into appending, which is how a
+ * note starts repeating itself again.
+ *
+ * A long token is matched without its last character, because the merge prompt
+ * asks for the note's own language and Ukrainian inflects: "Андрій" is written
+ * "Андрія" wherever the sentence needs it, and neither string contains the
+ * other. One character is the whole concession — it covers the single-ending
+ * case a rewrite produces, and it is far short of a stemmer, which this check
+ * does not need: it only has to catch a name or a date dropped outright.
  */
+function stemForMatching(token: string): string {
+  return token.length >= 5 ? token.slice(0, -1) : token;
+}
+
 function factSurvives(fact: NoteFact, haystack: string): boolean {
   const anchors = [fact.subject, fact.object]
     .map((part) => (part ?? '').trim().toLowerCase())
     .filter((part) => part.length >= 2);
 
   if (anchors.length === 0) return true;
-  return anchors.every((anchor) => haystack.includes(anchor));
+
+  return anchors.every((anchor) => {
+    const tokens = anchorTokens(anchor);
+    // Nothing but stopwords and single characters: unprovable either way, and
+    // calling it lost would reject rewrites over an anchor that says nothing.
+    if (tokens.length === 0) return true;
+    return tokens.every((token) => haystack.includes(stemForMatching(token)));
+  });
 }
 
 /** Human-readable form, for the log line when a rewrite is rejected. */
@@ -157,4 +207,4 @@ export async function mergeNoteContent(params: {
 }
 
 /** Exported for tests: the check that decides whether a rewrite is trusted. */
-export const __test = { factSurvives, normalize };
+export const __test = { factSurvives, normalize, anchorTokens };

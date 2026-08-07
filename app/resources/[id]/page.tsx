@@ -4,7 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 import { and, eq } from 'drizzle-orm';
 import { auth } from '@/app/api/auth/auth';
 import { db } from '@/lib/db';
-import { resources } from '@/lib/db/schema';
+import { entities, entityMentions, resources } from '@/lib/db/schema';
 import { renderSimpleMarkdown } from '@/app/components/utils/markdown';
 import { resourceTypeIcon } from '@/lib/utils/resource-types';
 
@@ -24,8 +24,6 @@ type Metadata = {
   tags?: string[];
   category?: string;
   personName?: string;
-  keyPoints?: string[];
-  facts?: Array<{ fact?: string; text?: string }>;
   /** Absent when the blob store was unconfigured at upload time. */
   imageUrl?: string;
 };
@@ -48,7 +46,17 @@ export default async function ResourcePage({ params }: { params: { id: string } 
   const meta = (resource.metadata ?? {}) as Metadata;
   const title = resource.title || meta.personName || 'Untitled';
   const icon = resourceTypeIcon(meta.type ?? 'note');
-  const facts = (meta.facts ?? []).map((f) => f.fact ?? f.text).filter(Boolean) as string[];
+
+  // Read from the graph rather than from `metadata.entities`. The metadata copy
+  // is a snapshot of what extraction saw the day this note was written: it does
+  // not know about a merge the user has since confirmed, or an alias that sent
+  // a spelling to a different node, and it carries no id to link to. The
+  // mentions table is the live answer to "what does this note connect to".
+  const linked = await db
+    .select({ id: entities.id, name: entities.name, type: entities.type, relationship: entities.relationship })
+    .from(entityMentions)
+    .innerJoin(entities, eq(entities.id, entityMentions.entityId))
+    .where(eq(entityMentions.resourceId, resource.id));
 
   return (
     <div className="container mx-auto max-w-3xl p-4 md:p-6">
@@ -116,33 +124,32 @@ export default async function ResourcePage({ params }: { params: { id: string } 
           {renderSimpleMarkdown(resource.content)}
         </div>
 
-        {(facts.length > 0 || (meta.keyPoints && meta.keyPoints.length > 0)) && (
+        {/* What this note connects to — the one thing here that is not already
+            said above it. The footer used to print the key points a second
+            time under text that opens with them, and a "Facts" list that never
+            rendered at all: it read `metadata.facts` as `{fact}`/`{text}` while
+            extraction has always written `{subject, predicate, object}`, so
+            every entry mapped to undefined and was filtered out. Both were
+            restatements of the paragraph above; neither is worth repairing. */}
+        {linked.length > 0 && (
           <footer className="mt-6 border-t border-base-200 pt-4">
-            {meta.keyPoints && meta.keyPoints.length > 0 && (
-              <section className="mb-4">
-                <h2 className="mb-2 font-mono text-[10px] uppercase tracking-wide text-base-content/40">
-                  Key points
-                </h2>
-                <ul className="ml-5 list-disc space-y-1 text-sm text-base-content/80">
-                  {meta.keyPoints.map((point, i) => (
-                    <li key={i}>{point}</li>
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            {facts.length > 0 && (
-              <section>
-                <h2 className="mb-2 font-mono text-[10px] uppercase tracking-wide text-base-content/40">
-                  Facts
-                </h2>
-                <ul className="ml-5 list-disc space-y-1 text-sm text-base-content/80">
-                  {facts.map((fact, i) => (
-                    <li key={i}>{fact}</li>
-                  ))}
-                </ul>
-              </section>
-            )}
+            <h2 className="mb-2 font-mono text-[10px] uppercase tracking-wide text-base-content/40">
+              Mentions
+            </h2>
+            <div className="flex flex-wrap gap-1.5">
+              {linked.map((entity) => (
+                <Link
+                  key={entity.id}
+                  href={`/entities/${entity.id}`}
+                  className="rounded-full border border-base-300 px-2.5 py-1 text-[13px] text-base-content/80 transition-colors hover:border-primary hover:text-primary"
+                >
+                  {entity.name}
+                  <span className="ml-1.5 font-mono text-[11px] text-base-content/40">
+                    {entity.relationship || entity.type}
+                  </span>
+                </Link>
+              ))}
+            </div>
           </footer>
         )}
       </article>

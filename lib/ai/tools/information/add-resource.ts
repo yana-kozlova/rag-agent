@@ -113,7 +113,13 @@ export const addResourceTool = {
     const dossier = await findDossier({
       userId: session.user.id,
       candidates: toGraphCandidates((metadata as any)?.entities ?? []),
-      contentLength: structuredContent.length,
+      // What the user said, not what the extractor made of it. Measuring the
+      // formatted text meant the summary, the bullets and the restatements
+      // counted toward a limit meant to tell a fact from an import: a one-line
+      // request about Артем came back out at 743 characters, cleared 600, and
+      // was declined as an import — so it became a new note about a person who
+      // already had one. The routing was defeated by its own preprocessing.
+      contentLength: content.length,
     });
 
     if (dossier) {
@@ -139,6 +145,7 @@ export const addResourceTool = {
           merged: true,
           strategy: merged.strategy,
           id: dossier.id,
+          url: `/resources/${dossier.id}`,
           message: `Added to the existing note "${dossierTitle(dossier.title, extractedTitle) ?? 'untitled'}".`,
         };
       }
@@ -148,12 +155,18 @@ export const addResourceTool = {
       console.warn('[addResource] Dossier update failed, saving as a new note:', result?.message);
     }
 
-    return createResource({
+    const created = await createResource({
       content: structuredContent,
       userId: session.user.id,
       title: extractedTitle || undefined,
       metadata,
     });
+
+    // The saved note's own page, so that offering to open it is a working link
+    // rather than an id the model has to guess an address for.
+    return created.success && 'id' in created && created.id
+      ? { ...created, url: `/resources/${created.id}` }
+      : created;
   },
 } as const;
 

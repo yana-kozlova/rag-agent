@@ -16,6 +16,7 @@
     "db:studio": "drizzle-kit studio",
     "db:check": "drizzle-kit check",
     "kb:backfill": "tsx scripts/backfill-entities.ts",
+    "kb:compact": "tsx scripts/compact-notes.ts",
     "wellbeing:canonicalize": "tsx scripts/canonicalize-symptoms.ts"
   },
   "dependencies": {
