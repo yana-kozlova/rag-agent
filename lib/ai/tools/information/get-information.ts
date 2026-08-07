@@ -43,6 +43,13 @@ function deduplicateResults(results: any[]): any[] {
   return unique;
 }
 
+/** The page a hit can be opened on, or null when it has no page of its own. */
+function resultUrl(result: any, tableInfo: { tableId?: string } | null): string | null {
+  if (result.source === 'resource' && result.sourceId) return `/resources/${result.sourceId}`;
+  if (tableInfo?.tableId) return `/tables/${tableInfo.tableId}`;
+  return null;
+}
+
 // Helper function to aggregate results from multiple queries
 function aggregateResults(allResults: any[][]): any[] {
   // Flatten all results
@@ -90,7 +97,9 @@ IMPORTANT: After getting results from this tool, adapt your response based on wh
 - If a result has low relevance (< 0.5) and doesn't directly answer the question, IGNORE it
 
 The tool searches using semantic similarity with multiple query variations and returns the most relevant content (max 5 results). For resources: returns relevant chunks. For tables: returns full row data as text.
-Only use results that are actually relevant to the user's question - don't include unrelated information.`,
+Only use results that are actually relevant to the user's question - don't include unrelated information.
+
+Each result carries a "url" — the page that item can be opened on. To point the user at something they saved, write a Markdown link whose target is exactly that value: [Title](/resources/abc123). Never build a link out of an id, and never link a result whose url is null.`,
   inputSchema: z.object({
     question: z.string().describe('The question or query to search for in the knowledge base. Can be a question or keywords.'),
   }),
@@ -201,6 +210,10 @@ Only use results that are actually relevant to the user's question - don't inclu
           rank: index + 1,
           // Source ID (unified ID for resource/table/calendar)
           sourceId: r.sourceId || null,
+          // Where this result lives in the app. Handed over so that a citation
+          // is a real address: asked to link a note without one, the model
+          // invents an anchor like `#<id>`, which renders as dead text.
+          url: resultUrl(r, tableInfo),
           // Table metadata if from a table (from embeddings.metadata)
           tableInfo: tableInfo,
           // Additional context

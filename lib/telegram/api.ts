@@ -86,6 +86,27 @@ function cutPoint(window: string): number {
 }
 
 /**
+ * Rewrite Markdown links into something a plain-text message can carry.
+ *
+ * The assistant is told to link what it finds, and the web chat renders those
+ * links. Here there is no `parse_mode` (see `sendMessage`), so `[Рецепт](/resources/x)`
+ * would arrive as literal brackets around a path that resolves to nothing —
+ * the app's own paths only mean something under its origin. So the label is
+ * kept as prose and the address is spelled out in full, which Telegram
+ * autolinks by itself. A target that is neither a path nor a URL was never an
+ * address; only its label survives.
+ */
+export function flattenMarkdownLinks(text: string): string {
+  const origin = (env.APP_URL || env.NEXTAUTH_URL || '').replace(/\/+$/, '');
+
+  return text.replace(/\[([^\]]*)\]\(([^()\s]*)\)/g, (whole, label: string, href: string) => {
+    const target = /^\/(?!\/)/.test(href) ? (origin ? `${origin}${href}` : '') : href;
+    if (!/^https?:\/\//i.test(target)) return label || whole;
+    return label && label !== target ? `${label}: ${target}` : target;
+  });
+}
+
+/**
  * Send a reply, as plain text.
  *
  * No `parse_mode` on purpose: the model writes ordinary Markdown, while
@@ -103,7 +124,7 @@ export async function sendMessage(
   text: string,
   options: { replyMarkup?: unknown } = {}
 ): Promise<boolean> {
-  const pieces = splitForTelegram(text.trim() || '…');
+  const pieces = splitForTelegram(flattenMarkdownLinks(text).trim() || '…');
   let delivered = true;
 
   for (const [index, piece] of pieces.entries()) {
