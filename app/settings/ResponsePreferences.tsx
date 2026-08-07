@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 
 import { MAX_DIRECTIVES, MAX_DIRECTIVE_LENGTH, type Directive } from '@/lib/directives/directives';
+import { SettingsSection } from './ui';
 
 /**
  * The list of standing instructions, and the only place they can be read whole.
@@ -122,19 +123,22 @@ export function ResponsePreferences() {
   const full = directives.length >= MAX_DIRECTIVES;
 
   return (
-    <section className="rounded-lg border border-base-300 bg-base-100 p-5 md:col-span-2">
-      <div className="flex flex-col gap-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-[15px] font-semibold">How the assistant answers you</h2>
-          <span className="text-xs text-base-content/50">
-            {directives.length} / {MAX_DIRECTIVES}
-          </span>
-        </div>
-        <p className="text-sm text-base-content/60">
+    <SettingsSection
+      id="responses"
+      title="How the assistant answers you"
+      description={
+        <>
           Standing instructions added to every reply, in the chat and in Telegram. Say
           “запам&apos;ятай: відповідай коротше” in the chat and it lands here too.
-        </p>
-
+        </>
+      }
+      aside={
+        <span className="font-mono text-xs text-base-content/50">
+          {directives.length} / {MAX_DIRECTIVES}
+        </span>
+      }
+    >
+      <div className="flex flex-col gap-3">
         {error && <div className="alert alert-warning text-sm">{error}</div>}
 
         {loading ? (
@@ -223,7 +227,7 @@ export function ResponsePreferences() {
 
         <div className="flex flex-col gap-2 sm:flex-row">
           <input
-            className="input input-bordered flex-1"
+            className="input input-bordered input-sm flex-1"
             placeholder="Answer in Ukrainian unless I write in English"
             maxLength={MAX_DIRECTIVE_LENGTH}
             value={text}
@@ -235,7 +239,7 @@ export function ResponsePreferences() {
           />
           <button
             type="button"
-            className="btn btn-primary btn-sm sm:btn-md"
+            className="btn btn-primary btn-sm"
             onClick={add}
             disabled={full || saving || !text.trim()}
           >
@@ -249,6 +253,6 @@ export function ResponsePreferences() {
           </p>
         )}
       </div>
-    </section>
+    </SettingsSection>
   );
 }

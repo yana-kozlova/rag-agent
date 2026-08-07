@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { SettingsSection } from './ui';
 
 type Status = { configured: boolean; linked: boolean; chatId: string | null };
 type Code = { code: string; command: string; deepLink: string | null; expiresAt: string };
@@ -39,41 +40,39 @@ export function TelegramPanel() {
   }
 
   return (
-    <section className="rounded-lg border border-base-300 bg-base-100 p-5">
-      <div className="flex flex-col gap-4">
-        <div>
-          <h2 className="text-[15px] font-semibold">Telegram</h2>
-          <p className="mt-1 text-sm text-base-content/60">
-            Chat with the same assistant from your phone, by text or voice.
-          </p>
-        </div>
-
+    <SettingsSection
+      id="telegram"
+      title="Telegram"
+      description="Chat with the same assistant from your phone, by text or voice — and where notifications are delivered."
+      aside={
+        status?.linked ? (
+          <span className="badge badge-success badge-sm">Linked</span>
+        ) : status && !status.configured ? (
+          <span className="badge badge-ghost badge-sm">Unavailable</span>
+        ) : status ? (
+          <span className="badge badge-ghost badge-sm">Not linked</span>
+        ) : null
+      }
+    >
+      <div className="flex flex-col gap-3">
         {status && !status.configured && (
-          <div className="text-sm text-base-content/60">
+          <p className="text-sm text-base-content/60">
             No bot token is configured on the server yet.
-          </div>
-        )}
-
-        {status?.linked && !code && (
-          <div className="text-sm">
-            <span className="badge badge-success badge-sm mr-2">Linked</span>
-            <span className="text-base-content/60">chat {status.chatId}</span>
-          </div>
+          </p>
         )}
 
         {code ? (
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm text-base-content/70">
-                Send this to the bot (valid for 10 minutes)
-              </label>
-              <input
-                className="input input-bordered font-mono text-sm"
-                value={code.command}
-                readOnly
-                onFocus={(e) => e.currentTarget.select()}
-              />
-            </div>
+          <>
+            <label className="text-sm text-base-content/70" htmlFor="telegram-code">
+              Send this to the bot — valid for 10 minutes.
+            </label>
+            <input
+              id="telegram-code"
+              className="input input-bordered input-sm font-mono text-sm"
+              value={code.command}
+              readOnly
+              onFocus={(e) => e.currentTarget.select()}
+            />
             {code.deepLink && (
               <a
                 href={code.deepLink}
@@ -84,19 +83,24 @@ export function TelegramPanel() {
                 Open in Telegram
               </a>
             )}
-          </div>
+          </>
         ) : (
-          <button
-            className="btn btn-outline btn-sm self-start"
-            onClick={generate}
-            disabled={busy || (status ? !status.configured : false)}
-          >
-            {busy ? 'Generating…' : status?.linked ? 'Re-link' : 'Generate code'}
-          </button>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-sm text-base-content/60">
+              {status?.linked ? `chat ${status.chatId}` : 'Not connected to a chat yet.'}
+            </span>
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={generate}
+              disabled={busy || (status ? !status.configured : false)}
+            >
+              {busy ? 'Generating…' : status?.linked ? 'Re-link' : 'Generate code'}
+            </button>
+          </div>
         )}
 
         {error && <div className="text-sm text-error">{error}</div>}
       </div>
-    </section>
+    </SettingsSection>
   );
 }

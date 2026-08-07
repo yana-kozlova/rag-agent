@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { SettingsSection } from './ui';
 
 export default function ClearDataPanel() {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
@@ -31,13 +32,18 @@ export default function ClearDataPanel() {
   };
 
   return (
-    <section className="rounded-lg border border-base-300 bg-base-100 p-5">
-      <div className="flex flex-col gap-3">
-        <h2 className="text-[15px] font-semibold">Privacy &amp; Data</h2>
-        <p className="text-sm text-base-content/60">Remove all stored resources and embeddings associated with your account.</p>
-        <div className="flex justify-end">
-          <button type="button" className="btn btn-outline btn-sm" onClick={open}>Delete my stored data</button>
-        </div>
+    <SettingsSection
+      id="data"
+      title="Privacy & Data"
+      description="Everything you have saved lives on this account and nowhere else."
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-base-content/60">
+          Remove all stored resources and their embeddings.
+        </p>
+        <button type="button" className="btn btn-outline btn-error btn-sm" onClick={open}>
+          Delete my stored data
+        </button>
       </div>
 
       <dialog ref={dialogRef} className="modal">
@@ -64,7 +70,7 @@ export default function ClearDataPanel() {
           <button>close</button>
         </form>
       </dialog>
-    </section>
+    </SettingsSection>
   );
 }
 

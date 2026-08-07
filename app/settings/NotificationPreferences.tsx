@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { NotificationLocale } from '@/lib/push/copy';
+import { CONTROL_WIDTH, SettingsRow, SettingsRows, SettingsSection } from './ui';
 
 type Preferences = {
   briefingEnabled: boolean;
@@ -145,61 +146,69 @@ export function NotificationPreferences() {
         : { quietHoursStart: null, quietHoursEnd: null }
     );
 
+  /**
+   * The zone and the next firing, on one line.
+   *
+   * They used to be two stacked `label-text-alt` spans, which made a row about
+   * a single dropdown three lines tall and pushed everything below it out of
+   * rhythm with the rest of the page.
+   */
+  const timeHint = (withNextRun: boolean) =>
+    [
+      prefs?.timezone ? `Your local time — ${prefs.timezone}` : 'Your local time',
+      withNextRun && nextRun?.nextScheduledLocal ? `next ${nextRun.nextScheduledLocal}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+  // Where these go. There is one channel now, and it either works or it doesn't
+  // — so this states the fact instead of offering a switch.
+  const undeliverable =
+    delivery && !delivery.configured
+      ? 'No Telegram bot is configured on the server, so nothing here can be delivered.'
+      : delivery && !delivery.linked
+        ? 'No Telegram chat is linked to this account yet. Link one below — until then, everything here is generated and discarded.'
+        : null;
+
   return (
-    <section className="rounded-lg border border-base-300 bg-base-100 p-5">
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[15px] font-semibold">Notifications</h2>
-          {saving && <span className="loading loading-spinner loading-xs" />}
+    <SettingsSection
+      id="notifications"
+      title="Notifications"
+      description="Delivered to your linked Telegram chat."
+      aside={saving ? <span className="loading loading-spinner loading-xs" /> : null}
+    >
+      {undeliverable && (
+        <div className="mb-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-snug text-base-content/80">
+          {undeliverable}
         </div>
+      )}
 
-        {/* Where these go. There is one channel now, and it either works or it
-            doesn't — so this states the fact instead of offering a switch. */}
-        {delivery && !delivery.configured ? (
-          <div className="text-sm text-warning">
-            No Telegram bot is configured on the server, so nothing can be delivered.
-          </div>
-        ) : delivery && !delivery.linked ? (
-          <div className="text-sm text-warning">
-            Notifications are delivered to Telegram, and this account has no chat linked
-            yet. Link one in the Telegram panel below — until then, everything here is
-            generated and discarded.
-          </div>
-        ) : (
-          <div className="text-sm text-base-content/70">
-            Delivered to your linked Telegram chat.
-          </div>
-        )}
-
-        <div className="divider my-0" />
-
-        {/* Account-level: which notifications to send and when. Independent of the
-            toggle above — these persist even when this device has push off. */}
-        {loading ? (
-          <span className="loading loading-spinner loading-sm" />
-        ) : !prefs ? (
-          <div className="text-sm text-warning">{error ?? 'Unavailable'}</div>
-        ) : (
-          <>
-            <div className="form-control">
-              <label className="label cursor-pointer justify-between">
-                <span className="label-text">Daily briefing</span>
-                <input
-                  type="checkbox"
-                  className="toggle"
-                  checked={prefs.briefingEnabled}
-                  onChange={(e) => save({ briefingEnabled: e.currentTarget.checked })}
-                />
-              </label>
-            </div>
+      {loading ? (
+        <span className="loading loading-spinner loading-sm" />
+      ) : !prefs ? (
+        <div className="text-sm text-warning">{error ?? 'Unavailable'}</div>
+      ) : (
+        <>
+          <SettingsRows>
+            <SettingsRow
+              label="Daily briefing"
+              description="What your day looks like, every morning."
+              htmlFor="notif-briefing"
+            >
+              <input
+                id="notif-briefing"
+                type="checkbox"
+                className="toggle"
+                checked={prefs.briefingEnabled}
+                onChange={(e) => save({ briefingEnabled: e.currentTarget.checked })}
+              />
+            </SettingsRow>
 
             {prefs.briefingEnabled && (
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Send at</span>
-                </label>
+              <SettingsRow label="Send at" htmlFor="notif-briefing-hour" hint={timeHint(true)}>
                 <select
-                  className="select select-bordered"
+                  id="notif-briefing-hour"
+                  className={`select select-bordered select-sm ${CONTROL_WIDTH}`}
                   value={prefs.briefingHour}
                   onChange={(e) => save({ briefingHour: Number(e.currentTarget.value) })}
                 >
@@ -209,77 +218,46 @@ export function NotificationPreferences() {
                     </option>
                   ))}
                 </select>
-                <span className="label-text-alt mt-1 opacity-70">
-                  Your local time{prefs.timezone ? ` — ${prefs.timezone}` : ''}
-                </span>
-                {nextRun?.nextScheduledLocal && (
-                  <span className="label-text-alt mt-1 opacity-70">
-                    Next: {nextRun.nextScheduledLocal}
-                  </span>
-                )}
-              </div>
+              </SettingsRow>
             )}
 
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Language</span>
-              </label>
-              <select
-                className="select select-bordered"
-                value={prefs.locale}
-                onChange={(e) => save({ locale: e.currentTarget.value as NotificationLocale })}
-              >
-                {Object.entries(LOCALE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <span className="label-text-alt mt-1 opacity-70">
-                Applies to briefings, insights and the retrospective. This screen stays
-                in English.
-              </span>
-            </div>
+            <SettingsRow
+              label="Proactive insights"
+              description="Nudges about double-bookings, long back-to-back stretches, and notes on people you're about to meet. These can arrive at times you didn't pick — quiet hours still apply."
+              htmlFor="notif-proactive"
+            >
+              <input
+                id="notif-proactive"
+                type="checkbox"
+                className="toggle"
+                checked={prefs.proactiveEnabled}
+                onChange={(e) => save({ proactiveEnabled: e.currentTarget.checked })}
+              />
+            </SettingsRow>
 
-            <div className="form-control">
-              <label className="label cursor-pointer justify-between">
-                <span className="label-text">Proactive insights</span>
-                <input
-                  type="checkbox"
-                  className="toggle"
-                  checked={prefs.proactiveEnabled}
-                  onChange={(e) => save({ proactiveEnabled: e.currentTarget.checked })}
-                />
-              </label>
-              <span className="label-text-alt opacity-70">
-                Nudges about double-bookings, long back-to-back stretches, and notes on
-                people you&apos;re about to meet. These can arrive at times you didn&apos;t
-                pick — quiet hours still apply.
-              </span>
-            </div>
-
-            <div className="form-control">
-              <label className="label cursor-pointer justify-between">
-                <span className="label-text">Weekly retrospective</span>
-                <input
-                  type="checkbox"
-                  className="toggle"
-                  checked={prefs.retroEnabled}
-                  onChange={(e) => save({ retroEnabled: e.currentTarget.checked })}
-                />
-              </label>
-              <span className="label-text-alt opacity-70">
-                A look back at where the week went, every Sunday.
-              </span>
-            </div>
+            <SettingsRow
+              label="Weekly retrospective"
+              description="A look back at where the week went, every Sunday."
+              htmlFor="notif-retro"
+            >
+              <input
+                id="notif-retro"
+                type="checkbox"
+                className="toggle"
+                checked={prefs.retroEnabled}
+                onChange={(e) => save({ retroEnabled: e.currentTarget.checked })}
+              />
+            </SettingsRow>
 
             {prefs.retroEnabled && (
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Send on Sunday at</span>
-                </label>
+              <SettingsRow
+                label="Send on Sunday at"
+                htmlFor="notif-retro-hour"
+                hint={timeHint(false)}
+              >
                 <select
-                  className="select select-bordered"
+                  id="notif-retro-hour"
+                  className={`select select-bordered select-sm ${CONTROL_WIDTH}`}
                   value={prefs.retroHour}
                   onChange={(e) => save({ retroHour: Number(e.currentTarget.value) })}
                 >
@@ -289,32 +267,34 @@ export function NotificationPreferences() {
                     </option>
                   ))}
                 </select>
-                <span className="label-text-alt mt-1 opacity-70">
-                  Your local time{prefs.timezone ? ` — ${prefs.timezone}` : ''}
-                </span>
-              </div>
+              </SettingsRow>
             )}
 
-            <div className="form-control">
-              <label className="label cursor-pointer justify-between">
-                <span className="label-text">Quiet hours</span>
-                <input
-                  type="checkbox"
-                  className="toggle"
-                  checked={quietEnabled}
-                  onChange={(e) => toggleQuiet(e.currentTarget.checked)}
-                />
-              </label>
-            </div>
+            <SettingsRow
+              label="Quiet hours"
+              description={
+                quietEnabled
+                  ? 'Proactive nudges stay silent in this window. A briefing or retrospective you scheduled inside it, and reminders you snoozed yourself, still come through.'
+                  : 'Hold proactive nudges overnight.'
+              }
+              htmlFor="notif-quiet"
+            >
+              <input
+                id="notif-quiet"
+                type="checkbox"
+                className="toggle"
+                checked={quietEnabled}
+                onChange={(e) => toggleQuiet(e.currentTarget.checked)}
+              />
+            </SettingsRow>
 
             {quietEnabled && (
-              <div className="flex items-end gap-2">
-                <div className="form-control flex-1">
-                  <label className="label">
-                    <span className="label-text">From</span>
-                  </label>
+              <SettingsRow label="Silent between" htmlFor="notif-quiet-from">
+                <div className="flex items-center gap-2">
                   <select
-                    className="select select-bordered"
+                    id="notif-quiet-from"
+                    aria-label="Quiet hours start"
+                    className="select select-bordered select-sm w-full sm:w-20"
                     value={prefs.quietHoursStart ?? 22}
                     onChange={(e) =>
                       save({
@@ -329,13 +309,10 @@ export function NotificationPreferences() {
                       </option>
                     ))}
                   </select>
-                </div>
-                <div className="form-control flex-1">
-                  <label className="label">
-                    <span className="label-text">To</span>
-                  </label>
+                  <span className="text-xs text-base-content/50">and</span>
                   <select
-                    className="select select-bordered"
+                    aria-label="Quiet hours end"
+                    className="select select-bordered select-sm w-full sm:w-20"
                     value={prefs.quietHoursEnd ?? 8}
                     onChange={(e) =>
                       save({
@@ -351,21 +328,32 @@ export function NotificationPreferences() {
                     ))}
                   </select>
                 </div>
-              </div>
+              </SettingsRow>
             )}
 
-            {quietEnabled && (
-              <span className="text-xs opacity-70">
-                Proactive nudges stay silent during this window. A briefing or
-                retrospective you scheduled inside it, and reminders you snoozed
-                yourself, still come through.
-              </span>
-            )}
+            <SettingsRow
+              label="Language"
+              description="Applies to briefings, insights and the retrospective. This screen stays in English."
+              htmlFor="notif-locale"
+            >
+              <select
+                id="notif-locale"
+                className={`select select-bordered select-sm ${CONTROL_WIDTH}`}
+                value={prefs.locale}
+                onChange={(e) => save({ locale: e.currentTarget.value as NotificationLocale })}
+              >
+                {Object.entries(LOCALE_LABELS).map(([value, name]) => (
+                  <option key={value} value={value}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </SettingsRow>
+          </SettingsRows>
 
-            {error && <div className="text-sm text-warning">{error}</div>}
-          </>
-        )}
-      </div>
-    </section>
+          {error && <div className="mt-4 text-sm text-warning">{error}</div>}
+        </>
+      )}
+    </SettingsSection>
   );
 }

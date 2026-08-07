@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { SettingsSection } from './ui';
 
 type Followed = { calendarId: string; summary: string | null };
 
@@ -66,34 +67,45 @@ export function CalendarsPanel() {
   });
 
   return (
-      <section className="rounded-lg border border-base-300 bg-base-100 p-5">
+      <SettingsSection
+        id="calendars"
+        title="Followed Calendars"
+        description="Events from these show up in briefings and in what the assistant can read."
+        aside={
+          <span className="rounded-full bg-base-200 px-2 py-0.5 font-mono text-xs text-base-content/60">
+            {items.length}
+          </span>
+        }
+      >
         <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-[15px] font-semibold">Followed Calendars</h2>
-            <span className="rounded-full bg-base-200 px-2 py-0.5 font-mono text-xs text-base-content/60">{items.length}</span>
-          </div>
-          <input
-            className="input input-bordered w-full"
-            placeholder="Filter by label or ID"
-            value={query}
-            onChange={(e) => setQuery(e.currentTarget.value)}
-          />
+          {/* Only worth a filter once the list is longer than the eye can take
+              in — below that it is an empty input box padding out the panel. */}
+          {items.length > 4 && (
+            <input
+              className="input input-bordered input-sm w-full"
+              placeholder="Filter by label or ID"
+              value={query}
+              onChange={(e) => setQuery(e.currentTarget.value)}
+            />
+          )}
           {loading ? (
             <div className="text-sm opacity-70">Loading…</div>
           ) : filtered.length === 0 ? (
-            <div className="text-sm opacity-70">No calendars match.</div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {filtered.map((c) => (
-                <div key={c.calendarId} className="rounded-box bg-base-200 p-3 flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{c.summary || c.calendarId}</div>
-                    <div className="text-xs opacity-70 truncate">{c.calendarId}</div>
-                  </div>
-                  <button className="btn btn-ghost btn-sm self-end md:self-auto" onClick={() => remove(c.calendarId)}>Remove</button>
-                </div>
-              ))}
+            <div className="text-sm text-base-content/50">
+              {items.length === 0 ? 'None followed yet.' : 'No calendars match.'}
             </div>
+          ) : (
+            <ul className="divide-y divide-base-300/70 overflow-hidden rounded-md border border-base-300">
+              {filtered.map((c) => (
+                <li key={c.calendarId} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{c.summary || c.calendarId}</div>
+                    {c.summary && <div className="truncate text-xs opacity-60">{c.calendarId}</div>}
+                  </div>
+                  <button className="btn btn-ghost btn-xs shrink-0" onClick={() => remove(c.calendarId)}>Remove</button>
+                </li>
+              ))}
+            </ul>
           )}
           <div className="flex justify-end">
             <button className="btn btn-primary btn-sm" onClick={openAdd}>Add calendar</button>
@@ -129,7 +141,7 @@ export function CalendarsPanel() {
             <button>close</button>
           </form>
         </dialog>
-      </section>
+      </SettingsSection>
   );
 }
 
