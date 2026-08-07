@@ -13,6 +13,7 @@ import {
   resourceTypeLabel,
   type ResourceType,
 } from '@/lib/utils/resource-types';
+import { Select } from '@/app/components/ui/Select';
 
 export type Resource = {
   id: string;
@@ -364,9 +365,6 @@ export default function ResourcesClient({
           <Link href="/tables" className="btn btn-outline btn-sm">
             My Tables
           </Link>
-          <Link href="/" className="btn btn-outline btn-sm">
-            Back to Chat
-          </Link>
         </div>
       </div>
 
@@ -395,27 +393,37 @@ export default function ResourcesClient({
               nothing had. If the current filter's last note was just deleted or
               retyped it is kept as an option, so the select never shows a blank
               value next to a filtered-down list. */}
-          <select
-            className="select select-bordered"
+          <Select
+            ariaLabel="Filter by type"
+            className="w-full sm:w-56"
             value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-          >
-            {/* Not `totalCount` — that one narrows to the active filter, so it
-                would report "All types (3)" while sitting on a filter. */}
-            <option value="">
-              All types ({allTypes.reduce((n, t) => n + t.count, 0)})
-            </option>
-            {allTypes.map(({ type, count }) => (
-              <option key={type} value={type}>
-                {resourceTypeIcon(type)} {resourceTypeLabel(type)} ({count})
-              </option>
-            ))}
-            {typeFilter && !allTypes.some(t => t.type === typeFilter) && (
-              <option value={typeFilter}>
-                {resourceTypeIcon(typeFilter)} {resourceTypeLabel(typeFilter)} (0)
-              </option>
-            )}
-          </select>
+            onChange={setTypeFilter}
+            options={[
+              {
+                value: '',
+                label: 'All types',
+                // Not `totalCount` — that one narrows to the active filter, so
+                // it would report "All types (3)" while sitting on a filter.
+                badge: allTypes.reduce((n, t) => n + t.count, 0),
+              },
+              ...allTypes.map(({ type, count }) => ({
+                value: type,
+                label: resourceTypeLabel(type),
+                icon: resourceTypeIcon(type),
+                badge: count,
+              })),
+              ...(typeFilter && !allTypes.some((t) => t.type === typeFilter)
+                ? [
+                    {
+                      value: typeFilter,
+                      label: resourceTypeLabel(typeFilter),
+                      icon: resourceTypeIcon(typeFilter),
+                      badge: 0,
+                    },
+                  ]
+                : []),
+            ]}
+          />
           <div className="relative min-w-[200px]">
             <input
               type="text"
@@ -617,17 +625,16 @@ export default function ResourcesClient({
                           note never silently reclassifies it: this list used to
                           be missing `preference` and `need`, and opening one of
                           those in the editor showed "Note". */}
-                      <select
-                        className="select select-bordered w-full"
+                      <Select
+                        ariaLabel="Type"
                         value={editType}
-                        onChange={(e) => setEditType(e.target.value as ResourceType)}
-                      >
-                        {RESOURCE_TYPES.map(type => (
-                          <option key={type} value={type}>
-                            {resourceTypeIcon(type)} {resourceTypeLabel(type)}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(next) => setEditType(next as ResourceType)}
+                        options={RESOURCE_TYPES.map((type) => ({
+                          value: type,
+                          label: resourceTypeLabel(type),
+                          icon: resourceTypeIcon(type),
+                        }))}
+                      />
                       <div>
                         <label className="label">
                           <span className="label-text">Category (optional)</span>
