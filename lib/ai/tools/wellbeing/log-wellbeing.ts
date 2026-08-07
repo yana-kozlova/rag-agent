@@ -32,11 +32,24 @@ export const logWellbeingTool = {
       .max(24)
       .optional()
       .describe('Hours slept the night before this day, e.g. 6.5'),
+    // The longest description here on purpose. Left to itself the model
+    // fragments one complaint into descriptors — "голова важка й мутна" came
+    // back as ["важка", "мутна"] — and a frequency chart of adjectives that
+    // each occur once measures nothing.
     symptoms: z
       .array(z.string())
       .max(12)
       .optional()
-      .describe('Short symptom labels in the user\'s own words, e.g. ["головний біль", "нудота"]'),
+      .describe(
+        [
+          'Symptom labels, each naming WHAT is wrong as a noun phrase in the user\'s own language:',
+          '["головний біль", "нудота", "важка голова", "шум у вухах", "безсоння"].',
+          'Never a bare adjective or a severity word ("важка", "мутна", "сильно") — attach it to the thing',
+          'it describes ("важка голова") or leave it in `note`.',
+          'One label per complaint: do not split a single description into fragments.',
+          'Reuse the exact wording the user used for the same complaint before, so it stays one entry on the chart.',
+        ].join(' ')
+      ),
     note: z
       .string()
       .max(2000)
@@ -84,6 +97,10 @@ export const logWellbeingTool = {
           sleep: entry.sleepMinutes !== null ? formatSleep(entry.sleepMinutes) : null,
           symptoms: entry.symptoms,
         },
+        // Present when a label was folded onto one the user already uses. Worth
+        // surfacing: they should see which vocabulary their check-in joined,
+        // and correct it if the match was wrong.
+        matchedExistingLabels: entry.canonicalized.length > 0 ? entry.canonicalized : undefined,
         message: 'Check-in saved. Confirm the values back to the user.',
       };
     } catch (error) {

@@ -11,4 +11,5 @@ export * from "./sent-notifications";
 export * from "./notification-queue";
 export * from "./entities";
 export * from "./wellbeing";
+export * from "./directives";
 // calendar schema removed; calendars stored on users.followed_calendars

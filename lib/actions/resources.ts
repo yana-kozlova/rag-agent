@@ -155,6 +155,24 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
 
     embeddingCache.clearForUser(userId);
 
+    // The graph has to follow the text. Without this an updated note keeps the
+    // edges it had when it was created, so a person added to it today is
+    // invisible in the graph tomorrow — and one removed from it stays linked
+    // forever. Non-fatal for the same reason as in `createResource`.
+    const updatedEntities = (parsed.metadata as any)?.entities;
+    if (parsed.metadata !== undefined && Array.isArray(updatedEntities)) {
+      try {
+        await syncEntitiesForResource({
+          resourceId,
+          userId,
+          entities: updatedEntities,
+          replace: true,
+        });
+      } catch (err) {
+        console.error('[updateResource] syncEntitiesForResource failed (non-fatal):', err);
+      }
+    }
+
     return { success: true, message: 'Resource successfully updated.', resource: updated };
   } catch (error) {
     return { 

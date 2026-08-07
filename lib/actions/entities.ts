@@ -1,6 +1,8 @@
-import { and, desc, eq, sql as raw } from 'drizzle-orm';
+import { and, desc, eq, inArray, notInArray, sql as raw } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { entities, entityMentions, resources } from '@/lib/db/schema';
+import { entities, entityAliases, entityMentions, resources } from '@/lib/db/schema';
+import { users } from '@/lib/db/schema/auth';
+import { matchNames, normalizeName, resolveSelfName } from './entity-identity';
 
 /**
  * Turning the entities a note mentions into nodes of a graph.
@@ -40,9 +42,7 @@ function flattenAttributes(
 }
 
 /** Matching key: case and stray whitespace must not fork a node. */
-function normalize(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
-}
+const normalize = normalizeName;
 
 /**
  * Which kinds of thing deserve to be nodes.
@@ -137,62 +137,139 @@ export function toGraphCandidates(entities: ExtractedEntity[]): GraphCandidate[]
   return [...unique.values()];
 }
 
+/** The account holder's own name, for collapsing self-references. */
+async function selfNameFor(userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ name: users.name })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return row?.name?.trim() || null;
+}
+
+/** A spelling already decided to mean an existing node, or nothing. */
+async function resolveAlias(
+  userId: string,
+  normalizedName: string,
+  type: string
+): Promise<string | null> {
+  const [row] = await db
+    .select({ entityId: entityAliases.entityId })
+    .from(entityAliases)
+    .where(
+      and(
+        eq(entityAliases.userId, userId),
+        eq(entityAliases.normalizedAlias, normalizedName),
+        eq(entityAliases.type, type)
+      )
+    )
+    .limit(1);
+
+  return row?.entityId ?? null;
+}
+
 export async function syncEntitiesForResource(params: {
   resourceId: string;
   userId: string;
   entities: ExtractedEntity[];
+  /**
+   * True when re-syncing an edited note. Mentions the new text no longer
+   * supports are dropped, so a person removed from a note stops being linked
+   * to it — without this an edit could only ever add edges.
+   */
+  replace?: boolean;
 }): Promise<{ linked: number }> {
-  const unique = toGraphCandidates(params.entities);
-  if (unique.length === 0) return { linked: 0 };
+  const selfName = await selfNameFor(params.userId);
+
+  // Whatever the model called the account holder this time resolves to their
+  // one node before anything is written, so "User", "Яна" and "Yana Kozlova"
+  // cannot become three.
+  const named = (params.entities ?? []).map((e) =>
+    e?.name ? { ...e, name: resolveSelfName(e.name, selfName) } : e
+  );
+
+  const unique = toGraphCandidates(named);
+  if (unique.length === 0) {
+    if (params.replace) {
+      await db.delete(entityMentions).where(eq(entityMentions.resourceId, params.resourceId));
+    }
+    return { linked: 0 };
+  }
 
   let linked = 0;
+  const linkedIds: string[] = [];
 
   for (const candidate of unique) {
-    // Upsert rather than select-then-insert: concurrent saves of the same
-    // person would otherwise race and one would violate the unique index.
-    const [entity] = await db
-      .insert(entities)
-      .values({
-        userId: params.userId,
-        name: candidate.name,
-        normalizedName: candidate.normalizedName,
-        type: candidate.type,
-        relationship: candidate.relationship,
-        attributes: candidate.attributes as any,
-      })
-      .onConflictDoUpdate({
-        target: [entities.userId, entities.normalizedName, entities.type],
-        set: {
-          // Keep the latest spelling and any relationship we have learned,
-          // but never overwrite a known relationship with nothing.
-          name: candidate.name,
-          relationship: raw`coalesce(${candidate.relationship}, ${entities.relationship})`,
-          updatedAt: new Date(),
-        },
-      })
-      .returning({ id: entities.id });
+    // An alias short-circuits the upsert entirely: a spelling the user has
+    // already resolved by hand must land on the node they chose, and must not
+    // rename it back to the spelling they rejected.
+    let entityId = await resolveAlias(params.userId, candidate.normalizedName, candidate.type);
 
-    if (!entity) continue;
+    if (!entityId) {
+      // Upsert rather than select-then-insert: concurrent saves of the same
+      // person would otherwise race and one would violate the unique index.
+      const [entity] = await db
+        .insert(entities)
+        .values({
+          userId: params.userId,
+          name: candidate.name,
+          normalizedName: candidate.normalizedName,
+          type: candidate.type,
+          relationship: candidate.relationship,
+          attributes: candidate.attributes as any,
+        })
+        .onConflictDoUpdate({
+          target: [entities.userId, entities.normalizedName, entities.type],
+          set: {
+            // Keep the latest spelling and any relationship we have learned,
+            // but never overwrite a known relationship with nothing.
+            name: candidate.name,
+            relationship: raw`coalesce(${candidate.relationship}, ${entities.relationship})`,
+            updatedAt: new Date(),
+          },
+        })
+        .returning({ id: entities.id });
+
+      if (!entity) continue;
+      entityId = entity.id;
+    }
 
     await db
       .insert(entityMentions)
       .values({
-        entityId: entity.id,
+        entityId,
         resourceId: params.resourceId,
         context: candidate.context,
       })
       .onConflictDoNothing();
 
-    // Recomputed rather than incremented, so the count self-heals after a
-    // deleted note or a failed run instead of drifting forever.
+    linkedIds.push(entityId);
+    linked += 1;
+  }
+
+  // Edges this note no longer supports. Done before the counts are recomputed,
+  // so a node that just lost its last mention reports zero rather than one.
+  if (params.replace && linkedIds.length > 0) {
+    await db
+      .delete(entityMentions)
+      .where(
+        and(
+          eq(entityMentions.resourceId, params.resourceId),
+          notInArray(entityMentions.entityId, linkedIds)
+        )
+      );
+  }
+
+  // Recomputed rather than incremented, so the count self-heals after a
+  // deleted note or a failed run instead of drifting forever.
+  if (linkedIds.length > 0) {
     await db
       .update(entities)
       .set({
-        mentionCount: raw`(select count(*) from ${entityMentions} where ${entityMentions.entityId} = ${entity.id})`,
+        mentionCount: raw`(select count(*) from ${entityMentions} where ${entityMentions.entityId} = ${entities.id})`,
       })
-      .where(eq(entities.id, entity.id));
-
-    linked += 1;
+      .where(inArray(entities.id, linkedIds));
   }
 
   return { linked };

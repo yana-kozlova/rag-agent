@@ -8,8 +8,10 @@ import {
   type LogWellbeingInput,
   type WellbeingEntry,
 } from '@/lib/db/schema/wellbeing';
-import { createResource } from '@/lib/actions/resources';
-import { formatSleep, hoursToMinutes, normalizeSymptoms } from '@/lib/wellbeing/scale';
+import { createResource, updateResource } from '@/lib/actions/resources';
+import { formatSleep, hoursToMinutes } from '@/lib/wellbeing/scale';
+import { canonicalizeSymptoms, type Canonicalization } from '@/lib/wellbeing/symptoms';
+import { dayNoteContent } from '@/lib/wellbeing/day-note';
 import {
   buildDailySeries,
   sleepMoodSplit,
@@ -34,31 +36,113 @@ async function timezoneFor(userId: string): Promise<string> {
 }
 
 /**
- * The searchable copy of a check-in.
+ * The symptom labels this user has actually used, most-used first.
  *
- * Without it the tracker is a silo: `getInformation` would have no idea the
- * user has ever mentioned a headache, and "коли востаннє боліла голова?" — the
- * most natural question to ask a second brain about your health — would come
- * back empty while the answer sat in another table.
- *
- * The user's own words lead, because that is what retrieval matches on; the
- * numbers follow as one compact line so the note still reads as a record.
+ * The vocabulary a new check-in is matched against. Ordered by frequency so the
+ * spelling that wins is the one they reach for, and capped at the recent past
+ * because a label abandoned a year ago should not pull today's wording back
+ * onto it.
  */
-function resourceContent(
-  entry: Pick<WellbeingEntry, 'mood' | 'energy' | 'sleepMinutes' | 'symptoms' | 'note' | 'localDate'>
-): string {
-  const stats: string[] = [];
-  if (entry.mood !== null) stats.push(`mood ${entry.mood}/5`);
-  if (entry.energy !== null) stats.push(`energy ${entry.energy}/5`);
-  if (entry.sleepMinutes !== null) stats.push(`sleep ${formatSleep(entry.sleepMinutes)}`);
-  if (entry.symptoms.length > 0) stats.push(entry.symptoms.join(', '));
+export async function knownSymptoms(userId: string, limit = 60): Promise<string[]> {
+  const rows = await db
+    .select({ symptoms: wellbeingEntries.symptoms })
+    .from(wellbeingEntries)
+    .where(eq(wellbeingEntries.userId, userId))
+    .orderBy(desc(wellbeingEntries.recordedAt))
+    .limit(400);
 
-  return [entry.note?.trim(), stats.length > 0 ? `[${entry.localDate}] ${stats.join(' · ')}` : null]
-    .filter(Boolean)
-    .join('\n\n');
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    for (const symptom of row.symptoms ?? []) {
+      counts.set(symptom, (counts.get(symptom) ?? 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([symptom]) => symptom);
 }
 
-export type LoggedEntry = WellbeingEntry & { timezone: string };
+export type LoggedEntry = WellbeingEntry & {
+  timezone: string;
+  /** Labels that were folded onto an existing one, so the caller can say so. */
+  canonicalized: Canonicalization[];
+};
+
+/**
+ * Bring the day's note in the knowledge base level with the day's check-ins.
+ *
+ * Finding the note is an exact lookup rather than a search: the day's entries
+ * carry the resource id, so the note that gets updated is provably the one this
+ * day already wrote. If none of them has one — first note of the day, or the
+ * user deleted it from the knowledge base — a new one is created and every
+ * entry of that day is pointed at it, so tomorrow's lookup still works no
+ * matter which row it starts from.
+ *
+ * Returns the resource id, or null when the day has nothing worth indexing.
+ */
+async function syncDayNote(
+  userId: string,
+  localDate: string,
+  tz: string
+): Promise<string | null> {
+  const entries = await listWellbeingEntries(userId, { from: localDate, to: localDate });
+  if (entries.length === 0) return null;
+
+  // Numbers alone stay out of the knowledge base: they are already on the chart
+  // and in `getWellbeing`, and a note that says only "mood 3/5" is a row that
+  // learned to take up space in search results.
+  if (!entries.some((e) => e.note?.trim())) return null;
+
+  const content = dayNoteContent(entries, tz);
+  const symptoms = [...new Set(entries.flatMap((e) => e.symptoms ?? []))];
+
+  const metadata = {
+    type: 'note' as const,
+    category: 'wellbeing',
+    tags: ['wellbeing', 'check-in', ...symptoms],
+  };
+
+  const existingId = entries.find((e) => e.resourceId)?.resourceId ?? null;
+
+  if (existingId) {
+    const updated = await updateResource(existingId, {
+      title: `Check-in · ${localDate}`,
+      content,
+      metadata,
+    });
+
+    // A resource that has gone missing (deleted in the knowledge base while its
+    // entries still point at it) falls through to being created again below.
+    if (updated.success) {
+      await linkDayEntries(userId, localDate, existingId);
+      return existingId;
+    }
+  }
+
+  const created = await createResource({
+    userId,
+    title: `Check-in · ${localDate}`,
+    content,
+    metadata,
+  });
+
+  if (!created.success || !created.id) return null;
+
+  await linkDayEntries(userId, localDate, created.id);
+  return created.id;
+}
+
+/** Points every check-in of the day at the day's note, so any of them can find it. */
+async function linkDayEntries(userId: string, localDate: string, resourceId: string) {
+  await db
+    .update(wellbeingEntries)
+    .set({ resourceId })
+    .where(
+      and(eq(wellbeingEntries.userId, userId), eq(wellbeingEntries.localDate, localDate))
+    );
+}
 
 /**
  * Record one check-in.
@@ -85,6 +169,14 @@ export async function logWellbeingEntry(params: {
 
   const note = input.note?.trim() || null;
 
+  // Matched against what this user already says, not against a fixed list:
+  // the vocabulary is theirs, and a canned one would be wrong in a different
+  // way for every person using it.
+  const { symptoms, changed } = canonicalizeSymptoms(
+    input.symptoms,
+    input.symptoms?.length ? await knownSymptoms(params.userId) : []
+  );
+
   const [entry] = await db
     .insert(wellbeingEntries)
     .values({
@@ -94,7 +186,7 @@ export async function logWellbeingEntry(params: {
       mood: input.mood ?? null,
       energy: input.energy ?? null,
       sleepMinutes: input.sleepHours !== undefined ? hoursToMinutes(input.sleepHours) : null,
-      symptoms: normalizeSymptoms(input.symptoms),
+      symptoms,
       note,
       source: params.source ?? 'web',
     })
@@ -102,31 +194,14 @@ export async function logWellbeingEntry(params: {
 
   if (note) {
     try {
-      const created = await createResource({
-        userId: params.userId,
-        title: `Check-in · ${entry.localDate}`,
-        content: resourceContent(entry),
-        metadata: {
-          type: 'note',
-          category: 'wellbeing',
-          tags: ['wellbeing', 'check-in', ...entry.symptoms],
-        },
-      });
-
-      if (created.success && created.id) {
-        await db
-          .update(wellbeingEntries)
-          .set({ resourceId: created.id })
-          .where(eq(wellbeingEntries.id, entry.id));
-
-        entry.resourceId = created.id;
-      }
+      const resourceId = await syncDayNote(params.userId, entry.localDate, tz);
+      if (resourceId) entry.resourceId = resourceId;
     } catch (error) {
       console.error('[wellbeing] Indexing the note failed (non-fatal):', error);
     }
   }
 
-  return { ...entry, timezone: tz };
+  return { ...entry, timezone: tz, canonicalized: changed };
 }
 
 /** Raw check-ins over a local-date range, inclusive, oldest first. */
@@ -209,7 +284,24 @@ export async function deleteWellbeingEntry(userId: string, entryId: string): Pro
   const deleted = await db
     .delete(wellbeingEntries)
     .where(and(eq(wellbeingEntries.id, entryId), eq(wellbeingEntries.userId, userId)))
-    .returning({ id: wellbeingEntries.id });
+    .returning({ id: wellbeingEntries.id, localDate: wellbeingEntries.localDate });
 
-  return deleted.length > 0;
+  if (deleted.length === 0) return false;
+
+  // The day's note is rebuilt from what is left, so a deleted check-in stops
+  // being searchable instead of lingering as text with no row behind it.
+  // Non-fatal: the deletion the user asked for has already happened.
+  //
+  // One case is deliberately left alone — a day whose *every* note-bearing
+  // entry is gone keeps its note, orphaned. Rewriting it is impossible (there
+  // is no content left to write) and deleting a knowledge-base row on the
+  // user's behalf is a bigger risk than a stale one they can remove themselves.
+  try {
+    const tz = await timezoneFor(userId);
+    await syncDayNote(userId, deleted[0].localDate, tz);
+  } catch (error) {
+    console.error('[wellbeing] Rebuilding the day note after a delete failed:', error);
+  }
+
+  return true;
 }
