@@ -15,7 +15,8 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:check": "drizzle-kit check",
-    "kb:backfill": "tsx scripts/backfill-entities.ts"
+    "kb:backfill": "tsx scripts/backfill-entities.ts",
+    "wellbeing:canonicalize": "tsx scripts/canonicalize-symptoms.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.53",

@@ -73,13 +73,60 @@ export function stemToken(token: string): string {
  * not tracking two things.
  */
 export function symptomKey(label: string): string {
+  return stemsOf(label).slice().sort().join(' ');
+}
+
+/**
+ * Below this a label is too thin to be safely swallowed by a longer one.
+ *
+ * "нудота" must not fold into "нудота після їжі" — one word is a name, and the
+ * longer phrase is a different, narrower claim. Two content words are already a
+ * description, and a phrase that repeats both of them plus more is describing
+ * the same thing in more detail.
+ */
+const MIN_SUBSET_TOKENS = 2;
+
+/** Stems in the order they were said. `symptomKey` sorts these; this does not. */
+function stemsOf(label: string): string[] {
   return normalizeSymptom(label)
     .split(/[^\p{L}\p{N}]+/u)
     .filter((token) => token.length > 1 && !STOPWORDS.has(token))
     .map(stemToken)
-    .filter(Boolean)
-    .sort()
-    .join(' ');
+    .filter(Boolean);
+}
+
+/** Is `small` contained in `large` as a subsequence — same stems, same order? */
+function isSubsequence(small: string[], large: string[]): boolean {
+  let i = 0;
+  for (const stem of large) {
+    if (stem === small[i]) i++;
+    if (i === small.length) return true;
+  }
+  return false;
+}
+
+/**
+ * True when one label is the other said at greater length.
+ *
+ * "білий шум" and "білий шум в голові" are one complaint named twice, once
+ * loosely — and requiring every token to match, as exact keying does, files
+ * them as two symptoms that each occurred once.
+ *
+ * Order is part of the test, and that is not fussiness. Unordered containment
+ * matched "білий шум в голові" against "головний біль", because a stemmer this
+ * crude cannot tell "біль" from "білий" — both reduce to `біл` — so the two
+ * labels genuinely share {біл, голов}. Read in the order they were said, the
+ * spurious pair falls apart: `голов` comes last in one and first in the other,
+ * while a real specialisation keeps its words where they were.
+ */
+function isSpecialization(a: string[], b: string[]): boolean {
+  const [smaller, larger] = a.length <= b.length ? [a, b] : [b, a];
+
+  if (smaller.length < MIN_SUBSET_TOKENS) return false;
+  // Equal lengths with different keys are two descriptions, not one inside the other.
+  if (smaller.length === larger.length) return false;
+
+  return isSubsequence(smaller, larger);
 }
 
 /**
@@ -87,14 +134,21 @@ export function symptomKey(label: string): string {
  *
  * Returns the previously used spelling on a match, so the chart keeps one bar
  * instead of gaining one; returns the label normalised but otherwise untouched
- * when it is genuinely new. Never invents a name.
+ * when it is genuinely new. Never invents a name — and because `known` arrives
+ * most-used first, a label that matches several folds onto the one the user
+ * actually reaches for.
  */
 export function canonicalizeSymptom(label: string, known: string[]): string {
   const key = symptomKey(label);
   if (!key) return normalizeSymptom(label);
 
-  const match = known.find((candidate) => symptomKey(candidate) === key);
-  return match ? normalizeSymptom(match) : normalizeSymptom(label);
+  const exact = known.find((candidate) => symptomKey(candidate) === key);
+  if (exact) return normalizeSymptom(exact);
+
+  const stems = stemsOf(label);
+  const related = known.find((candidate) => isSpecialization(stems, stemsOf(candidate)));
+
+  return related ? normalizeSymptom(related) : normalizeSymptom(label);
 }
 
 export type Canonicalization = { from: string; to: string };
