@@ -29,7 +29,10 @@ export async function GET(req: Request) {
     const conditions: any[] = [eq(resources.userId, userId as string)];
 
     if (typeParam) {
-      conditions.push(sql`${resources.metadata}->>'type' = ${typeParam}`);
+      // A row with no `type` renders as a note everywhere in the UI and is
+      // counted as one by `collectFacets`, so filtering by Note has to return
+      // it — a bare `->>'type' = 'note'` skips exactly the oldest rows.
+      conditions.push(sql`coalesce(${resources.metadata}->>'type', 'note') = ${typeParam}`);
     }
     if (categoryParam) {
       conditions.push(sql`${resources.metadata}->>'category' = ${categoryParam}`);

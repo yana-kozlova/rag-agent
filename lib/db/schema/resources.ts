@@ -5,6 +5,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 import { nanoid } from "@/lib/utils";
+import { RESOURCE_TYPES } from "@/lib/utils/resource-types";
 import { users } from "./auth";
 
 export const resources = pgTable("resources", {
@@ -39,7 +40,7 @@ const extractedText = z.string().nullish().transform((v) => v ?? undefined);
 
 // Metadata schema for content types
 export const resourceMetadataSchema = z.object({
-  type: z.enum(['note', 'document', 'image', 'schedule', 'person', 'project', 'skill', 'event', 'learning', 'preference', 'need', 'other']).optional(),
+  type: z.enum(RESOURCE_TYPES).optional(),
   items: z.array(z.object({
     title: z.string().optional(),
     time: z.string().optional(),

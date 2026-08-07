@@ -4,6 +4,7 @@ import { toGraphCandidates } from '@/lib/actions/entities';
 import { dossierTitle, findDossier } from '@/lib/actions/note-routing';
 import { mergeNoteContent } from '@/lib/ai/note-merge';
 import { getSessionOrNull } from '@/lib/utils/auth';
+import type { ExtractableResourceType } from '@/lib/utils/resource-types';
 import { looksLikeCalendarCommandOrScheduleOperation } from '@/lib/privacy/schedule-privacy';
 import { extractStructuredInformation, formatStructuredContent } from '@/lib/ai/information-extraction';
 
@@ -32,7 +33,7 @@ export const addResourceTool = {
     const isLargeText = content.length > 5000;
     let structuredContent = content;
     let extractedTitle = title;
-    let contentType: 'note' | 'document' | 'schedule' | 'person' | 'project' | 'skill' | 'event' | 'learning' | 'preference' | 'need' | 'other' = 'note';
+    let contentType: ExtractableResourceType = 'note';
     let metadata: any = {};
     
     // For smaller texts, use structured extraction

@@ -2,11 +2,14 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/app/api/auth/auth';
 import { db } from '@/lib/db';
 import { resources } from '@/lib/db/schema/resources';
+import { collectFacets } from '@/lib/utils/resource-facets';
 import { eq } from 'drizzle-orm';
 
 export const runtime = 'nodejs';
 
-// Get all unique tags for the user
+// Get the values the Knowledge Base filters can offer: tags, categories and
+// the types this user actually has. Shares `collectFacets` with the page's
+// first paint so a refresh after an edit cannot disagree with it.
 export async function GET(req: Request) {
   try {
     const session = await auth();
@@ -15,7 +18,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get all resources for the user
     const userResources = await db
       .select({
         metadata: resources.metadata,
@@ -23,29 +25,9 @@ export async function GET(req: Request) {
       .from(resources)
       .where(eq(resources.userId, userId as string));
 
-    // Extract all unique tags
-    const allTags = new Set<string>();
-    const allCategories = new Set<string>();
+    const { tags, categories, types } = collectFacets(userResources);
 
-    userResources.forEach(resource => {
-      const meta = resource.metadata as any;
-      if (meta?.tags && Array.isArray(meta.tags)) {
-        meta.tags.forEach((tag: string) => {
-          if (tag && typeof tag === 'string') {
-            allTags.add(tag.trim());
-          }
-        });
-      }
-      if (meta?.category && typeof meta.category === 'string') {
-        allCategories.add(meta.category.trim());
-      }
-    });
-
-    return NextResponse.json({
-      ok: true,
-      tags: Array.from(allTags).sort(),
-      categories: Array.from(allCategories).sort(),
-    });
+    return NextResponse.json({ ok: true, tags, categories, types });
   } catch (err: any) {
     console.error('GET /api/resources/tags error', err);
     return NextResponse.json(
@@ -54,7 +36,3 @@ export async function GET(req: Request) {
     );
   }
 }
-
-
-
-
