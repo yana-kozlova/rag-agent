@@ -96,7 +96,7 @@ export async function POST(req: Request) {
     const result = streamText({
       // Model, prompt, tools and step budget are shared with the Telegram
       // entry point — see lib/ai/agent.ts.
-      ...agentOptions(),
+      ...(await agentOptions()),
       messages: convertToModelMessages(processedMessages),
       abortSignal: (req as any).signal,
       onFinish: ({ usage, finishReason }: any) => {

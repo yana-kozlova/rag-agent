@@ -14,6 +14,10 @@ import { scheduleEventTool } from './events/schedule-event';
 import { logWellbeingTool } from './wellbeing/log-wellbeing';
 import { getWellbeingTool } from './wellbeing/get-wellbeing';
 
+// Response preferences — standing instructions injected into every prompt
+import { rememberPreferenceTool } from './directives/remember-preference';
+import { forgetPreferenceTool } from './directives/forget-preference';
+
 // Table tools
 import { createTableTool } from './tables/create-table';
 import { listTablesTool } from './tables/list-tables';
@@ -31,6 +35,8 @@ export const tools = {
   deleteEvent: deleteEventTool,
   logWellbeing: logWellbeingTool,
   getWellbeing: getWellbeingTool,
+  rememberPreference: rememberPreferenceTool,
+  forgetPreference: forgetPreferenceTool,
   createTable: createTableTool,
   listTables: listTablesTool,
   addTableRows: addTableRowsTool,
