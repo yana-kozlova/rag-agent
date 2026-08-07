@@ -1,0 +1,188 @@
+'use server';
+
+import { and, eq, inArray, sql as raw } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { entities, entityAliases, entityMentions } from '@/lib/db/schema';
+import { getSessionOrNull } from '@/lib/utils/auth';
+import { matchNames, type MatchReason } from './entity-identity';
+
+/**
+ * Putting a split node back together.
+ *
+ * The schema always preferred collision to division — see the comment on
+ * `entities.identity` — but until now there was no way to act when the graph
+ * split anyway. Suggestions are found by cheap string rules and never applied
+ * automatically: only the user knows whether two Andriys are one person, and a
+ * wrong merge is not one click to undo.
+ */
+
+export type MergeCandidate = {
+  reason: MatchReason;
+  /** Proposed to survive: the better-attested and more specific of the two. */
+  winner: { id: string; name: string; type: string; mentionCount: number };
+  loser: { id: string; name: string; type: string; mentionCount: number };
+};
+
+type Row = { id: string; name: string; type: string; mentionCount: number };
+
+/**
+ * Which of two nodes should survive.
+ *
+ * More mentions first, because that node is the one already woven into the
+ * graph. On a tie the longer name wins: "Yana Kozlova" carries more than
+ * "Yana", and the shorter spelling survives as an alias regardless.
+ */
+function pickWinner(a: Row, b: Row): [Row, Row] {
+  if (a.mentionCount !== b.mentionCount) {
+    return a.mentionCount > b.mentionCount ? [a, b] : [b, a];
+  }
+  return a.name.length >= b.name.length ? [a, b] : [b, a];
+}
+
+export async function findMergeCandidates(userId: string): Promise<MergeCandidate[]> {
+  const rows = await db
+    .select({
+      id: entities.id,
+      name: entities.name,
+      type: entities.type,
+      mentionCount: entities.mentionCount,
+    })
+    .from(entities)
+    .where(eq(entities.userId, userId));
+
+  // Compared within a type only: a person and a project sharing a name are not
+  // the same thing, and the identity index already treats them separately.
+  const byType = new Map<string, Row[]>();
+  for (const row of rows) {
+    const bucket = byType.get(row.type) ?? [];
+    bucket.push(row);
+    byType.set(row.type, bucket);
+  }
+
+  const candidates: MergeCandidate[] = [];
+
+  for (const bucket of byType.values()) {
+    for (let i = 0; i < bucket.length; i++) {
+      for (let j = i + 1; j < bucket.length; j++) {
+        const reason = matchNames(bucket[i]!.name, bucket[j]!.name);
+        if (!reason) continue;
+
+        const [winner, loser] = pickWinner(bucket[i]!, bucket[j]!);
+        candidates.push({ reason, winner, loser });
+      }
+    }
+  }
+
+  // Same-spelling pairs should not exist at all (the unique index forbids
+  // them), so if one appears it is the most urgent thing to show.
+  const order: Record<MatchReason, number> = {
+    'same-spelling': 0,
+    'same-sound': 1,
+    contained: 2,
+  };
+
+  return candidates.sort((a, b) => order[a.reason] - order[b.reason]);
+}
+
+export async function mergeEntities(winnerId: string, loserId: string) {
+  const session = await getSessionOrNull();
+  const userId = session?.user?.id;
+  if (!userId) return { success: false, message: 'Unauthorized. Please sign in.' };
+
+  if (winnerId === loserId) {
+    return { success: false, message: 'Cannot merge an entity into itself.' };
+  }
+
+  const rows = await db
+    .select({
+      id: entities.id,
+      name: entities.name,
+      normalizedName: entities.normalizedName,
+      type: entities.type,
+      relationship: entities.relationship,
+      attributes: entities.attributes,
+    })
+    .from(entities)
+    .where(and(eq(entities.userId, userId), inArray(entities.id, [winnerId, loserId])));
+
+  const winner = rows.find((r) => r.id === winnerId);
+  const loser = rows.find((r) => r.id === loserId);
+
+  // Ownership is checked by finding both in *this user's* rows, so a crafted
+  // id cannot reach into another account's graph.
+  if (!winner || !loser) {
+    return { success: false, message: 'Entity not found or access denied.' };
+  }
+
+  if (winner.type !== loser.type) {
+    return { success: false, message: 'Only entities of the same type can be merged.' };
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      // Repoint first. `entity_mentions.entity_id` cascades on delete, so
+      // dropping the loser before this would take its edges with it — the one
+      // ordering mistake here that silently loses data.
+      await tx.execute(raw`
+        insert into ${entityMentions} (entity_id, resource_id, context, created_at)
+        select ${winnerId}, ${entityMentions.resourceId}, ${entityMentions.context}, ${entityMentions.createdAt}
+        from ${entityMentions}
+        where ${entityMentions.entityId} = ${loserId}
+        on conflict do nothing
+      `);
+
+      // Aliases already pointing at the loser have to follow it, for the same
+      // reason and with the same cascade waiting to eat them.
+      await tx
+        .update(entityAliases)
+        .set({ entityId: winnerId })
+        .where(eq(entityAliases.entityId, loserId));
+
+      // The decision itself, made permanent: the loser's spelling now resolves
+      // to the winner, so the next note writing it does not recreate the node.
+      await tx
+        .insert(entityAliases)
+        .values({
+          userId,
+          entityId: winnerId,
+          normalizedAlias: loser.normalizedName,
+          type: loser.type,
+        })
+        .onConflictDoNothing();
+
+      await tx
+        .update(entities)
+        .set({
+          // Winner's own values win; the loser only fills in blanks.
+          attributes: {
+            ...((loser.attributes as Record<string, unknown>) ?? {}),
+            ...((winner.attributes as Record<string, unknown>) ?? {}),
+          } as any,
+          relationship: winner.relationship ?? loser.relationship,
+          updatedAt: new Date(),
+        })
+        .where(eq(entities.id, winnerId));
+
+      await tx.delete(entities).where(eq(entities.id, loserId));
+
+      await tx
+        .update(entities)
+        .set({
+          mentionCount: raw`(select count(*) from ${entityMentions} where ${entityMentions.entityId} = ${winnerId})`,
+        })
+        .where(eq(entities.id, winnerId));
+    });
+
+    return {
+      success: true,
+      message: `Merged "${loser.name}" into "${winner.name}".`,
+      entityId: winnerId,
+    };
+  } catch (error) {
+    console.error('[mergeEntities] failed:', error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Could not merge these entities.',
+    };
+  }
+}

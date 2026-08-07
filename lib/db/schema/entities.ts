@@ -73,5 +73,44 @@ export const entityMentions = pgTable(
   })
 );
 
+/**
+ * Names that were decided to mean an entity already in the graph.
+ *
+ * Merging two nodes is not enough on its own: identity is
+ * `(user_id, normalized_name, type)`, so the next note writing "Яна" would
+ * upsert a fresh node and the merge would have to be repeated forever. An
+ * alias is what makes one decision permanent — `syncEntitiesForResource`
+ * consults it before creating anything, so a spelling that was once resolved
+ * by hand keeps resolving by itself.
+ *
+ * Unique on the same triple as `entities.identity`, so an alias can never
+ * point two ways at once, and a name cannot be both a node and an alias.
+ */
+export const entityAliases = pgTable(
+  'entity_aliases',
+  {
+    id: varchar('id', { length: 191 }).primaryKey().$defaultFn(() => nanoid()),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    entityId: varchar('entity_id', { length: 191 })
+      .notNull()
+      .references(() => entities.id, { onDelete: 'cascade' }),
+    /** The spelling being redirected, normalised the same way names are. */
+    normalizedAlias: text('normalized_alias').notNull(),
+    type: text('type').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    identity: unique('entity_aliases_identity_unique').on(
+      table.userId,
+      table.normalizedAlias,
+      table.type
+    ),
+    entityIdx: index('entity_aliases_entity_idx').on(table.entityId),
+  })
+);
+
 export type Entity = typeof entities.$inferSelect;
 export type EntityMention = typeof entityMentions.$inferSelect;
+export type EntityAlias = typeof entityAliases.$inferSelect;
