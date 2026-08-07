@@ -33,10 +33,55 @@ const MIN_TOKEN_LENGTH = 2;
 /** A tsquery can only carry so many terms before it stops being selective. */
 const MAX_QUERY_TERMS = 12;
 
-function prefixOf(token: string): string {
+/**
+ * Words that must never reach the lexical query.
+ *
+ * `ts_rank_cd` has no notion of IDF — it counts occurrences and weighs their
+ * proximity, so a term appearing in every chunk is not discounted for it. With
+ * the terms OR'd together, one function word is enough to put the whole base in
+ * the candidate list, ranked by how often each chunk happens to say "за". The
+ * chunk that actually holds the rare term is then one of thousands, and the
+ * `LIMIT` cuts it off before fusion ever sees it.
+ *
+ * The prefix wildcard makes it worse than it sounds: "за" is not a word here,
+ * it is `за:*`, which matches "завтра", "заняття", "записати", "зателефонувати".
+ * A two-letter stopword with a wildcard is a query for everything.
+ *
+ * Shared with `heuristicVariations` in query-expansion, so that "not a content
+ * word" means one thing in this codebase rather than two.
+ */
+export const STOPWORDS = new Set([
+  // English
+  'the', 'a', 'an', 'and', 'or', 'but', 'if', 'of', 'to', 'in', 'on', 'at', 'by', 'for', 'with',
+  'is', 'are', 'was', 'were', 'be', 'been', 'am', 'do', 'does', 'did', 'have', 'has', 'had',
+  'what', 'when', 'where', 'who', 'whom', 'why', 'how', 'which', 'that', 'this', 'these', 'those',
+  'about', 'from', 'into', 'over', 'my', 'me', 'i', 'you', 'your', 'it', 'its', 'we', 'our',
+  'not', 'no', 'yes', 'can', 'could', 'would', 'should', 'will', 'shall', 'may', 'might',
+  // Ukrainian
+  'що', 'як', 'де', 'коли', 'хто', 'кого', 'чому', 'чий', 'який', 'яка', 'яке', 'які',
+  'мій', 'моя', 'моє', 'мої', 'мене', 'мені', 'мною', 'я', 'ти', 'ви', 'він', 'вона', 'воно', 'вони',
+  'це', 'цей', 'ця', 'той', 'та', 'те', 'ті', 'все', 'всі', 'весь', 'вся',
+  'у', 'в', 'на', 'до', 'з', 'зі', 'із', 'за', 'по', 'про', 'від', 'для', 'над', 'під', 'при', 'без',
+  'і', 'й', 'а', 'але', 'чи', 'бо', 'щоб', 'якщо', 'ще', 'вже', 'теж', 'також',
+  'не', 'ні', 'так', 'є', 'був', 'була', 'було', 'були', 'буде', 'бути',
+  'мати', 'маю', 'маєш', 'має', 'мене', 'себе', 'соб',
+]);
+
+/**
+ * The tsquery term for one token, wildcarded only where a wildcard can help.
+ *
+ * Truncation is what makes the wildcard useful: "спортзалі" cut to "спортз:*"
+ * also finds "спортзал". A token at or under `MIN_PREFIX_LENGTH` loses nothing
+ * to truncation, so `:*` on it cannot reach a single inflected form — Ukrainian
+ * inflects at the final character, and that character is inside the prefix.
+ * "рука:*" matches "рукав" and "рукавиця"; it does not match "руки" or "руці",
+ * which are the words it was meant to find. All the wildcard buys there is
+ * noise, so short tokens go in as themselves.
+ */
+function termFor(token: string): string {
   if (token.length <= MIN_PREFIX_LENGTH) return token;
   const cut = Math.max(MIN_PREFIX_LENGTH, Math.ceil(token.length * PREFIX_RATIO));
-  return token.slice(0, cut);
+  return `${token.slice(0, cut)}:*`;
 }
 
 /**
@@ -55,24 +100,40 @@ function prefixOf(token: string): string {
  * result is passed as a bound parameter.
  *
  * Returns null when nothing usable survives, which is the signal to skip the
- * lexical retriever entirely rather than run a query matching everything.
+ * lexical retriever entirely rather than run a query matching everything. A
+ * question built entirely of function words — "що в мене?" — is exactly that
+ * case: there is no exact match to look for, the vector half answers it, and
+ * running the lexical half anyway would hand fusion a ranking of whichever
+ * chunks repeat "мене" the most.
  */
 export function toTsQuery(query: string): string | null {
   const tokens = query
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
-    .filter((t) => t.length >= MIN_TOKEN_LENGTH);
+    .filter((t) => t.length >= MIN_TOKEN_LENGTH && !STOPWORDS.has(t));
 
   if (tokens.length === 0) return null;
 
   const seen = new Set<string>();
   const terms: string[] = [];
   for (const token of tokens) {
-    const term = `${prefixOf(token)}:*`;
+    const term = termFor(token);
     if (seen.has(term)) continue;
     seen.add(term);
     terms.push(term);
-    if (terms.length >= MAX_QUERY_TERMS) break;
+  }
+
+  // When there are more terms than the query can carry, keep the longest.
+  // The cap used to cut by position, which drops the end of a long question —
+  // and in both languages here the end of a question is where its specific noun
+  // sits ("скільки я плачу за абонемент у спортзалі"). Length is a crude stand-in
+  // for rarity, but it is the right crude one: the long words are the nouns.
+  if (terms.length > MAX_QUERY_TERMS) {
+    const kept = new Set(
+      [...terms].sort((a, b) => b.length - a.length).slice(0, MAX_QUERY_TERMS)
+    );
+    // Emitted in the order they were said, so a logged query still reads.
+    return terms.filter((t) => kept.has(t)).join(' | ');
   }
 
   return terms.join(' | ');

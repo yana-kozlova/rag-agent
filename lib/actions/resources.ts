@@ -27,27 +27,40 @@ export const createResource = async (input: NewResourceParams) => {
       return { success: false, message: 'Unauthorized. Please sign in.' };
     }
 
-    const [resource] = await db
-      .insert(resources)
-      .values({
-        content,
-        userId,
-        title: title || null,
-        metadata: metadata || null,
-      })
-      .returning();
-
+    // Embed first, write second.
+    //
+    // The insert used to come first, so a failed or rate-limited embeddings call
+    // left a row in `resources` with no vectors behind it: perfectly readable on
+    // its own page, absent from every search, with nothing retrying it and no
+    // record of which notes it had happened to. A note that cannot be found is
+    // not a saved note, and failing before anything is written at least lets the
+    // caller say so.
     const embeddings = await generateEmbeddings(content, 'createResource');
-    if (embeddings.length > 0) {
-      await db.insert(embeddingsTable).values(
-        embeddings.map(embedding => ({
-          sourceId: resource.id,
-          source: 'resource' as const,
-          content: embedding.content,
-          embedding: embedding.embedding,
-        })),
-      );
-    }
+
+    const resource = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(resources)
+        .values({
+          content,
+          userId,
+          title: title || null,
+          metadata: metadata || null,
+        })
+        .returning();
+
+      if (embeddings.length > 0) {
+        await tx.insert(embeddingsTable).values(
+          embeddings.map(embedding => ({
+            sourceId: row.id,
+            source: 'resource' as const,
+            content: embedding.content,
+            embedding: embedding.embedding,
+          })),
+        );
+      }
+
+      return row;
+    });
 
     embeddingCache.clearForUser(userId);
 
@@ -123,35 +136,51 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
       updateData.metadata = parsed.metadata || null;
     }
 
-    const [updated] = await db
-      .update(resources)
-      .set(updateData)
-      .where(and(
-        eq(resources.id, resourceId),
-        eq(resources.userId, userId as string)
-      ))
-      .returning();
+    const contentChanged = parsed.content !== undefined && parsed.content !== existing.content;
 
-    // If content changed, regenerate embeddings
-    if (parsed.content !== undefined && parsed.content !== existing.content) {
-      // Delete old embeddings
-      await db
-        .delete(embeddingsTable)
-        .where(eq(embeddingsTable.sourceId, resourceId));
+    // Embed before touching anything, and swap the text and the vectors together.
+    //
+    // The old order was: update the row, delete the old embeddings, then call
+    // OpenAI. A failure at the last step left the note holding its new text and
+    // no vectors at all — unfindable from then on, silently and permanently.
+    // Worse, `addResource` reads a failed update as "save it as a new note
+    // instead", so a merge that got this far wrote the merged content into the
+    // dossier *and* created a second note saying the same thing: the exact
+    // duplication note routing exists to prevent.
+    //
+    // Generating first means a failed call changes nothing at all, which is
+    // what makes that fallback correct.
+    const regenerated = contentChanged
+      ? await generateEmbeddings(parsed.content as string, 'updateResource')
+      : [];
 
-      // Generate new embeddings
-      const embeddings = await generateEmbeddings(parsed.content, 'updateResource');
-      if (embeddings.length > 0) {
-        await db.insert(embeddingsTable).values(
-          embeddings.map(embedding => ({
-            sourceId: resourceId,
-            source: 'resource' as const,
-            content: embedding.content,
-            embedding: embedding.embedding,
-          })),
-        );
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(resources)
+        .set(updateData)
+        .where(and(
+          eq(resources.id, resourceId),
+          eq(resources.userId, userId as string)
+        ))
+        .returning();
+
+      if (contentChanged) {
+        await tx.delete(embeddingsTable).where(eq(embeddingsTable.sourceId, resourceId));
+
+        if (regenerated.length > 0) {
+          await tx.insert(embeddingsTable).values(
+            regenerated.map(embedding => ({
+              sourceId: resourceId,
+              source: 'resource' as const,
+              content: embedding.content,
+              embedding: embedding.embedding,
+            })),
+          );
+        }
       }
-    }
+
+      return row;
+    });
 
     embeddingCache.clearForUser(userId);
 

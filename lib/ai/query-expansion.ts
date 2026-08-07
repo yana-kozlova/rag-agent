@@ -20,6 +20,7 @@ import { openai } from '@ai-sdk/openai';
 import { z } from 'zod';
 import { env } from '@/lib/env.mjs';
 import { logLlmUsage } from './telemetry';
+import { STOPWORDS } from './retrieval';
 
 /** Including the original. More costs an embedding call each and adds little. */
 const MAX_QUERIES = 3;
@@ -47,14 +48,11 @@ export function heuristicVariations(question: string): string[] {
   if (statement) variations.push(statement);
 
   // Content words alone, for when the question's grammar is the noisy part.
-  const stopwords = new Set([
-    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'when', 'where', 'who', 'why', 'how',
-    'about', 'my', 'me', 'i', 'do', 'does', 'did', 'have', 'has',
-    'що', 'як', 'де', 'коли', 'хто', 'чому', 'мій', 'моя', 'моє', 'мені', 'я', 'це', 'у', 'в', 'на', 'до', 'з',
-  ]);
+  // The list is `retrieval`'s, so that "not a content word" means one thing
+  // here and in the lexical query rather than two lists drifting apart.
   const keyTerms = trimmed
     .split(/\s+/)
-    .filter((w) => w.length > 2 && !stopwords.has(w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')))
+    .filter((w) => w.length > 2 && !STOPWORDS.has(w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')))
     .slice(0, 4);
   if (keyTerms.length > 0) variations.push(keyTerms.join(' '));
 
