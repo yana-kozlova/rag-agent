@@ -9,7 +9,8 @@ import {
   type WellbeingEntry,
 } from '@/lib/db/schema/wellbeing';
 import { createResource } from '@/lib/actions/resources';
-import { formatSleep, hoursToMinutes, normalizeSymptoms } from '@/lib/wellbeing/scale';
+import { formatSleep, hoursToMinutes } from '@/lib/wellbeing/scale';
+import { canonicalizeSymptoms, type Canonicalization } from '@/lib/wellbeing/symptoms';
 import {
   buildDailySeries,
   sleepMoodSplit,
@@ -58,7 +59,40 @@ function resourceContent(
     .join('\n\n');
 }
 
-export type LoggedEntry = WellbeingEntry & { timezone: string };
+/**
+ * The symptom labels this user has actually used, most-used first.
+ *
+ * The vocabulary a new check-in is matched against. Ordered by frequency so the
+ * spelling that wins is the one they reach for, and capped at the recent past
+ * because a label abandoned a year ago should not pull today's wording back
+ * onto it.
+ */
+export async function knownSymptoms(userId: string, limit = 60): Promise<string[]> {
+  const rows = await db
+    .select({ symptoms: wellbeingEntries.symptoms })
+    .from(wellbeingEntries)
+    .where(eq(wellbeingEntries.userId, userId))
+    .orderBy(desc(wellbeingEntries.recordedAt))
+    .limit(400);
+
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    for (const symptom of row.symptoms ?? []) {
+      counts.set(symptom, (counts.get(symptom) ?? 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([symptom]) => symptom);
+}
+
+export type LoggedEntry = WellbeingEntry & {
+  timezone: string;
+  /** Labels that were folded onto an existing one, so the caller can say so. */
+  canonicalized: Canonicalization[];
+};
 
 /**
  * Record one check-in.
@@ -85,6 +119,14 @@ export async function logWellbeingEntry(params: {
 
   const note = input.note?.trim() || null;
 
+  // Matched against what this user already says, not against a fixed list:
+  // the vocabulary is theirs, and a canned one would be wrong in a different
+  // way for every person using it.
+  const { symptoms, changed } = canonicalizeSymptoms(
+    input.symptoms,
+    input.symptoms?.length ? await knownSymptoms(params.userId) : []
+  );
+
   const [entry] = await db
     .insert(wellbeingEntries)
     .values({
@@ -94,7 +136,7 @@ export async function logWellbeingEntry(params: {
       mood: input.mood ?? null,
       energy: input.energy ?? null,
       sleepMinutes: input.sleepHours !== undefined ? hoursToMinutes(input.sleepHours) : null,
-      symptoms: normalizeSymptoms(input.symptoms),
+      symptoms,
       note,
       source: params.source ?? 'web',
     })
@@ -126,7 +168,7 @@ export async function logWellbeingEntry(params: {
     }
   }
 
-  return { ...entry, timezone: tz };
+  return { ...entry, timezone: tz, canonicalized: changed };
 }
 
 /** Raw check-ins over a local-date range, inclusive, oldest first. */
