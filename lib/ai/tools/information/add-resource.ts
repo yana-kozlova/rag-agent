@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { createResource } from '@/lib/actions/resources';
+import { createResource, updateResource } from '@/lib/actions/resources';
+import { toGraphCandidates } from '@/lib/actions/entities';
+import { dossierTitle, findDossier } from '@/lib/actions/note-routing';
+import { mergeNoteContent } from '@/lib/ai/note-merge';
 import { getSessionOrNull } from '@/lib/utils/auth';
 import { looksLikeCalendarCommandOrScheduleOperation } from '@/lib/privacy/schedule-privacy';
 import { extractStructuredInformation, formatStructuredContent } from '@/lib/ai/information-extraction';
@@ -102,12 +105,80 @@ export const addResourceTool = {
       }
     }
     
-    return createResource({ 
-      content: structuredContent, 
+    // A fact about someone already known belongs in their note, not beside it.
+    // Before this, saving was an unconditional insert: one message about Andriy
+    // produced two notes 900ms apart, and the graph split his wife's identity
+    // three ways behind them.
+    const dossier = await findDossier({
+      userId: session.user.id,
+      candidates: toGraphCandidates((metadata as any)?.entities ?? []),
+      contentLength: structuredContent.length,
+    });
+
+    if (dossier) {
+      const merged = await mergeNoteContent({
+        existing: dossier.content,
+        addition: structuredContent,
+        existingFacts: (dossier.metadata as any)?.facts ?? [],
+        caller: 'addResource',
+      });
+
+      const result = await updateResource(dossier.id, {
+        content: merged.content,
+        title: dossierTitle(dossier.title, extractedTitle),
+        // Facts and entities are unioned rather than replaced: the merged text
+        // still carries the old ones, so metadata that forgot them would make
+        // the next merge unable to check for what it must not lose.
+        metadata: mergeMetadata(dossier.metadata, metadata),
+      } as any);
+
+      if (result?.success) {
+        return {
+          success: true,
+          merged: true,
+          strategy: merged.strategy,
+          id: dossier.id,
+          message: `Added to the existing note "${dossierTitle(dossier.title, extractedTitle) ?? 'untitled'}".`,
+        };
+      }
+
+      // Falling through to a new note is deliberate: failing to update is not a
+      // reason to lose what the user just told us.
+      console.warn('[addResource] Dossier update failed, saving as a new note:', result?.message);
+    }
+
+    return createResource({
+      content: structuredContent,
       userId: session.user.id,
       title: extractedTitle || undefined,
       metadata,
     });
   },
 } as const;
+
+/** Union of two notes' extracted metadata, newest winning on scalars. */
+function mergeMetadata(existing: unknown, incoming: any) {
+  const old = (existing ?? {}) as any;
+
+  const byKey = <T,>(items: T[], key: (item: T) => string): T[] => {
+    const seen = new Map<string, T>();
+    for (const item of items) if (item) seen.set(key(item), item);
+    return [...seen.values()];
+  };
+
+  return {
+    ...old,
+    ...incoming,
+    tags: [...new Set([...(old.tags ?? []), ...(incoming.tags ?? [])])],
+    facts: byKey(
+      [...(old.facts ?? []), ...(incoming.facts ?? [])],
+      (f: any) => `${f?.subject}::${f?.predicate}::${f?.object}`
+    ),
+    entities: byKey(
+      [...(old.entities ?? []), ...(incoming.entities ?? [])],
+      (e: any) => `${String(e?.name).toLowerCase()}::${e?.type}`
+    ),
+    keyPoints: [...new Set([...(old.keyPoints ?? []), ...(incoming.keyPoints ?? [])])],
+  };
+}
 
