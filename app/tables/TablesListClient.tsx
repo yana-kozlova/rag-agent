@@ -65,9 +65,6 @@ export default function TablesListClient({ initialTables }: { initialTables: Use
           <Link href="/tables/new" className="btn btn-primary btn-sm">
             Create New Table
           </Link>
-          <Link href="/" className="btn btn-outline btn-sm">
-            Back to Chat
-          </Link>
         </div>
       </div>
 
