@@ -31,15 +31,23 @@ function when(daysAway: number): string {
  */
 export default function TimelineWidget() {
   const [occurrences, setOccurrences] = useState<Occurrence[] | null>(null);
+  const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Failure is a separate state from emptiness, and conflating them cost real
+  // time: a 500 from this route left the panel saying "nothing in the next 60
+  // days" — a confident statement about the data, made by a widget that had not
+  // read any. "Nothing saved yet" and "could not read it" are opposite
+  // instructions to whoever is looking at it.
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/timeline?view=upcoming&days=${UPCOMING_HORIZON_DAYS}`);
-      const data = res.ok ? await res.json() : null;
-      setOccurrences(data?.occurrences ?? []);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setOccurrences(Array.isArray(data?.occurrences) ? data.occurrences : []);
+      setFailed(false);
     } catch {
-      /* leave the widget as it is on failure */
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -75,10 +83,27 @@ export default function TimelineWidget() {
             <div key={i} className="h-6 animate-pulse rounded-md bg-base-200" />
           ))}
         </div>
+      ) : failed ? (
+        <div className="text-sm text-base-content/50">
+          <p>Could not read the timeline.</p>
+          <button
+            type="button"
+            onClick={() => {
+              setLoading(true);
+              load();
+            }}
+            className="mt-1 link link-hover text-[13px] font-medium"
+          >
+            Try again
+          </button>
+        </div>
       ) : shown.length === 0 ? (
         <p className="text-sm text-base-content/50">
-          Nothing in the next {UPCOMING_HORIZON_DAYS} days. Birthdays and anniversaries land here
-          once you save them.
+          Nothing in the next {UPCOMING_HORIZON_DAYS} days. Past dates are on the{' '}
+          <Link href="/timeline" className="link link-hover">
+            timeline
+          </Link>
+          ; birthdays and anniversaries appear here as they come round.
         </p>
       ) : (
         <ul className="flex flex-col gap-2">

@@ -19,11 +19,24 @@ import type { DatePrecision } from '@/lib/timeline/timeline';
  * `--MM-DD` from prose, and when it guesses a year instead the birthday quietly
  * becomes a one-off event in 2026. Stating it here is also the only way to
  * *correct* a date, since a second note about the same day is a second note.
+ *
+ * The description carries the same refusal `DATE_EXTRACTION_RULES` does, and it
+ * has to: extraction is governed by those rules, but a direct call to this tool
+ * is governed by nothing except what is written here. The first thing a real
+ * base produced through it was "Візит до Закладу…" — an appointment, which is
+ * exactly the category the timeline exists to keep out. An axis that fills with
+ * visits and meetings is a worse calendar, and stops being a place anyone looks
+ * for the dates they would still name in ten years.
  */
 export const rememberDateTool = {
   description: [
-    'Record a date on the timeline: births, weddings, moves, first days, trips, diagnoses, anniversaries.',
-    'Use for dates worth finding years later — not for scheduling, which is scheduleEvent.',
+    'Record a date on the timeline: births, deaths, weddings, moves, first days at a school or job,',
+    'trips, diagnoses and procedures, significant purchases, achievements, anniversaries.',
+    'The test is whether the user would still name this day in five years.',
+    'NEVER for an appointment, a visit, a meeting, a call, a deadline or anything else that stops',
+    'mattering once it has passed — those are scheduleEvent, and the calendar already holds them.',
+    'When unsure, say nothing rather than record: a wrong date on the axis looks exactly as',
+    'trustworthy as a right one.',
     'Say the date as precisely as the user did and no more: YYYY-MM-DD, YYYY-MM, YYYY, or --MM-DD when a birthday has no year.',
   ].join('\n'),
   inputSchema: z.object({

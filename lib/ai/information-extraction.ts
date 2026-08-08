@@ -67,16 +67,29 @@ const datedEventSchema = z.object({
  * scheduling belongs to the calendar, which already holds it, and a note's own
  * created-at is not an event. What belongs here is the small number of days a
  * person would still name years later.
+ *
+ * Deadlines are named explicitly because leaving them out was not enough. The
+ * first backfill over a real base returned five dates: one birthday and four due
+ * dates read off `need` notes — "клопотатися про довідку до 17.08", "купити
+ * форму до 31.08" — including the same certificate twice under two dates and one
+ * meaningless title. The earlier wording banned meetings and appointments and a
+ * due date is neither, so the model was reading the rules correctly. A deadline
+ * is a *task*: it is over the moment it passes, nobody names it years later, and
+ * `needs` already carries it in metadata waiting for a tasks layer to read.
+ * Putting it on the axis makes the axis a worse to-do list.
  */
 export const DATE_EXTRACTION_RULES = [
   'DATES — only dates worth remembering for years: births, deaths, weddings, moves, first days at a school or job,',
   'trips, diagnoses and procedures, significant purchases, achievements, anniversaries.',
+  'The test is whether the person would still name that day in five years.',
   'Never extract: the day the note was written, times of day, recurring routines ("щоранку о 7"),',
-  'ordinary appointments and meetings (those live in the calendar), or vague futures ("колись", "наступного разу").',
+  'appointments, visits and meetings (those live in the calendar), or vague futures ("колись", "наступного разу").',
+  'Never extract a deadline or a due date — "до 31.08", "треба купити до понеділка", "подати заяву до 17.08"',
+  'are tasks, not dates on a life: they stop mattering once they pass. This holds however urgent the task is.',
   'Resolve relative wording ("вчора", "минулого літа") against today\'s date, given above.',
   'Record only what was actually said: if the text gives a year and no month, answer with the year alone.',
   'Set recurring=true only for a date that repeats every year, and use --MM-DD when a birthday is given without a year.',
-  'If nothing in the text qualifies, answer with an empty list. That is the normal case.',
+  'If nothing in the text qualifies, answer with an empty list. That is the normal case — most notes have no such date.',
 ].join(' ');
 
 // Schema for structured information extraction
@@ -113,7 +126,12 @@ export const informationExtractionSchema = z.object({
     // value outside the list failed the whole extraction. Unknown types land
     // in their own group in the UI, which is a far smaller price.
     type: z.string().default('other').describe('Type of entity: person, place, organization, project, skill, activity, or another short lowercase noun'),
-    relationship: z.string().nullish().default(null).describe('Relationship to user (e.g., "friend", "colleague", "hobby")'),
+    // Relative to the user and nobody else. A note states relations between
+    // third parties all the time ("Артем is my kuma's godson"), and lifting the
+    // relation out of the sentence it was in makes the user the other end of
+    // it — so the graph learns that the user's own son is their godson, prints
+    // it beside his name as fact, and reads it back when asked who he is.
+    relationship: z.string().nullish().default(null).describe('How this entity relates to THE USER specifically (e.g., "friend", "colleague", "hobby"). If the message only states how it relates to someone else, either say so in full ("godson of the user\'s kuma") or leave this null — never record that relation as if it were the user\'s.'),
     attributes: z
       .array(z.object({ key: z.string(), value: z.string() }))
       .nullish()
@@ -190,6 +208,7 @@ Guidelines:
 - Generate relevant tags for searchability
 - If the user mentions their name or it can be inferred, include it in userName
 - Link facts to the user when they're about the user: as the subject use the word for "user" in the message's language ("user", "користувач"), never their name
+- An entity's "relationship" is to the USER and to nobody else. When the message states a relation between two other people, either write it out in full or leave it null — do not move it onto the user. "Артем — похресник моєї куми" makes Артем the godson of the user's kuma, not the user's godson; "Артем, мій син, — похресник куми" makes him relationship: "син користувача"
 - Be specific and detailed - this information will be used to help the user in future conversations
 - ${DATE_EXTRACTION_RULES}
 
