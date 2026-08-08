@@ -1,5 +1,7 @@
 import { google, calendar_v3 } from 'googleapis';
 
+import type { AccountCalendar } from '@/lib/utils/calendars';
+
 // Attendee interface no longer needed in live-only flow
 
 export class GoogleCalendarService {
@@ -117,6 +119,57 @@ export class GoogleCalendarService {
     } catch (error) {
       console.error('Error patching calendar event:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Every calendar on the account, as Google lists them.
+   *
+   * This is what makes following a calendar a choice rather than a lookup. The
+   * settings panel used to take a typed id, which meant a calendar was reachable
+   * only if the user knew its address — so the two most useful ones on any
+   * personal account, Birthdays
+   * (`addressbook#contacts@group.v.calendar.google.com`) and the holiday
+   * calendar, were effectively unreachable, and a typo was stored silently and
+   * produced nothing forever.
+   *
+   * Throws rather than returning an empty list: to a picker, "Google would not
+   * answer" and "you have no calendars" look identical and mean opposite things.
+   */
+  async listCalendars(): Promise<Omit<AccountCalendar, 'followed'>[]> {
+    const res = await this.calendar.calendarList.list({ maxResults: 250, showHidden: false });
+
+    return (res.data.items || [])
+      // A calendar removed from the account is still returned, flagged.
+      .filter((item) => item.id && !item.deleted)
+      .map((item) => ({
+        id: item.id as string,
+        // `summaryOverride` is the name the *user* gave it; `summary` is the
+        // owner's. Showing the owner's would rename a calendar out from under
+        // someone who deliberately relabelled it in Google.
+        summary: item.summaryOverride || item.summary || (item.id as string),
+        description: item.description ?? null,
+        primary: item.primary === true,
+        accessRole: item.accessRole ?? 'reader',
+        color: item.backgroundColor ?? null,
+      }));
+  }
+
+  /**
+   * One calendar by id, for following something not on the account.
+   *
+   * `calendarList` only has what the user has subscribed to, so a shared or
+   * public calendar they know the address of would be unfollowable without this.
+   * Returns null when it cannot be read — which is the answer the caller needs,
+   * since that is exactly the case the old typed-id form stored as if it worked.
+   */
+  async getCalendar(calendarId: string): Promise<{ id: string; summary: string } | null> {
+    try {
+      const res = await this.calendar.calendars.get({ calendarId });
+      if (!res.data.id) return null;
+      return { id: res.data.id, summary: res.data.summary || res.data.id };
+    } catch {
+      return null;
     }
   }
 

@@ -3,6 +3,7 @@ import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import type { calendar_v3 } from 'googleapis';
 import { GoogleCalendarService } from '@/lib/services/calendar';
+import { calendarIdsFor, type FollowedCalendar } from '@/lib/utils/calendars';
 
 export type CalendarConflict = {
   calendarId: string;
@@ -41,12 +42,29 @@ function normalizeEventTime(e: calendar_v3.Schema$Event) {
   return { start, end, startText, endText };
 }
 
+/**
+ * Which calendars to read for a user: their own, then the ones they follow.
+ *
+ * The email is selected because Google answers for the account's own calendar
+ * both as `primary` and under that address, and a user who followed themselves
+ * by typing their own email had it fetched twice on every read. Events dedupe by
+ * id downstream so nothing looked wrong — it was one wasted round-trip per read,
+ * on every path, forever. `calendarIdsFor` drops it; nothing here asks Google
+ * which calendar is the primary, because these callers run on cron paths with no
+ * session and no budget for a lookup.
+ */
 export async function getCalendarIdsForUser(userId: string) {
-  const rows = await db.select().from(users).where(eq(users.id, userId as string)).limit(1);
-  const followed = Array.isArray(rows[0]?.followedCalendars) ? (rows[0]!.followedCalendars as any[]) : [];
-  const calendarIds = ['primary', ...followed.map((c) => c.calendarId).filter(Boolean)];
-  // De-dup while keeping order
-  return [...new Set(calendarIds)];
+  const [row] = await db
+    .select({ email: users.email, followedCalendars: users.followedCalendars })
+    .from(users)
+    .where(eq(users.id, userId as string))
+    .limit(1);
+
+  const followed = Array.isArray(row?.followedCalendars)
+    ? (row.followedCalendars as FollowedCalendar[])
+    : [];
+
+  return calendarIdsFor(followed, row?.email);
 }
 
 export async function findConflictsForTimeRange(params: {
