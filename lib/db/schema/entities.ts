@@ -111,6 +111,49 @@ export const entityAliases = pgTable(
   })
 );
 
+/**
+ * Names the user has decided are not nodes at all.
+ *
+ * The mirror image of `entity_aliases`, and it exists for the same reason.
+ * `entities` is a projection of every note's `metadata.entities`, rebuilt by
+ * `syncEntitiesForResource` — so deleting a row is exactly as durable as
+ * editing `entities.name` was, which is to say it lasts until the next note
+ * mentions the name and then silently comes back. An alias says "this spelling
+ * means that node"; an exclusion says "this spelling means nothing", and both
+ * are consulted before the upsert that would otherwise overrule them.
+ *
+ * Keyed on the same triple as `entities.identity`, so an exclusion is scoped to
+ * one name *of one type*: deciding that the project called Sequoia is not worth
+ * a node says nothing about the place.
+ *
+ * Nothing here cascades from `entities` — the row outlives the node it buried,
+ * which is the entire point. It is deleted only by restoring, or by the user
+ * going away.
+ */
+export const entityExclusions = pgTable(
+  'entity_exclusions',
+  {
+    id: varchar('id', { length: 191 }).primaryKey().$defaultFn(() => nanoid()),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** As it was displayed when deleted, purely so the list of hidden names is readable. */
+    name: text('name').notNull(),
+    normalizedName: text('normalized_name').notNull(),
+    type: text('type').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    identity: unique('entity_exclusions_identity_unique').on(
+      table.userId,
+      table.normalizedName,
+      table.type
+    ),
+    userIdx: index('entity_exclusions_user_idx').on(table.userId),
+  })
+);
+
 export type Entity = typeof entities.$inferSelect;
 export type EntityMention = typeof entityMentions.$inferSelect;
 export type EntityAlias = typeof entityAliases.$inferSelect;
+export type EntityExclusion = typeof entityExclusions.$inferSelect;

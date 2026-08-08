@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/app/api/auth/auth';
 import { getEntityWithMentions } from '@/lib/actions/entities';
+import { EntityDelete } from './EntityDelete';
 import { EntityIdentity } from './EntityIdentity';
 
 export const runtime = 'nodejs';
@@ -55,7 +56,9 @@ export default async function EntityPage({ params }: { params: { id: string } })
 
       <header className="mt-4 rounded-box border border-base-300 bg-base-100 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
+          {/* Takes the slack, so the controls sit together on the right and an
+              open panel still gets a line of its own at full width. */}
+          <div className="min-w-0 flex-1">
             <h1 className="text-xl font-semibold tracking-tight text-base-content">{entity.name}</h1>
             <p className="mt-1 font-mono text-xs text-base-content/50">
               {TYPE_LABEL[entity.type] ?? entity.type}
@@ -65,9 +68,10 @@ export default async function EntityPage({ params }: { params: { id: string } })
             </p>
           </div>
 
-          {/* The name here is the model's, and it is rewritten on every note that
-              mentions this node — so correcting it has to be a decision the graph
-              records, not an edit to a column. */}
+          {/* Three corrections, all of them decisions the graph has to record
+              rather than edits to a column: the name here is the model's and is
+              rewritten on every note that mentions this node, and the row itself
+              is rebuilt from those notes. */}
           <EntityIdentity
             entity={{
               id: entity.id,
@@ -75,6 +79,9 @@ export default async function EntityPage({ params }: { params: { id: string } })
               type: entity.type,
               mentionCount: entity.mentionCount,
             }}
+          />
+          <EntityDelete
+            entity={{ id: entity.id, name: entity.name, mentionCount: entity.mentionCount }}
           />
         </div>
 

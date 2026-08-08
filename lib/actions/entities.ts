@@ -1,6 +1,6 @@
-import { and, desc, eq, ilike, inArray, notInArray, sql as raw } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, notInArray, or, sql as raw } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { entities, entityAliases, entityMentions, resources } from '@/lib/db/schema';
+import { entities, entityAliases, entityExclusions, entityMentions, resources } from '@/lib/db/schema';
 import { users } from '@/lib/db/schema/auth';
 import { isUsableName, normalizeName, resolveSelfName } from './entity-identity';
 
@@ -120,9 +120,76 @@ export function toGraphCandidates(entities: ExtractedEntity[]): GraphCandidate[]
 
   // Two mentions of the same name in one note are one edge, not two.
   const unique = new Map<string, GraphCandidate>();
-  for (const c of candidates) unique.set(`${c.normalizedName}::${c.type}`, c);
+  for (const c of candidates) unique.set(identityKey(c), c);
 
   return [...unique.values()];
+}
+
+/** `(normalized name, type)` as one string — the identity a node is keyed on. */
+export function identityKey(candidate: { normalizedName: string; type: string }): string {
+  return `${candidate.normalizedName}::${candidate.type}`;
+}
+
+/**
+ * Candidates the user has already decided are not nodes.
+ *
+ * Applied *before* alias resolution, which is safe because the two sets are
+ * kept disjoint at the point of writing: deleting a node buries its aliases
+ * along with its own name, and `clearExclusions` lifts an exclusion whenever a
+ * merge or a rename decides that spelling means something after all.
+ *
+ * Pure, so the rule can be read and tested without a database — the same reason
+ * `toGraphCandidates` is.
+ */
+export function withoutExcluded(
+  candidates: GraphCandidate[],
+  excluded: ReadonlySet<string>
+): GraphCandidate[] {
+  if (excluded.size === 0) return candidates;
+  return candidates.filter((c) => !excluded.has(identityKey(c)));
+}
+
+/** Every identity this user has buried. One query per save, like the alias lookup. */
+async function excludedKeys(userId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ normalizedName: entityExclusions.normalizedName, type: entityExclusions.type })
+    .from(entityExclusions)
+    .where(eq(entityExclusions.userId, userId));
+
+  return new Set(rows.map(identityKey));
+}
+
+/** Anything with a `.delete()` — the connection or a transaction handle. */
+type Writer = Pick<typeof db, 'delete'>;
+
+/**
+ * Lift the tombstones on names that have just been given a meaning.
+ *
+ * A merge or a rename writes an alias saying a spelling resolves to a node.
+ * An exclusion left standing on that same spelling would then be both wrong and
+ * invisible — the node exists, while the list of hidden names still claims it
+ * was buried. The later decision wins, so the older one goes.
+ */
+export async function clearExclusions(
+  tx: Writer,
+  userId: string,
+  identities: Array<{ normalizedName: string; type: string }>
+): Promise<void> {
+  if (identities.length === 0) return;
+
+  await tx.delete(entityExclusions).where(
+    and(
+      eq(entityExclusions.userId, userId),
+      or(
+        ...identities.map((i) =>
+          and(
+            eq(entityExclusions.normalizedName, i.normalizedName),
+            eq(entityExclusions.type, i.type)
+          )
+        )
+      )
+    )
+  );
 }
 
 /** The account holder's own name, for collapsing self-references. */
@@ -177,7 +244,11 @@ export async function syncEntitiesForResource(params: {
     e?.name ? { ...e, name: resolveSelfName(e.name, selfName) } : e
   );
 
-  const unique = toGraphCandidates(named);
+  // A deleted node must stay deleted. Filtered here rather than at the upsert
+  // so an excluded name also stops holding a mention edge open — otherwise the
+  // node would be gone while the note still pointed at where it used to be.
+  const unique = withoutExcluded(toGraphCandidates(named), await excludedKeys(params.userId));
+
   if (unique.length === 0) {
     if (params.replace) {
       await db.delete(entityMentions).where(eq(entityMentions.resourceId, params.resourceId));
@@ -275,7 +346,7 @@ export async function syncEntitiesForResource(params: {
 }
 
 /** `%` and `_` are wildcards in LIKE and literal characters in a name. */
-function escapeLike(value: string): string {
+export function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, '\\$&');
 }
 
@@ -301,6 +372,34 @@ export async function listEntities(
     .where(where)
     .orderBy(desc(entities.mentionCount), desc(entities.updatedAt))
     .limit(options.limit ?? 50);
+}
+
+export type HiddenEntity = {
+  id: string;
+  name: string;
+  type: string;
+  createdAt: Date;
+};
+
+/**
+ * What this user has buried, newest first — the undo list for `deleteEntity`.
+ *
+ * A read rather than a server action, and here rather than beside the delete it
+ * belongs to, because it takes a user id: as an action it would be an endpoint
+ * anyone signed in could call with somebody else's id.
+ */
+export async function listHiddenEntities(userId: string): Promise<HiddenEntity[]> {
+  return db
+    .select({
+      id: entityExclusions.id,
+      name: entityExclusions.name,
+      type: entityExclusions.type,
+      createdAt: entityExclusions.createdAt,
+    })
+    .from(entityExclusions)
+    .where(eq(entityExclusions.userId, userId))
+    .orderBy(desc(entityExclusions.createdAt))
+    .limit(100);
 }
 
 /** One entity plus every note that mentions it — the "what do I know" view. */

@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { auth } from '@/app/api/auth/auth';
-import { listEntities } from '@/lib/actions/entities';
+import { listEntities, listHiddenEntities } from '@/lib/actions/entities';
 import { findMergeCandidates } from '@/lib/actions/entity-merge';
+import { HiddenEntities } from './HiddenEntities';
 import { MergeSuggestions } from './MergeSuggestions';
 
 export const runtime = 'nodejs';
@@ -30,9 +31,10 @@ export default async function EntitiesPage() {
   const userId = session?.user?.id;
   if (!userId) redirect('/api/auth/signin');
 
-  const [all, mergeCandidates] = await Promise.all([
+  const [all, mergeCandidates, hidden] = await Promise.all([
     listEntities(userId, { limit: 100 }),
     findMergeCandidates(userId),
+    listHiddenEntities(userId),
   ]);
 
   const grouped = new Map<string, typeof all>();
@@ -64,6 +66,8 @@ export default async function EntitiesPage() {
       </header>
 
       {mergeCandidates.length > 0 && <MergeSuggestions candidates={mergeCandidates} />}
+
+      <HiddenEntities hidden={hidden} />
 
       {all.length === 0 ? (
         <div className="rounded-box border border-base-300 bg-base-100 p-6 text-center">

@@ -4,6 +4,7 @@ import { and, eq, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { entities, entityAliases } from '@/lib/db/schema';
 import { getSessionOrNull } from '@/lib/utils/auth';
+import { clearExclusions } from './entities';
 import { planRename } from './entity-identity';
 
 /**
@@ -77,12 +78,23 @@ export async function renameEntity(entityId: string, requestedName: string): Pro
       // Both spellings point here afterwards. `onConflictDoNothing` rather than
       // an upsert: an alias that already resolves elsewhere belongs to a
       // decision made earlier, and hijacking it would undo that merge.
-      for (const normalizedAlias of new Set([entity.normalizedName, plan.normalizedName])) {
+      const spellings = [...new Set([entity.normalizedName, plan.normalizedName])];
+
+      for (const normalizedAlias of spellings) {
         await tx
           .insert(entityAliases)
           .values({ userId, entityId: entity.id, normalizedAlias, type: entity.type })
           .onConflictDoNothing();
       }
+
+      // Both spellings now mean this node, so a tombstone left on either from an
+      // earlier delete has been overruled — and one still standing would keep
+      // the name in the hidden list while the node it named is on screen.
+      await clearExclusions(
+        tx,
+        userId,
+        spellings.map((normalizedName) => ({ normalizedName, type: entity.type }))
+      );
 
       await tx
         .update(entities)

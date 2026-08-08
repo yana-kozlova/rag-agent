@@ -4,6 +4,7 @@ import { and, eq, inArray, sql as raw } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { entities, entityAliases, entityMentions } from '@/lib/db/schema';
 import { getSessionOrNull } from '@/lib/utils/auth';
+import { clearExclusions } from './entities';
 import { matchNames, type MatchReason } from './entity-identity';
 
 /**
@@ -152,6 +153,14 @@ export async function mergeEntities(winnerId: string, loserId: string) {
           type: loser.type,
         })
         .onConflictDoNothing();
+
+      // Both names now mean this node, so neither can still be buried. A user
+      // who deletes a duplicate and later merges something into its spelling
+      // would otherwise leave a tombstone standing over a live node.
+      await clearExclusions(tx, userId, [
+        { normalizedName: loser.normalizedName, type: loser.type },
+        { normalizedName: winner.normalizedName, type: winner.type },
+      ]);
 
       await tx
         .update(entities)
