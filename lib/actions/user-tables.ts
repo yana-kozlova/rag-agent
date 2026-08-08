@@ -17,6 +17,7 @@ import {
 } from '@/lib/db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import { generateEmbeddings } from '@/lib/ai/embedding';
+import { embeddingCache } from '@/lib/ai/embedding-cache';
 import { embeddings as embeddingsTable } from '@/lib/db/schema/embeddings';
 import { resources } from '@/lib/db/schema/resources';
 
@@ -140,6 +141,15 @@ export const deleteUserTable = async (id: string) => {
       .delete(userTables)
       .where(eq(userTables.id, id));
 
+    // Table rows are indexed into the same `embeddings` table that notes are,
+    // and `getInformation` caches its finished answers for five minutes. Only
+    // `lib/actions/resources.ts` was clearing that, so every write on this side
+    // was invisible to a question already asked — a row added and immediately
+    // asked about came back "I don't know", and a deleted table went on
+    // answering. Clearing per user is cheap: it is a prefix scan over an
+    // in-process Map of at most 100 entries.
+    embeddingCache.clearForUser(userId);
+
     return { success: true, message: 'Table successfully deleted.' };
   } catch (error) {
     return {
@@ -220,6 +230,8 @@ export const createTableRow = async (input: CreateTableRowParams) => {
       }
     }
 
+    embeddingCache.clearForUser(userId);
+
     return { success: true, message: 'Row successfully created.', id: row.id };
   } catch (error) {
     return {
@@ -296,6 +308,8 @@ export const updateTableRow = async (rowId: string, input: UpdateTableRowParams)
         }
       }
     }
+
+    embeddingCache.clearForUser(userId);
 
     return { success: true, message: 'Row successfully updated.', row: updated };
   } catch (error) {
@@ -450,6 +464,8 @@ export const createTableRowsBulk = async (input: {
       }
     }
 
+    embeddingCache.clearForUser(userId);
+
     return {
       success: true,
       message: `${insertedRows.length} row(s) successfully created.`,
@@ -502,6 +518,8 @@ export const deleteTableRow = async (rowId: string) => {
     await db
       .delete(userTablesData)
       .where(eq(userTablesData.id, rowId));
+
+    embeddingCache.clearForUser(userId);
 
     return { success: true, message: 'Row successfully deleted.' };
   } catch (error) {

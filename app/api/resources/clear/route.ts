@@ -5,6 +5,7 @@ import { resources } from '@/lib/db/schema/resources';
 import { embeddings as embeddingsTable } from '@/lib/db/schema/embeddings';
 import { eq, inArray, and } from 'drizzle-orm';
 import { deleteStoredImage } from '@/lib/storage/images';
+import { embeddingCache } from '@/lib/ai/embedding-cache';
 
 export const runtime = 'nodejs';
 
@@ -43,6 +44,12 @@ export async function DELETE() {
       )
     );
     await db.delete(resources).where(eq(resources.userId, userId as string));
+
+    // Before the blobs, and the moment the rows are gone: `getInformation`
+    // memoises finished answers for five minutes, so without this the assistant
+    // keeps quoting notes that no longer exist for minutes after the user asked
+    // it to forget everything — which is the one thing this endpoint must not do.
+    embeddingCache.clearForUser(userId);
 
     // Wiping the knowledge base has to wipe the pictures too, or "clear
     // everything" quietly leaves them on public URLs.
