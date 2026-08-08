@@ -151,6 +151,19 @@ describe('what is coming up', () => {
     expect(next.years).toBeNull();
   });
 
+  it('does not project a row already saved as annual on a year-only date', () => {
+    // The read side has to hold this line too: rows written before the rule
+    // existed are still in the database, and projecting one puts a wedding on
+    // 1 January every year with no migration able to guess what was meant.
+    const legacy = {
+      occurredOn: '2015-01-01',
+      precision: 'year' as const,
+      recurrence: 'annual' as const,
+    };
+
+    expect(upcomingOccurrences([legacy], '2025-12-20', 60)).toEqual([]);
+  });
+
   it('leaves past one-off dates off the list entirely', () => {
     expect(upcomingOccurrences([move], '2026-03-01', 365)).toEqual([]);
   });
@@ -220,6 +233,29 @@ describe('turning what extraction returned into rows', () => {
     const [candidate] = toTimelineCandidates([{ date: '2022-06', title: 'переїзд' }]);
     expect(candidate.recurrence).toBe('none');
     expect(candidate.precision).toBe('month');
+  });
+
+  it('refuses to recur a date with no day to recur on, whatever the model said', () => {
+    // "Ми одружились у 2015" is stored as 2015-01-01 because the column is a
+    // `date`. Honouring `recurring` there announces an anniversary on New
+    // Year's Day and prints an age beside it — a day nobody said, stated as
+    // confidently as one they did.
+    const [year] = toTimelineCandidates([
+      { date: '2015', title: 'весілля', kind: 'anniversary', recurring: true },
+    ]);
+    expect(year.recurrence).toBe('none');
+
+    const [month] = toTimelineCandidates([
+      { date: '2015-06', title: 'весілля', kind: 'anniversary', recurring: true },
+    ]);
+    expect(month.recurrence).toBe('none');
+  });
+
+  it('still recurs a date that has a day and a month', () => {
+    const [full] = toTimelineCandidates([
+      { date: '2015-06-20', title: 'весілля', kind: 'anniversary', recurring: true },
+    ]);
+    expect(full.recurrence).toBe('annual');
   });
 
   it('collapses the same date said twice in one note', () => {

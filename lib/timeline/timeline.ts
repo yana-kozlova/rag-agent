@@ -113,6 +113,28 @@ export function timelineKindLabel(kind: string): string {
   return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
+/**
+ * Whether this date has anything to come round *on*.
+ *
+ * Recurrence needs a real month and a real day. "Ми одружились у 2015" is stored
+ * as `2015-01-01` because the column is a `date` and something has to go in the
+ * other two components — the 1 January is padding, not a day anyone named. Left
+ * alone, `recurring: true` on such a date makes `nextAnnualOccurrence` project
+ * an anniversary onto New Year's Day and print "turns 11" beside it: a date the
+ * note never carried, announced with the same confidence as one it did.
+ *
+ * `precision` already records which components are real; this is the second
+ * place that has to read it. Nothing is lost by refusing — a year-only date
+ * still sits on the axis under its year, which is the whole of what it meant.
+ *
+ * Read on both sides deliberately. The write side stops new rows being created
+ * this way; the read side makes the rows already saved harmless without a
+ * migration that would have to guess what the user meant.
+ */
+export function canRecurAnnually(precision: DatePrecision): boolean {
+  return precision === 'day' || precision === 'day-month';
+}
+
 /** The parts of a stored row this module needs to do anything. */
 export type DatedEvent = {
   occurredOn: string;
@@ -306,16 +328,18 @@ export function upcomingOccurrences<T extends DatedEvent>(
   const occurrences: TimelineOccurrence<T>[] = [];
 
   for (const event of events) {
-    const date =
-      event.recurrence === 'annual'
-        ? nextAnnualOccurrence(event.occurredOn, today)
-        : event.occurredOn;
+    // Not `recurrence === 'annual'` alone: a row saved as annual on a year- or
+    // month-precision date cannot be projected without inventing the day it
+    // lands on. Such a row is read as the one-off it really is.
+    const recurs = event.recurrence === 'annual' && canRecurAnnually(event.precision);
+
+    const date = recurs ? nextAnnualOccurrence(event.occurredOn, today) : event.occurredOn;
 
     const daysAway = daysBetween(today, date);
     if (daysAway < 0 || daysAway > horizonDays) continue;
 
     const years =
-      event.recurrence === 'annual' && event.precision !== 'day-month'
+      recurs && event.precision !== 'day-month'
         ? Number(date.slice(0, 4)) - Number(event.occurredOn.slice(0, 4))
         : null;
 
@@ -443,7 +467,14 @@ export function toTimelineCandidates(dates: ExtractedDate[]): TimelineCandidate[
     const candidate: TimelineCandidate = {
       occurredOn: spec.occurredOn,
       precision: spec.precision,
-      recurrence: spec.precision === 'day-month' || raw.recurring === true ? 'annual' : 'none',
+      // `day-month` is forced annual (it can mean nothing else); anything the
+      // model marked recurring is honoured only when the date has a month and a
+      // day to recur on — see `canRecurAnnually`.
+      recurrence:
+        canRecurAnnually(spec.precision) &&
+        (spec.precision === 'day-month' || raw.recurring === true)
+          ? 'annual'
+          : 'none',
       title,
       kind,
       note,

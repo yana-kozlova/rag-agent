@@ -80,6 +80,11 @@ export default function AddDateForm() {
 
   const spec = toDateSpec(year, month, day);
   const noYear = !year.trim() && !!spec;
+  // Only a date with a real month and day has anything to come round on. Left
+  // offered, "every year" on a year-only date stores an anniversary the form
+  // then shows back as 1 January — the exact component the `precision` column
+  // exists to keep unprinted.
+  const canRecur = !!month.trim() && !!day.trim();
 
   function reset() {
     setTitle('');
@@ -111,7 +116,7 @@ export default function AddDateForm() {
           subject: subject.trim() || undefined,
           note: note.trim() || undefined,
           // A date with no year of its own can only mean one that comes round.
-          recurrence: recurring || noYear ? 'annual' : 'none',
+          recurrence: canRecur && (recurring || noYear) ? 'annual' : 'none',
         }),
       });
 
@@ -205,13 +210,18 @@ export default function AddDateForm() {
         <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
           <input
             type="checkbox"
-            checked={recurring || noYear}
-            disabled={noYear}
+            checked={canRecur && (recurring || noYear)}
+            disabled={noYear || !canRecur}
             onChange={(e) => setRecurring(e.target.checked)}
             className="checkbox checkbox-sm"
           />
-          <span className={noYear ? 'text-base-content/50' : ''}>
-            Comes round every year{noYear ? ' — a date with no year always does' : ''}
+          <span className={noYear || !canRecur ? 'text-base-content/50' : ''}>
+            Comes round every year
+            {noYear
+              ? ' — a date with no year always does'
+              : !canRecur
+                ? ' — needs a day and a month'
+                : ''}
           </span>
         </label>
 

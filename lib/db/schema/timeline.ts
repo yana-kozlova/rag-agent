@@ -103,6 +103,14 @@ export const timelineEvents = pgTable(
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
+    // ⚠️ `timeline_events_identity_unique` — the index every `onConflictDoNothing`
+    // in `lib/actions/timeline.ts` relies on — is NOT declared here. It is an
+    // expression index (`lower(btrim(title))`) that Drizzle cannot express, so it
+    // lives only in migration 0022. `drizzle-kit push` compares this file against
+    // the database and drops what it does not find: pushing would silently remove
+    // it, and dedupe would stop working with nothing raising. Use `db:generate` +
+    // `db:migrate` on this table, never `db:push`.
+
     // Every read is "this user, in date order" — the axis, the upcoming list and
     // the briefing all want exactly that.
     userDateIdx: index('timeline_user_date_idx').on(table.userId, table.occurredOn),

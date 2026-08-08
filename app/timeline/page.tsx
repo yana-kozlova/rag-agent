@@ -7,6 +7,7 @@ import { fetchEventsBetween, formatEventTime } from '@/lib/push/calendar-window'
 import { addLocalDays, formatUtcOffset } from '@/lib/push/timezone';
 import {
   UPCOMING_HORIZON_DAYS,
+  canRecurAnnually,
   formatTimelineDate,
   groupByYear,
   nextAnnualOccurrence,
@@ -152,7 +153,15 @@ export default async function TimelinePage() {
   // else: a birthday recorded as --MM-DD has no year to be filed under, so the
   // axis cannot show it and "coming up" only does for a few weeks a year.
   const annual = view.events
-    .filter((event) => event.recurrence === 'annual')
+    .filter(
+      (event) =>
+        event.recurrence === 'annual' &&
+        // A row saved annual on a year- or month-precision date has no day to
+        // come round on, so it belongs to the axis above and not here. The
+        // formatting below assumes exactly that, which is why it can drop the
+        // year from a `day` date and be right every time.
+        canRecurAnnually(event.precision as DatePrecision)
+    )
     .map((event) => ({
       id: event.id,
       title: event.title,

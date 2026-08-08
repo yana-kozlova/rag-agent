@@ -12,6 +12,7 @@ import {
 import { getLocalDateKey } from '@/lib/push/timezone';
 import {
   UPCOMING_HORIZON_DAYS,
+  canRecurAnnually,
   isSameStoredDate,
   parseDateSpec,
   subjectKey as toSubjectKey,
@@ -194,8 +195,16 @@ export async function recordTimelineEvent(params: {
   const row: WritableRow = {
     occurredOn: spec.occurredOn,
     precision: spec.precision,
+    // A `day-month` date can only be annual; anything else is annual only if it
+    // has a month and a day to come round on. A model asked to record "ми
+    // одружились у 2015" will happily set recurring — and a year stored as
+    // 1 January would then be announced as an anniversary on New Year's Day.
     recurrence:
-      spec.precision === 'day-month' ? 'annual' : ((input.recurrence ?? 'none') as Recurrence),
+      spec.precision === 'day-month'
+        ? 'annual'
+        : canRecurAnnually(spec.precision) && input.recurrence === 'annual'
+          ? 'annual'
+          : ('none' as Recurrence),
     title: input.title,
     kind: input.kind?.toLowerCase() || 'other',
     note: input.note || null,
@@ -238,6 +247,11 @@ export async function recordTimelineEvent(params: {
     : { success: false, message: 'Could not save the date.' };
 }
 
+/** `%` and `_` are wildcards in LIKE and literal characters in a title. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
+}
+
 /** Every date this user has, newest first. */
 export async function listTimelineEvents(
   userId: string,
@@ -274,7 +288,10 @@ export async function queryTimelineEvents(
   if (filters.to) where.push(lte(timelineEvents.occurredOn, filters.to));
   if (filters.subject) where.push(eq(timelineEvents.subjectKey, toSubjectKey(filters.subject)));
   if (filters.search) {
-    const pattern = `%${filters.search.trim()}%`;
+    // Escaped for the same reason `listEntities` escapes: `%` and `_` are
+    // wildcards to LIKE and ordinary characters in a title. A search for "50%"
+    // otherwise matches "50" followed by anything at all.
+    const pattern = `%${escapeLike(filters.search.trim())}%`;
     where.push(or(ilike(timelineEvents.title, pattern), ilike(timelineEvents.note, pattern)));
   }
 
