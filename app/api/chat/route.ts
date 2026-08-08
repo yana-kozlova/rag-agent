@@ -7,6 +7,12 @@ import { agentModelName, agentOptions } from '@/lib/ai/agent';
 import { saveUserMessage } from '@/lib/middleware/save-user-message';
 import { logLlmUsage } from '@/lib/ai/telemetry';
 import { AUTO_GREETING_MARKER, isAutoGreetingText, stripAutoGreetingMarker } from '@/lib/chat/auto-greeting';
+import {
+  readUploadMarker,
+  stripUploadMarker,
+  uploadInstruction,
+  withText,
+} from '@/lib/chat/upload-marker';
 
 /** Pull the text out of a UIMessage regardless of which shape it arrived in. */
 function extractText(m: any): string {
@@ -47,24 +53,16 @@ export async function POST(req: Request) {
           return stripAutoGreetingFromMessage(m);
         }
 
-        // Check for hidden resourceIds marker: [RESOURCE_IDS:...]
-        const markerMatch = currentContent.match(/\u200B\u200B\[RESOURCE_IDS:([^\]]+)\]\u200B\u200B/);
-        if (markerMatch) {
-          const resourceIds = markerMatch[1].split(',');
-          const resourceIdsList = resourceIds.join(', ');
-          const fileInfo = `[FILES_UPLOADED] ${resourceIds.length} file(s) have been uploaded to the knowledge base. Resource IDs: ${resourceIdsList}. Use analyzeFile with these resourceIds directly - DO NOT use getInformation. The files are already saved and available.`;
-          
-          // Remove marker and add technical info
-          const contentWithoutMarker = currentContent.replace(/\u200B\u200B\[RESOURCE_IDS:[^\]]+\]\u200B\u200B/, '').trim();
-          const enhancedContent = contentWithoutMarker 
-            ? `${contentWithoutMarker}\n\n${fileInfo}`
-            : fileInfo;
-          
-          // Return message with enhanced content
-          return {
-            ...m,
-            content: enhancedContent,
-          };
+        // Files rode along with this message: swap the hidden marker for the
+        // instruction naming their ids. Written through `withText` because
+        // `convertToModelMessages` reads `parts` and nothing else — setting
+        // `content` alone left the model holding the marker and no instruction.
+        const resourceIds = readUploadMarker(currentContent);
+        if (resourceIds) {
+          const said = stripUploadMarker(currentContent);
+          const fileInfo = uploadInstruction(resourceIds);
+
+          return withText(m, said ? `${said}\n\n${fileInfo}` : fileInfo);
         }
       }
       return m;

@@ -10,6 +10,7 @@ import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import { getUserInitials } from '@/lib/utils';
 import { isAutoGreetingText } from '@/lib/chat/auto-greeting';
+import { stripUploadMarker, uploadMarker } from '@/lib/chat/upload-marker';
 import {
   UPLOAD_ACCEPT_ATTRIBUTE,
   isUploadableImage,
@@ -262,7 +263,7 @@ export default function ChatSection() {
           const isFromUseChat = messagesWithUniqueIds.some((msg: any) => msg.id === m.id);
           if (isUser && isFromUseChat && bubbleText) {
             // Remove zero-width marker: [RESOURCE_IDS:...]
-            bubbleText = bubbleText.replace(/\u200B\u200B\[RESOURCE_IDS:[^\]]+\]\u200B\u200B/g, '').trim();
+            bubbleText = stripUploadMarker(bubbleText);
           }
           
           
@@ -480,8 +481,8 @@ export default function ChatSection() {
           if (messageTextForDisplay || uploadedResources.length > 0) {
            let messageToSend = messageTextForDisplay || '';
             if (uploadedResources.length > 0) {
-              const marker = `\u200B\u200B[RESOURCE_IDS:${uploadedResources.join(',')}]\u200B\u200B`;
-              messageToSend = messageTextForDisplay 
+              const marker = uploadMarker(uploadedResources);
+              messageToSend = messageTextForDisplay
                 ? `${messageTextForDisplay}${marker}`
                 : `Uploaded ${uploadedResources.length} file(s)${marker}`;
             }
