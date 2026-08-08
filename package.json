@@ -18,7 +18,8 @@
     "kb:backfill": "tsx scripts/backfill-entities.ts",
     "kb:compact": "tsx scripts/compact-notes.ts",
     "wellbeing:canonicalize": "tsx scripts/canonicalize-symptoms.ts",
-    "timeline:backfill": "tsx scripts/backfill-timeline.ts"
+    "timeline:backfill": "tsx scripts/backfill-timeline.ts",
+    "images:prune": "tsx scripts/prune-dead-images.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.53",
