@@ -48,6 +48,18 @@ function normalize(text: string): string {
  *
  * An anchor is checked by its content words; matching on "for" or "від" would
  * pass a rewrite that kept the grammar and lost the fact.
+ *
+ * The words for the account holder are here for a different reason. A fact
+ * about them is extracted with a *placeholder* subject — extraction is told to
+ * write the word for "user" in the message's language rather than a name — and
+ * that word is almost never what the note itself says, which names them or
+ * simply speaks in the first person. This was invisible while notes were
+ * written in English and the summary opened "User requests…", so the anchor
+ * "user" happened to be present; once notes are written in the language the
+ * user typed, that coincidence is gone and every fact about them would read as
+ * dropped, rejecting every rewrite and turning merging silently back into
+ * appending. The object of such a fact is the part carrying information, and it
+ * still has to survive.
  */
 const STOPWORDS = new Set([
   'a', 'an', 'the', 'of', 'for', 'from', 'to', 'in', 'on', 'at', 'by', 'with',
@@ -55,6 +67,8 @@ const STOPWORDS = new Set([
   'it', 'its', 'his', 'her', 'their',
   'і', 'й', 'та', 'в', 'у', 'на', 'з', 'із', 'до', 'від', 'для', 'про', 'що',
   'як', 'це',
+  // The account holder, however extraction spelled them this time.
+  'user', 'me', 'myself', 'користувач', 'користувачка', 'юзер', 'пользователь',
 ]);
 
 /** The content words of an anchor, in no particular order. */

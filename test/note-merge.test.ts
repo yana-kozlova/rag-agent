@@ -88,6 +88,46 @@ describe('recognising a fact inside prose rather than a fact list', () => {
   });
 });
 
+/**
+ * Notes are written in the language the user typed, and a fact about the
+ * account holder carries a placeholder subject — the word for "user" in that
+ * language, never their name. So the subject is a word the note itself has no
+ * reason to contain: it says "Артему потрібна довідка", or nothing at all.
+ *
+ * Anchoring on it would report every such fact as dropped, reject every
+ * rewrite, and turn merging back into appending without a single log line
+ * saying so. Whatever the fact actually claims lives in its object, and that
+ * still has to be there.
+ */
+describe('a fact whose subject is the account holder', () => {
+  const fact = {
+    subject: 'користувач',
+    predicate: 'потребує',
+    object: 'довідку від педіатра для Артема',
+  };
+
+  it('accepts a note that never says the placeholder word', () => {
+    expect(
+      factSurvives(fact, normalize('Артему потрібна довідка від педіатра для школи.'))
+    ).toBe(true);
+  });
+
+  it('still rejects a note that dropped the person', () => {
+    expect(factSurvives(fact, normalize('Потрібна довідка від педіатра для школи.'))).toBe(false);
+  });
+
+  it('still rejects a note that dropped the thing needed', () => {
+    expect(factSurvives(fact, normalize('У Артема запис на прийом.'))).toBe(false);
+  });
+
+  it('treats the English spelling of the placeholder the same way', () => {
+    expect(__test.anchorTokens('user')).toEqual([]);
+    expect(__test.anchorTokens('користувач')).toEqual([]);
+    // Not a blanket ban on the word: it still anchors inside a real phrase.
+    expect(__test.anchorTokens('user manual')).toEqual(['manual']);
+  });
+});
+
 describe('merging without a model', () => {
   it('appends rather than losing anything', async () => {
     const merged = await mergeNoteContent({

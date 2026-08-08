@@ -110,23 +110,39 @@ Guidelines:
 - Create a clear title and summary
 - Generate relevant tags for searchability
 - If the user mentions their name or it can be inferred, include it in userName
-- Link facts to the user when they're about the user (use "user" as subject)
+- Link facts to the user when they're about the user: as the subject use the word for "user" in the message's language ("user", "користувач"), never their name
 - Be specific and detailed - this information will be used to help the user in future conversations
+
+Language:
+- WRITE IN THE LANGUAGE OF THE MESSAGE. The title, the summary, every key point, and the wording of every fact, entity and need are written in the language the user wrote in. Do not translate.
+- Never translate or transliterate a name. A person, place or organization keeps the exact spelling the message used, in its own alphabet.
+- Four fields are machine-readable and are ALWAYS lowercase English, whatever the message's language: contentType, each entity's "type", each need's "priority", and every tag.
 
 Examples:
 Message: "дай рекомендації конкретні! мені треба впихнути сон, прибирання, читання давай побудуємо графік дня"
 Facts:
-- subject: "user", predicate: "needs help with", object: "daily schedule planning"
-- subject: "user", predicate: "wants to include", object: "sleep, cleaning, reading in daily schedule"
+- subject: "користувач", predicate: "потребує допомоги з", object: "плануванням графіка дня"
+- subject: "користувач", predicate: "хоче включити", object: "сон, прибирання, читання в графік дня"
 Entities:
-- name: "daily schedule", type: "activity", relationship: "user's routine"
+- name: "графік дня", type: "activity", relationship: "щоденна рутина користувача"
 Needs:
-- need: "help with daily schedule planning", priority: "high", context: "wants to include sleep, cleaning, reading"
+- need: "допомога з плануванням графіка дня", priority: "high", context: "хоче включити сон, прибирання, читання"
 Structured content:
-- title: "User needs help planning daily schedule with sleep, cleaning, and reading"
-- summary: "User requests help creating a daily schedule that includes sleep, cleaning, and reading activities. They want specific recommendations for time management."
-- keyPoints: ["User needs help with daily schedule planning", "Wants to include: sleep, cleaning, reading", "Requests specific recommendations", "Wants to build a daily schedule"]
+- title: "Користувач потребує допомоги зі складанням графіка дня"
+- summary: "Користувач просить допомогти скласти графік дня, куди входять сон, прибирання і читання. Хоче конкретні рекомендації щодо розподілу часу."
+- keyPoints: ["Потрібна допомога зі складанням графіка дня", "Має вміщати: сон, прибирання, читання", "Просить конкретні рекомендації"]
 - tags: ["schedule", "daily-routine", "time-management", "sleep", "cleaning", "reading"]
+
+Message: "Met Sarah from Acme yesterday, she's leading their billing migration"
+Facts:
+- subject: "Sarah", predicate: "works at", object: "Acme"
+- subject: "Sarah", predicate: "is leading", object: "billing migration"
+Entities:
+- name: "Sarah", type: "person", relationship: "professional contact"
+- name: "Acme", type: "organization", relationship: null
+Structured content:
+- title: "Sarah from Acme is leading their billing migration"
+- tags: ["work", "contacts", "migration"]
 
 Now analyze the provided message.`,
       temperature: 0.2, // Lower temperature for more consistent extraction
