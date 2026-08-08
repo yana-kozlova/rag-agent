@@ -114,10 +114,13 @@ export async function mergeEntities(winnerId: string, loserId: string) {
     return { success: false, message: 'Entity not found or access denied.' };
   }
 
-  if (winner.type !== loser.type) {
-    return { success: false, message: 'Only entities of the same type can be merged.' };
-  }
-
+  // Types are allowed to differ, and nothing below depends on them matching:
+  // the winner's type survives, and the alias keeps the *loser's*, so a note
+  // that types the name that way again still lands here. Suggestions are still
+  // made within a type — an identical name under two types is usually two
+  // different things — but the model assigns types unstably enough that one
+  // project filed once as `project` and once as `organization` is the ordinary
+  // reason to reach for a manual merge, and the user can see both on screen.
   try {
     await db.transaction(async (tx) => {
       // Repoint first. `entity_mentions.entity_id` cascades on delete, so

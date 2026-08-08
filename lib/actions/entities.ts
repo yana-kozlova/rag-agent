@@ -1,8 +1,8 @@
-import { and, desc, eq, inArray, notInArray, sql as raw } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, notInArray, sql as raw } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { entities, entityAliases, entityMentions, resources } from '@/lib/db/schema';
 import { users } from '@/lib/db/schema/auth';
-import { matchNames, normalizeName, resolveSelfName } from './entity-identity';
+import { isUsableName, normalizeName, resolveSelfName } from './entity-identity';
 
 /**
  * Turning the entities a note mentions into nodes of a graph.
@@ -89,18 +89,6 @@ const TYPE_ALIASES: Record<string, string> = {
 function canonicalType(type: string): string {
   const lower = type.trim().toLowerCase();
   return TYPE_ALIASES[lower] ?? lower;
-}
-
-/**
- * A name worth making a node of.
- *
- * The model occasionally returns a fragment rather than a thing — a bare
- * preposition, a whole clause. Neither makes a useful node, and both pollute
- * the list permanently.
- */
-function isUsableName(name: string): boolean {
-  const trimmed = name.trim();
-  return trimmed.length >= 2 && trimmed.length <= 120 && /\p{L}/u.test(trimmed);
 }
 
 export type GraphCandidate = {
@@ -206,7 +194,18 @@ export async function syncEntitiesForResource(params: {
     // rename it back to the spelling they rejected.
     let entityId = await resolveAlias(params.userId, candidate.normalizedName, candidate.type);
 
-    if (!entityId) {
+    if (entityId) {
+      // The name is the user's, not the model's — that is what an alias records,
+      // and skipping the upsert is what keeps it. A later note may still know
+      // something new about the node though, so the relationship is filled in
+      // by the same rule the upsert uses; only the spelling is off limits.
+      if (candidate.relationship) {
+        await db
+          .update(entities)
+          .set({ relationship: candidate.relationship, updatedAt: new Date() })
+          .where(eq(entities.id, entityId));
+      }
+    } else {
       // Upsert rather than select-then-insert: concurrent saves of the same
       // person would otherwise race and one would violate the unique index.
       const [entity] = await db
@@ -275,11 +274,26 @@ export async function syncEntitiesForResource(params: {
   return { linked };
 }
 
+/** `%` and `_` are wildcards in LIKE and literal characters in a name. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
+}
+
 /** Entities for the user, most-mentioned first. */
-export async function listEntities(userId: string, options: { type?: string; limit?: number } = {}) {
-  const where = options.type
-    ? and(eq(entities.userId, userId), eq(entities.type, options.type))
-    : eq(entities.userId, userId);
+export async function listEntities(
+  userId: string,
+  options: { type?: string; q?: string; limit?: number } = {}
+) {
+  const query = options.q?.trim();
+
+  const where = and(
+    eq(entities.userId, userId),
+    options.type ? eq(entities.type, options.type) : undefined,
+    // Substring rather than prefix: the reason to search by hand is usually a
+    // spelling the automatic rules could not fold, and "Коваленко" has to find
+    // "Андрій Коваленко". `ilike` covers case, which is all normalisation adds.
+    query ? ilike(entities.name, `%${escapeLike(query)}%`) : undefined
+  );
 
   return db
     .select()

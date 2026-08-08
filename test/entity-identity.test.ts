@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fold, matchNames, normalizeName, resolveSelfName } from '@/lib/actions/entity-identity';
+import { fold, matchNames, normalizeName, planRename, resolveSelfName } from '@/lib/actions/entity-identity';
 
 describe('folding a name', () => {
   /** The pair that split the first real graph in two. */
@@ -75,5 +75,39 @@ describe('normalizeName', () => {
     expect(normalizeName('Яна')).toBe('яна');
     // Crucially not folded: two spellings stay two keys until someone merges them.
     expect(normalizeName('Яна')).not.toBe(normalizeName('Yana'));
+  });
+});
+
+describe('planning a rename', () => {
+  const entity = { name: 'Андрій', normalizedName: 'андрій' };
+
+  it('moves the node to a new identity when the name really changed', () => {
+    const plan = planRename(entity, 'Андрій Коваленко');
+
+    expect(plan).toEqual({
+      kind: 'rename',
+      name: 'Андрій Коваленко',
+      normalizedName: 'андрій коваленко',
+    });
+  });
+
+  // The distinction the caller acts on: a respell cannot collide with an
+  // existing node, because this row already occupies that identity.
+  it('separates a change of spelling from a change of identity', () => {
+    const plan = planRename({ name: 'андрій', normalizedName: 'андрій' }, 'Андрій');
+
+    expect(plan.kind).toBe('respell');
+    expect(plan).toMatchObject({ normalizedName: 'андрій' });
+  });
+
+  it('treats surrounding whitespace as nothing at all', () => {
+    expect(planRename(entity, '  Андрій  ').kind).toBe('unchanged');
+  });
+
+  it('refuses what would not have been allowed to become a node', () => {
+    expect(planRename(entity, '').kind).toBe('invalid');
+    expect(planRename(entity, 'я').kind).toBe('invalid');
+    expect(planRename(entity, '42').kind).toBe('invalid');
+    expect(planRename(entity, 'а'.repeat(121)).kind).toBe('invalid');
   });
 });

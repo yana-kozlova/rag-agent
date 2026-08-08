@@ -13,10 +13,11 @@ export async function GET(req: Request) {
 
   const params = new URL(req.url).searchParams;
   const type = params.get('type') ?? undefined;
+  const q = params.get('q') ?? undefined;
   const limitParam = Number.parseInt(params.get('limit') ?? '', 10);
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 100) : undefined;
 
-  const entities = await listEntities(session.user.id, { type, limit });
+  const entities = await listEntities(session.user.id, { type, q, limit });
 
   return NextResponse.json({ entities });
 }

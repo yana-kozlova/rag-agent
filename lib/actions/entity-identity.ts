@@ -99,6 +99,57 @@ export function matchNames(a: string, b: string): MatchReason | null {
   return null;
 }
 
+/**
+ * A name worth making a node of.
+ *
+ * The model occasionally returns a fragment rather than a thing — a bare
+ * preposition, a whole clause. Neither makes a useful node, and both pollute
+ * the list permanently. The same bounds apply to a name typed by hand, so the
+ * rule lives here rather than beside either caller.
+ */
+export function isUsableName(name: string): boolean {
+  const trimmed = name.trim();
+  return trimmed.length >= 2 && trimmed.length <= 120 && /\p{L}/u.test(trimmed);
+}
+
+/**
+ * What renaming a node to a given name actually changes.
+ *
+ * Two cases that look alike and are not. A *respell* keeps the identity
+ * `(user_id, normalized_name, type)` and only changes the spelling on screen —
+ * it cannot collide with anything, because the row already occupies that
+ * identity. A *rename* moves the row to a new identity, which can collide with
+ * an existing node and therefore has to be checked against the database first.
+ *
+ * Both write an alias, and that is the point of doing this at all: the display
+ * name is "as last written by the model", so an edit that only touched the
+ * column would be overwritten by the next note mentioning it.
+ */
+export type RenamePlan =
+  | { kind: 'invalid'; message: string }
+  | { kind: 'unchanged' }
+  | { kind: 'respell'; name: string; normalizedName: string }
+  | { kind: 'rename'; name: string; normalizedName: string };
+
+export function planRename(current: { name: string; normalizedName: string }, requested: string): RenamePlan {
+  const name = requested.trim();
+
+  if (!isUsableName(name)) {
+    return {
+      kind: 'invalid',
+      message: 'A name needs at least two characters, one of them a letter, and at most 120.',
+    };
+  }
+
+  if (name === current.name) return { kind: 'unchanged' };
+
+  const normalizedName = normalizeName(name);
+
+  return normalizedName === current.normalizedName
+    ? { kind: 'respell', name, normalizedName }
+    : { kind: 'rename', name, normalizedName };
+}
+
 /** Names the model uses for the account holder rather than for a person. */
 const SELF_WORDS = new Set([
   'user',

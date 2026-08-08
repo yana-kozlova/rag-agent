@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/app/api/auth/auth';
 import { getEntityWithMentions } from '@/lib/actions/entities';
+import { EntityIdentity } from './EntityIdentity';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -53,13 +54,29 @@ export default async function EntityPage({ params }: { params: { id: string } })
       </Link>
 
       <header className="mt-4 rounded-box border border-base-300 bg-base-100 p-5">
-        <h1 className="text-xl font-semibold tracking-tight text-base-content">{entity.name}</h1>
-        <p className="mt-1 font-mono text-xs text-base-content/50">
-          {TYPE_LABEL[entity.type] ?? entity.type}
-          {entity.relationship ? ` · ${entity.relationship}` : ''}
-          {' · '}
-          {entity.mentionCount} {entity.mentionCount === 1 ? 'mention' : 'mentions'}
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold tracking-tight text-base-content">{entity.name}</h1>
+            <p className="mt-1 font-mono text-xs text-base-content/50">
+              {TYPE_LABEL[entity.type] ?? entity.type}
+              {entity.relationship ? ` · ${entity.relationship}` : ''}
+              {' · '}
+              {entity.mentionCount} {entity.mentionCount === 1 ? 'mention' : 'mentions'}
+            </p>
+          </div>
+
+          {/* The name here is the model's, and it is rewritten on every note that
+              mentions this node — so correcting it has to be a decision the graph
+              records, not an edit to a column. */}
+          <EntityIdentity
+            entity={{
+              id: entity.id,
+              name: entity.name,
+              type: entity.type,
+              mentionCount: entity.mentionCount,
+            }}
+          />
+        </div>
 
         {attributes && Object.keys(attributes).length > 0 && (
           <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-t border-base-200 pt-3 text-sm">
