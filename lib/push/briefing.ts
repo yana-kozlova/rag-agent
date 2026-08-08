@@ -4,6 +4,7 @@ import { env } from '@/lib/env.mjs';
 import { logLlmUsage } from '@/lib/ai/telemetry';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 import type { DayNote } from './day-notes';
+import { timelineKindIcon } from '@/lib/timeline/timeline';
 import { copyFor, type NotificationCopy } from './copy';
 import {
   type CalendarEvent,
@@ -13,6 +14,15 @@ import {
 } from './calendar-window';
 
 export type BriefingEvent = CalendarEvent;
+
+/** A saved date landing in the week ahead, as `upcomingTimeline` projects it. */
+export type BriefingDate = {
+  title: string;
+  kind: string;
+  daysAway: number;
+  /** Years being completed. Null when the original year was never recorded. */
+  years: number | null;
+};
 
 export type Briefing = {
   title: string;
@@ -86,6 +96,39 @@ function scheduleLines(
   return lines.join('\n');
 }
 
+/**
+ * How many dates get a line. A week's horizon rarely produces more; the cap is
+ * against the one week in a family's year that does.
+ */
+const MAX_DATE_LINES = 4;
+
+/**
+ * The week's saved dates, built the same way the schedule is and for the same
+ * reason: a model told that a birthday is in three days will eventually say two.
+ *
+ * "виповнюється N" is printed only when `years` is set, which the projection
+ * does only when the original year is known — a birthday recorded as a day and
+ * month has no age to announce, and guessing one is worse than saying nothing.
+ */
+function dateLines(dates: BriefingDate[], copy: NotificationCopy): string {
+  if (dates.length === 0) return '';
+
+  const lines = dates.slice(0, MAX_DATE_LINES).map((date) => {
+    const when =
+      date.daysAway === 0
+        ? copy.dates.today
+        : date.daysAway === 1
+          ? copy.dates.tomorrow
+          : copy.dates.inDays(date.daysAway);
+
+    const age = date.years && date.years > 0 ? `, ${copy.dates.turning(date.years)}` : '';
+
+    return `${timelineKindIcon(date.kind)} ${truncate(date.title)} — ${when}${age}`;
+  });
+
+  return `${copy.dates.header}:\n${lines.join('\n')}`;
+}
+
 function truncate(title: string): string {
   const trimmed = title.trim();
   return trimmed.length > MAX_TITLE
@@ -105,20 +148,29 @@ export async function generateBriefing(
    * the morning pass performs one retrieval total — see `fetchDayNotes`.
    */
   dayNotes: DayNote[] = [],
-  locale?: string | null
+  locale?: string | null,
+  /** Saved dates falling within the week. Empty on all but a few mornings a year. */
+  dates: BriefingDate[] = []
 ): Promise<Briefing> {
   const copy = copyFor(locale);
   const eventCount = events.length;
+  const datesBlock = dateLines(dates, copy);
 
+  // An empty calendar is not an empty morning: a birthday tomorrow is the whole
+  // reason to send anything at all on a day with nothing scheduled.
   if (eventCount === 0) {
     return {
       title: copy.briefing.morningTitle,
-      body: copy.briefing.nothingScheduled,
+      body: datesBlock
+        ? `${copy.briefing.nothingScheduled}\n\n${datesBlock}`
+        : copy.briefing.nothingScheduled,
       eventCount: 0,
     };
   }
 
-  const schedule = scheduleLines(events, tz, copy);
+  const schedule = datesBlock
+    ? `${scheduleLines(events, tz, copy)}\n\n${datesBlock}`
+    : scheduleLines(events, tz, copy);
 
   const scheduleText = events
     .map(
@@ -154,6 +206,14 @@ export async function generateBriefing(
       prompt: [
         `Today's schedule (timezone ${tz}):`,
         scheduleText,
+        // Given as context, listed by the application: the same division as the
+        // schedule. The sentence may lead with a birthday; the dates under it
+        // are not the model's to restate.
+        dates.length > 0
+          ? `\nSaved dates this week:\n${dates
+              .map((d) => `- ${d.title} (${d.daysAway === 0 ? 'today' : `in ${d.daysAway} days`})`)
+              .join('\n')}`
+          : '',
         notes ? `\nSaved notes that may be relevant:\n${notes}` : '',
       ].join('\n'),
     });

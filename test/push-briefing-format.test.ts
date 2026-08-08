@@ -130,3 +130,49 @@ describe('the whole message', () => {
     expect(rendered.length).toBeLessThan(4096);
   });
 });
+
+/**
+ * Saved dates ride the same rail as the schedule: built here, never asked of
+ * the model. A briefing that says a birthday is in three days when it is in two
+ * is worse than one that never mentions it.
+ */
+describe('the week’s saved dates', () => {
+  const birthday = { title: 'Андрій', kind: 'birth', daysAway: 2, years: 41 };
+
+  it('lists them under the schedule, with the age only when it is known', async () => {
+    const briefing = await generateBriefing(
+      [ev('Standup', '09:00')],
+      TZ,
+      [],
+      'uk',
+      [birthday, { title: 'річниця', kind: 'anniversary', daysAway: 0, years: null }]
+    );
+
+    expect(briefing.body).toBe(
+      '09:00 Standup\n\nДати:\n🎂 Андрій — через 2 дні, виповнюється 41\n💞 річниця — сьогодні'
+    );
+  });
+
+  it('still sends on a day with nothing scheduled', async () => {
+    const briefing = await generateBriefing([], TZ, [], 'uk', [birthday]);
+
+    expect(briefing.eventCount).toBe(0);
+    expect(briefing.body).toContain('нічого не заплановано');
+    expect(briefing.body).toContain('🎂 Андрій — через 2 дні');
+  });
+
+  it('says nothing extra when there are none', async () => {
+    const briefing = await generateBriefing([ev('Standup', '09:00')], TZ, [], 'uk', []);
+    expect(briefing.body).toBe('09:00 Standup');
+  });
+
+  it('counts Ukrainian days in all three plural forms', async () => {
+    const body = async (daysAway: number) =>
+      (await generateBriefing([], TZ, [], 'uk', [{ title: 'x', kind: 'other', daysAway, years: null }]))
+        .body;
+
+    expect(await body(3)).toContain('через 3 дні');
+    expect(await body(5)).toContain('через 5 днів');
+    expect(await body(1)).toContain('завтра');
+  });
+});

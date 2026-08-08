@@ -16,6 +16,7 @@ import { sql } from 'drizzle-orm';
 import { embeddingCache } from '../ai/embedding-cache';
 import { autoRouteResource } from './auto-route-resource';
 import { syncEntitiesForResource } from './entities';
+import { syncTimelineForResource } from './timeline';
 import { deleteStoredImage } from '@/lib/storage/images';
 
 export const createResource = async (input: NewResourceParams) => {
@@ -77,6 +78,23 @@ export const createResource = async (input: NewResourceParams) => {
         });
       } catch (err) {
         console.error('[createResource] syncEntitiesForResource failed (non-fatal):', err);
+      }
+    }
+
+    // And onto the axis, for the same reason and on the same terms: a note that
+    // says when something happened is the only place that fact exists, and
+    // prose cannot be put in order. Non-fatal — a note without its dates is
+    // still a saved note.
+    const extractedDates = (metadata as any)?.dates;
+    if (Array.isArray(extractedDates) && extractedDates.length > 0) {
+      try {
+        await syncTimelineForResource({
+          resourceId: resource.id,
+          userId,
+          dates: extractedDates,
+        });
+      } catch (err) {
+        console.error('[createResource] syncTimelineForResource failed (non-fatal):', err);
       }
     }
 
@@ -199,6 +217,23 @@ export const updateResource = async (resourceId: string, input: UpdateResourcePa
         });
       } catch (err) {
         console.error('[updateResource] syncEntitiesForResource failed (non-fatal):', err);
+      }
+    }
+
+    // The axis has to follow the text too. `replace` drops only this note's own
+    // extracted dates: a date the user stated outright has no resource behind it
+    // and survives every edit of every note.
+    const updatedDates = (parsed.metadata as any)?.dates;
+    if (parsed.metadata !== undefined && Array.isArray(updatedDates)) {
+      try {
+        await syncTimelineForResource({
+          resourceId,
+          userId,
+          dates: updatedDates,
+          replace: true,
+        });
+      } catch (err) {
+        console.error('[updateResource] syncTimelineForResource failed (non-fatal):', err);
       }
     }
 

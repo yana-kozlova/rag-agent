@@ -167,6 +167,9 @@ sequenceDiagram
 | --- | --- |
 | **Information** | `addResource`, `getInformation` (RAG), `forgetInformation`, `analyzeFile` |
 | **Calendar** | `getEvents`, `scheduleEvent`, `deleteEvent`, `optimizeSchedule` |
+| **Timeline** | `rememberDate`, `getTimeline` |
+| **Wellbeing** | `logWellbeing`, `getWellbeing` |
+| **Preferences** | `rememberPreference`, `forgetPreference` |
 | **Tables** | `createTable`, `addTableRows`, `extractToTable`, `listTables` |
 
 ---

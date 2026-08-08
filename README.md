@@ -34,6 +34,13 @@ in front of it. Managed from chat through the `addResource`, `getInformation`,
 **Entity graph.** People, places and projects mentioned across resources are extracted and
 linked, browsable at `/entities`.
 
+**Timeline.** The dates worth finding years from now — births, moves, weddings, first days,
+trips, diagnoses — on one axis at `/timeline`, read out of the notes you save or stated
+outright (`rememberDate`, `getTimeline`). A date is kept only as precisely as it was given: a
+year stays a year and is never shown as 1 January, and a birthday with no year repeats every
+year without claiming an age. Anniversaries falling in the week ahead ride into the morning
+briefing. Notes saved before this existed are swept with `pnpm timeline:backfill`.
+
 **Calendar.** Live events across the primary and followed calendars, with tools to schedule,
 delete and rearrange. Followed calendars live on the user record (`users.followed_calendars`).
 
@@ -280,6 +287,14 @@ instead.
 | --- | --- |
 | `GET /api/calendar/live-events` | Events across primary + followed calendars |
 | `GET`, `POST`, `DELETE /api/calendars` | Manage followed calendars |
+
+**Timeline**
+| Route | Purpose |
+| --- | --- |
+| `GET /api/timeline?days=` | The whole axis, plus what is coming up |
+| `GET /api/timeline?view=upcoming&days=` | Only the projected dates ahead (what the widget asks for) |
+| `POST /api/timeline` | Record one date by hand |
+| `DELETE /api/timeline?id=` | Remove one |
 
 **Tables**
 | Route | Purpose |

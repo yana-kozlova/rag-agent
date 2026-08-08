@@ -53,6 +53,15 @@ export type NotificationCopy = {
     more: (count: number) => string;
     allDay: string;
   };
+  /** Anniversaries and saved dates falling in the week ahead. */
+  dates: {
+    header: string;
+    today: string;
+    tomorrow: string;
+    inDays: (days: number) => string;
+    /** "виповнюється 7" — only ever said when the original year is known. */
+    turning: (years: number) => string;
+  };
   retro: {
     weekTitle: string;
     weekInReview: (hours: number) => string;
@@ -82,6 +91,13 @@ const UK: NotificationCopy = {
     nothingScheduled: 'На сьогодні нічого не заплановано — календар вільний.',
     more: (n) => `+ще ${n}`,
     allDay: 'увесь день',
+  },
+  dates: {
+    header: 'Дати',
+    today: 'сьогодні',
+    tomorrow: 'завтра',
+    inDays: (d) => `через ${d} ${pluralUk(d, 'день', 'дні', 'днів')}`,
+    turning: (y) => `виповнюється ${y}`,
   },
   retro: {
     weekTitle: '🗓️ Твій тиждень',
@@ -118,6 +134,13 @@ const EN: NotificationCopy = {
     nothingScheduled: 'Nothing scheduled today. Your calendar is clear.',
     more: (n) => `+${n} more`,
     allDay: 'all day',
+  },
+  dates: {
+    header: 'Dates',
+    today: 'today',
+    tomorrow: 'tomorrow',
+    inDays: (d) => `in ${d} days`,
+    turning: (y) => `turns ${y}`,
   },
   retro: {
     weekTitle: '🗓️ Your week',

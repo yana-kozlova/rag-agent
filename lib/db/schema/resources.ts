@@ -71,6 +71,19 @@ export const resourceMetadataSchema = z.object({
     context: extractedText,
   })).optional(),
   keyPoints: z.array(z.string()).optional(),
+  /**
+   * Dates this note records, as extraction read them. The note's own copy —
+   * `timeline_events` is the projection of every note's into one ordered axis,
+   * exactly as `entities` is the projection of every note's `entities`.
+   */
+  dates: z.array(z.object({
+    date: z.string(),
+    title: z.string(),
+    kind: extractedText,
+    subject: extractedText,
+    note: extractedText,
+    recurring: z.boolean().nullish().transform((v) => v ?? undefined),
+  })).optional(),
   userName: extractedText,
   // Images. `content` holds the vision model's description — these point back
   // at the picture it describes, so the UI can show the thing itself.

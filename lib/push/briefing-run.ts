@@ -5,11 +5,35 @@ import { deliverToUser } from '@/lib/push/deliver';
 import { getAccessTokenForUser, resolveUserTimezone } from '@/lib/push/google-token';
 import { getLocalHour, getLocalDateKey } from '@/lib/push/timezone';
 import { claimNotification } from '@/lib/push/dedupe';
-import { generateBriefing, fetchTodayEvents } from '@/lib/push/briefing';
+import { generateBriefing, fetchTodayEvents, type BriefingDate } from '@/lib/push/briefing';
+import { upcomingTimeline } from '@/lib/actions/timeline';
+import { BRIEFING_HORIZON_DAYS } from '@/lib/timeline/timeline';
 import { fetchDayNotes } from '@/lib/push/day-notes';
 import { scanDay } from '@/lib/push/insight-scan';
 import { enqueueNotification } from '@/lib/push/queue';
 import { GoogleCalendarService } from '@/lib/services/calendar';
+
+/**
+ * The week's saved dates, or none.
+ *
+ * Degrades on its own: the briefing has already paid for a calendar fetch and a
+ * retrieval by the time this runs, and a failure here must cost the birthday
+ * line rather than the whole morning.
+ */
+async function upcomingDatesForBriefing(userId: string): Promise<BriefingDate[]> {
+  try {
+    const { occurrences } = await upcomingTimeline(userId, BRIEFING_HORIZON_DAYS);
+    return occurrences.map((occurrence) => ({
+      title: occurrence.event.title,
+      kind: occurrence.event.kind,
+      daysAway: occurrence.daysAway,
+      years: occurrence.years,
+    }));
+  } catch (error) {
+    console.error('[push/briefing] Reading the timeline failed (non-fatal):', error);
+    return [];
+  }
+}
 
 export type BriefingRunResult =
   | { status: 'sent'; sent: number; queued: number }
@@ -65,7 +89,12 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
   // scan matches it against who the user is meeting.
   const notes = await fetchDayNotes(userId, events);
 
-  const briefing = await generateBriefing(events, tz, notes, u.locale);
+  // Saved dates falling within the week. Read from the timeline rather than the
+  // calendar because that is where they are: a birthday nobody created a
+  // calendar event for is exactly the thing this is meant to catch.
+  const dates = await upcomingDatesForBriefing(userId);
+
+  const briefing = await generateBriefing(events, tz, notes, u.locale, dates);
 
   const delivered = await deliverToUser(
     userId,

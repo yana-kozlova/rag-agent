@@ -14,6 +14,10 @@ import { scheduleEventTool } from './events/schedule-event';
 import { logWellbeingTool } from './wellbeing/log-wellbeing';
 import { getWellbeingTool } from './wellbeing/get-wellbeing';
 
+// Timeline — dates worth finding years later
+import { rememberDateTool } from './timeline/remember-date';
+import { getTimelineTool } from './timeline/get-timeline';
+
 // Response preferences — standing instructions injected into every prompt
 import { rememberPreferenceTool } from './directives/remember-preference';
 import { forgetPreferenceTool } from './directives/forget-preference';
@@ -35,6 +39,8 @@ export const tools = {
   deleteEvent: deleteEventTool,
   logWellbeing: logWellbeingTool,
   getWellbeing: getWellbeingTool,
+  rememberDate: rememberDateTool,
+  getTimeline: getTimelineTool,
   rememberPreference: rememberPreferenceTool,
   forgetPreference: forgetPreferenceTool,
   createTable: createTableTool,

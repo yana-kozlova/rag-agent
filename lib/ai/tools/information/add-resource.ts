@@ -7,6 +7,7 @@ import { getSessionOrNull } from '@/lib/utils/auth';
 import type { ExtractableResourceType } from '@/lib/utils/resource-types';
 import { looksLikeCalendarCommandOrScheduleOperation } from '@/lib/privacy/schedule-privacy';
 import { extractStructuredInformation, formatStructuredContent } from '@/lib/ai/information-extraction';
+import { todayFor } from '@/lib/actions/user-timezone';
 
 export const addResourceTool = {
   description: `Save info to the knowledge base. Use proactively when user shares personal facts.`,
@@ -40,8 +41,16 @@ export const addResourceTool = {
     if (!isLargeText && content.length <= 2000) {
       try {
         const userName = session?.user?.name || null;
-        const extracted = await extractStructuredInformation(content, userName, 'addResource');
-        
+        // The user's own today, not the server's: "вчора" typed at 01:00 in Kyiv
+        // resolves to the wrong day otherwise, and a date filed a day early is
+        // never noticed and never corrected.
+        const extracted = await extractStructuredInformation(
+          content,
+          userName,
+          'addResource',
+          await todayFor(session.user.id)
+        );
+
         if (extracted) {
           // Use structured content for storage - only save extracted information, not original message
           structuredContent = formatStructuredContent(extracted, content, false); // false = don't include original
@@ -59,11 +68,12 @@ export const addResourceTool = {
               relationship: e.relationship,
             })),
             needs: extracted.needs,
+            dates: extracted.dates,
             keyPoints: extracted.structuredContent.keyPoints,
             userName: extracted.userName || userName,
           };
-          
-          console.log(`[addResource] Extracted structured information: ${extracted.facts.length} facts, ${extracted.entities.length} entities, ${extracted.needs.length} needs`);
+
+          console.log(`[addResource] Extracted structured information: ${extracted.facts.length} facts, ${extracted.entities.length} entities, ${extracted.needs.length} needs, ${extracted.dates.length} dates`);
         } else {
           // Fallback to simple extraction if AI extraction fails
           if (!extractedTitle) {
@@ -191,6 +201,14 @@ function mergeMetadata(existing: unknown, incoming: any) {
     entities: byKey(
       [...(old.entities ?? []), ...(incoming.entities ?? [])],
       (e: any) => `${String(e?.name).toLowerCase()}::${e?.type}`
+    ),
+    // Unioned, not replaced, and this one is load-bearing: the merged note is
+    // written through `updateResource`, which re-syncs the axis with `replace`.
+    // Metadata that forgot the dossier's earlier dates would take them off the
+    // timeline as a side effect of adding one fact to the note.
+    dates: byKey(
+      [...(old.dates ?? []), ...(incoming.dates ?? [])],
+      (d: any) => `${d?.date}::${String(d?.title).toLowerCase()}`
     ),
     keyPoints: [...new Set([...(old.keyPoints ?? []), ...(incoming.keyPoints ?? [])])],
   };

@@ -6,6 +6,7 @@ import { eq, and, or, ilike } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { extractStructuredInformation } from '@/lib/ai/information-extraction';
 import { updateResource } from '@/lib/actions/resources';
+import { todayFor } from '@/lib/actions/user-timezone';
 
 export const analyzeFileTool = {
   description: `Analyze an uploaded file by resourceId or filename. Extracts key points, facts, entities.`,
@@ -107,7 +108,12 @@ export const analyzeFileTool = {
 
     // Extract structured information using AI
     const userName = session?.user?.name || null;
-    let extracted = await extractStructuredInformation(resource.content, userName, 'analyzeFile');
+    let extracted = await extractStructuredInformation(
+      resource.content,
+      userName,
+      'analyzeFile',
+      await todayFor(session.user.id)
+    );
 
     if (!extracted) {
       return {
@@ -131,6 +137,9 @@ export const analyzeFileTool = {
         relationship: e.relationship,
       })),
       needs: extracted.needs,
+      // A scanned certificate or a photographed invitation is exactly the kind
+      // of thing whose date matters and whose text nobody rereads.
+      dates: extracted.dates,
       keyPoints: extracted.structuredContent.keyPoints,
       userName: extracted.userName || userName,
       analyzed: true,

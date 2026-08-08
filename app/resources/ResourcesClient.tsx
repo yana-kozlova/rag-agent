@@ -182,12 +182,29 @@ export default function ResourcesClient({
   };
 
   const handleSave = async (id: string) => {
-    const metadata: any = { 
+    // Built on top of what the note already carries, not from scratch.
+    //
+    // `updateResource` replaces the whole `metadata` column with what it is
+    // given, and this form knows about three keys. Sending only those three
+    // deleted everything extraction had put there — `facts`, `entities`,
+    // `keyPoints`, `needs`, `dates`, an image's `imageUrl` — so correcting a
+    // typo in a note silently stripped it back to a bare string, unlinked it
+    // from the graph and took its dates off the timeline. The list beside it
+    // never showed this: the optimistic update below merges (`...r.metadata`),
+    // so the screen went on displaying structure the database no longer held.
+    //
+    // The three edited keys still win, including when they are cleared:
+    // removing every tag sends `tags: undefined`, which drops the key rather
+    // than restoring the old list.
+    const existing = (resources.find((r) => r.id === id)?.metadata ?? {}) as Record<string, unknown>;
+
+    const metadata: any = {
+      ...existing,
       type: editType,
       tags: editTags.length > 0 ? editTags : undefined,
       category: editCategory || undefined,
     };
-    
+
     const result = await updateResource(id, {
       title: editTitle || undefined,
       content: editContent,

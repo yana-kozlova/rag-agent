@@ -6,7 +6,78 @@ import { openai } from '@ai-sdk/openai';
 import { env } from '@/lib/env.mjs';
 import { z } from 'zod';
 import { EXTRACTABLE_RESOURCE_TYPES } from '@/lib/utils/resource-types';
+import { DEFAULT_TIMEZONE, getLocalDateKey } from '@/lib/push/timezone';
 import { logLlmUsage } from './telemetry';
+
+/**
+ * Today in the deployment's own zone, for callers that have no user to ask.
+ *
+ * A fallback, not the answer: "вчора" resolved against the wrong zone is filed a
+ * day out and stays that way, so anything that *can* pass the user's own today
+ * does — see `todayFor`.
+ */
+function serverToday(): string {
+  return getLocalDateKey(new Date(), DEFAULT_TIMEZONE);
+}
+
+/**
+ * One dated thing, in the shape `toTimelineCandidates` checks.
+ *
+ * Shared by the full extraction and by the dates-only pass the backfill runs, so
+ * the two cannot come to disagree about what a date looks like — the same reason
+ * the rules below are a constant rather than two paragraphs of prompt.
+ */
+const datedEventSchema = z.object({
+  date: z
+    .string()
+    .describe(
+      'YYYY-MM-DD if the day is known, YYYY-MM if only the month, YYYY if only the year, ' +
+        '--MM-DD if the day and month are known but the year is not (birthdays). Never guess a component that was not stated.'
+    ),
+  title: z
+    .string()
+    .describe("Short label naming what happened, in the note's own language — \"Артем народився\""),
+  kind: z
+    .string()
+    .default('other')
+    .describe(
+      'One of: birth, anniversary, move, trip, work, education, health, milestone, loss, purchase, other'
+    ),
+  subject: z
+    .string()
+    .nullish()
+    .default(null)
+    .describe('Who the date is about, named exactly as in the text. Null if it is about no one in particular.'),
+  note: z
+    .string()
+    .nullish()
+    .default(null)
+    .describe('One sentence of detail worth keeping alongside the date'),
+  recurring: z
+    .boolean()
+    .default(false)
+    .describe('True only for dates that come round every year — a birthday, a wedding anniversary'),
+});
+
+/**
+ * What makes a date worth a row on the axis.
+ *
+ * The hard part is not parsing dates, it is refusing most of them. A knowledge
+ * base full of "the meeting is on Tuesday" has a timeline nobody opens twice —
+ * scheduling belongs to the calendar, which already holds it, and a note's own
+ * created-at is not an event. What belongs here is the small number of days a
+ * person would still name years later.
+ */
+export const DATE_EXTRACTION_RULES = [
+  'DATES — only dates worth remembering for years: births, deaths, weddings, moves, first days at a school or job,',
+  'trips, diagnoses and procedures, significant purchases, achievements, anniversaries.',
+  'Never extract: the day the note was written, times of day, recurring routines ("щоранку о 7"),',
+  'ordinary appointments and meetings (those live in the calendar), or vague futures ("колись", "наступного разу").',
+  'Resolve relative wording ("вчора", "минулого літа") against today\'s date, given above.',
+  'Record only what was actually said: if the text gives a year and no month, answer with the year alone.',
+  'Set recurring=true only for a date that repeats every year, and use --MM-DD when a birthday is given without a year.',
+  'If nothing in the text qualifies, answer with an empty list. That is the normal case.',
+].join(' ');
 
 // Schema for structured information extraction
 /**
@@ -57,6 +128,10 @@ export const informationExtractionSchema = z.object({
     context: z.string().nullish().default(null).describe('Context or details about the need'),
   })).default([]).describe('User needs, preferences, or requests mentioned'),
 
+  // Dates worth putting on a timeline. See DATE_EXTRACTION_RULES for what
+  // qualifies — the schema cannot express "only if it matters next year".
+  dates: z.array(datedEventSchema).default([]).describe('Dates worth remembering, if any'),
+
   // Structured summary for storage
   structuredContent: z.object({
     title: z.string().describe('Clear, descriptive title summarizing the main point'),
@@ -81,7 +156,8 @@ export type ExtractedInformation = z.infer<typeof informationExtractionSchema>;
 async function runExtraction(
   content: string,
   userName?: string | null,
-  caller: string = 'extractStructuredInformation'
+  caller: string = 'extractStructuredInformation',
+  today: string = serverToday()
 ): Promise<ExtractedInformation> {
   try {
     const modelName = env.AI_CHAT_MODEL || 'gpt-4o-mini';
@@ -93,11 +169,14 @@ async function runExtraction(
       schema: informationExtractionSchema,
       prompt: `You are analyzing a user message to extract structured information for a personal knowledge base.
 
+Today is ${today}.
+
 Your goal is to:
 1. Extract key facts, entities, and relationships
 2. Identify user needs, preferences, and goals
-3. Create a structured summary that will be searchable and useful
-4. Link information to the user when appropriate
+3. Pick out any dates the user would still want to find years from now
+4. Create a structured summary that will be searchable and useful
+5. Link information to the user when appropriate
 
 ${userContext}Analyze the following message and extract structured information:
 
@@ -112,6 +191,7 @@ Guidelines:
 - If the user mentions their name or it can be inferred, include it in userName
 - Link facts to the user when they're about the user: as the subject use the word for "user" in the message's language ("user", "користувач"), never their name
 - Be specific and detailed - this information will be used to help the user in future conversations
+- ${DATE_EXTRACTION_RULES}
 
 Language:
 - WRITE IN THE LANGUAGE OF THE MESSAGE. The title, the summary, every key point, and the wording of every fact, entity and need are written in the language the user wrote in. Do not translate.
@@ -199,7 +279,9 @@ const MAX_EXTRACTION_CHARS = 60_000;
 export async function extractStructuredInformation(
   content: string,
   userName?: string | null,
-  caller: string = 'extractStructuredInformation'
+  caller: string = 'extractStructuredInformation',
+  /** The user's own today, `YYYY-MM-DD`. Relative dates are resolved against it. */
+  today?: string
 ): Promise<ExtractedInformation | null> {
   const input = content.length > MAX_EXTRACTION_CHARS
     ? content.slice(0, MAX_EXTRACTION_CHARS)
@@ -207,7 +289,7 @@ export async function extractStructuredInformation(
 
   for (let attempt = 1; attempt <= MAX_EXTRACTION_ATTEMPTS; attempt++) {
     try {
-      return await runExtraction(input, userName, caller);
+      return await runExtraction(input, userName, caller, today ?? serverToday());
     } catch (error) {
       const lastAttempt = attempt === MAX_EXTRACTION_ATTEMPTS;
       console.error(
@@ -220,6 +302,77 @@ export async function extractStructuredInformation(
   }
 
   return null;
+}
+
+export type ExtractedDateInfo = z.infer<typeof datedEventSchema>;
+
+const datesOnlySchema = z.object({
+  dates: z.array(datedEventSchema).default([]),
+});
+
+/**
+ * Dates and nothing else, for notes that were saved before the timeline existed.
+ *
+ * A narrower call than the full extraction on purpose. Re-running that over the
+ * whole base would rewrite every note's type, tags, facts and entities as a side
+ * effect of wanting its dates — replacing structure the user may have corrected
+ * by hand with whatever the model says today. This reads and answers one
+ * question, and `pnpm timeline:backfill` writes only what it returns.
+ *
+ * Returns null when the call fails, which the backfill reports rather than
+ * silently recording as "this note has no dates".
+ */
+export async function extractDates(
+  content: string,
+  today: string,
+  caller: string = 'extractDates'
+): Promise<ExtractedDateInfo[] | null> {
+  const modelName = env.AI_CHAT_MODEL || 'gpt-4o-mini';
+  const input = content.length > MAX_EXTRACTION_CHARS
+    ? content.slice(0, MAX_EXTRACTION_CHARS)
+    : content;
+
+  const startedAt = Date.now();
+
+  try {
+    const result = await generateObject({
+      model: openai(modelName),
+      schema: datesOnlySchema,
+      prompt: [
+        'Read the following note from a personal knowledge base and list the dates it records.',
+        `Today is ${today}.`,
+        '',
+        DATE_EXTRACTION_RULES,
+        '',
+        `Note:\n"${input}"`,
+      ].join('\n'),
+      temperature: 0.2,
+    });
+
+    const usage = (result as any).usage;
+    logLlmUsage({
+      op: 'generateObject',
+      model: modelName,
+      caller,
+      inputChars: input.length,
+      usage: usage
+        ? {
+            inputTokens: usage.inputTokens ?? usage.promptTokens,
+            outputTokens: usage.outputTokens ?? usage.completionTokens,
+            totalTokens: usage.totalTokens,
+          }
+        : undefined,
+      durationMs: Date.now() - startedAt,
+    });
+
+    return result.object.dates;
+  } catch (error) {
+    console.error(
+      '[extractDates] failed:',
+      error instanceof Error ? error.message : error
+    );
+    return null;
+  }
 }
 
 /**

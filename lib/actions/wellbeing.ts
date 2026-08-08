@@ -1,7 +1,6 @@
 import { and, asc, desc, eq, gte, lte } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
-import { users } from '@/lib/db/schema/auth';
 import {
   logWellbeingSchema,
   wellbeingEntries,
@@ -22,18 +21,8 @@ import {
   type SleepMoodSplit,
   type SymptomCount,
 } from '@/lib/wellbeing/aggregate';
-import { DEFAULT_TIMEZONE, addLocalDays, getLocalDateKey, isValidTimezone } from '@/lib/push/timezone';
-
-/** The zone the user's days are measured in. Falls back rather than throwing — a missing zone must not cost a check-in. */
-async function timezoneFor(userId: string): Promise<string> {
-  const [row] = await db
-    .select({ timezone: users.timezone })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-
-  return isValidTimezone(row?.timezone) ? row.timezone : DEFAULT_TIMEZONE;
-}
+import { addLocalDays, getLocalDateKey } from '@/lib/push/timezone';
+import { timezoneFor } from './user-timezone';
 
 /**
  * The symptom labels this user has actually used, most-used first.
