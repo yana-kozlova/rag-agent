@@ -128,7 +128,16 @@ export const analyzeFileTool = {
     // Build rich metadata from extracted information
     const updatedMetadata = {
       ...metadata,
-      type: extracted.contentType,
+      // An image keeps its type. `image` is assigned by the vision path from the
+      // fact that bytes arrived, and `EXTRACTABLE_RESOURCE_TYPES` excludes it on
+      // purpose so no model can infer it from prose — which means the extractor
+      // can only ever answer something else here. Letting that win retypes a
+      // photo to `note` the first time it is analysed: it drops out of the
+      // Knowledge Base's Image filter, and the `analysable` check above (which
+      // admits an image whatever its length, because a receipt reads as three
+      // lines) stops recognising it, so a second call answers "not a document or
+      // image file" for a picture that is plainly there.
+      type: metadata?.type === 'image' ? 'image' : extracted.contentType,
       tags: extracted.structuredContent.tags,
       facts: extracted.facts,
       entities: extracted.entities.map(e => ({
