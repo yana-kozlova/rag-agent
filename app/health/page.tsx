@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/app/api/auth/auth';
 import { getWellbeingReport } from '@/lib/actions/wellbeing';
 import { SleepChart, TrendChart } from '@/app/components/wellbeing/charts';
-import { formatSleep } from '@/lib/wellbeing/scale';
+import { faceFor, formatSleep } from '@/lib/wellbeing/scale';
 import EntryList, { type EntryView } from './EntryList';
 
 export const runtime = 'nodejs';
@@ -18,10 +18,26 @@ const RANGES = [
   { days: 365, label: '1y' },
 ];
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+/** Emoji are decorative here — every one of them sits beside the word or number it restates. */
+function Stat({
+  icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
     <div className="rounded-box border border-base-300 bg-base-100 px-4 py-3">
       <div className="font-mono text-[10px] uppercase tracking-wide text-base-content/40">
+        {icon && (
+          <span aria-hidden className="mr-1 text-xs">
+            {icon}
+          </span>
+        )}
         {label}
       </div>
       <div className="mt-1 text-xl font-semibold tabular-nums text-base-content">{value}</div>
@@ -102,6 +118,9 @@ export default async function HealthPage({
 
       {summary.daysLogged === 0 ? (
         <div className="rounded-box border border-base-300 bg-base-100 p-6 text-center">
+          <p aria-hidden className="mb-2 text-2xl">
+            🌱
+          </p>
           <p className="text-sm text-base-content/60">
             Nothing logged in this range. Tell the assistant how you feel — &ldquo;спала 6 годин,
             настрій норм&rdquo; — in chat or on Telegram, and it lands here.
@@ -111,16 +130,19 @@ export default async function HealthPage({
         <div className="flex flex-col gap-6">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Stat
+              icon={faceFor(summary.avgMood) || '🙂'}
               label="Avg mood"
               value={summary.avgMood !== null ? `${summary.avgMood}` : '—'}
               hint="out of 5"
             />
             <Stat
+              icon="⚡"
               label="Avg energy"
               value={summary.avgEnergy !== null ? `${summary.avgEnergy}` : '—'}
               hint="out of 5"
             />
             <Stat
+              icon="😴"
               label="Avg sleep"
               value={
                 summary.avgSleepMinutes !== null
@@ -130,6 +152,7 @@ export default async function HealthPage({
               hint="per night"
             />
             <Stat
+              icon="🗓️"
               label="Logged"
               value={`${summary.daysLogged}`}
               hint={`days · ${summary.entryCount} check-ins`}
@@ -137,12 +160,22 @@ export default async function HealthPage({
           </div>
 
           <section className="rounded-box border border-base-300 bg-base-100 p-4">
-            <h2 className="mb-3 text-[15px] font-semibold">Mood &amp; energy</h2>
+            <h2 className="mb-3 text-[15px] font-semibold">
+              <span aria-hidden className="mr-1.5">
+                🙂
+              </span>
+              Mood &amp; energy
+            </h2>
             <TrendChart days={report.days} />
           </section>
 
           <section className="rounded-box border border-base-300 bg-base-100 p-4">
-            <h2 className="mb-3 text-[15px] font-semibold">Sleep</h2>
+            <h2 className="mb-3 text-[15px] font-semibold">
+              <span aria-hidden className="mr-1.5">
+                😴
+              </span>
+              Sleep
+            </h2>
             <SleepChart days={report.days} />
 
             {report.sleepVsMood && (
@@ -163,7 +196,12 @@ export default async function HealthPage({
 
           {report.symptoms.length > 0 && (
             <section className="rounded-box border border-base-300 bg-base-100 p-4">
-              <h2 className="mb-3 text-[15px] font-semibold">Symptoms</h2>
+              <h2 className="mb-3 text-[15px] font-semibold">
+                <span aria-hidden className="mr-1.5">
+                  🤒
+                </span>
+                Symptoms
+              </h2>
               <ul className="flex flex-col gap-2">
                 {report.symptoms.slice(0, 10).map((item) => (
                   <li key={item.symptom} className="flex items-center gap-3">
@@ -187,6 +225,9 @@ export default async function HealthPage({
 
           <section>
             <h2 className="mb-3 text-[15px] font-semibold">
+              <span aria-hidden className="mr-1.5">
+                📋
+              </span>
               Log
               {summary.entryCount > entries.length && (
                 <span className="ml-2 text-xs font-normal text-base-content/40">

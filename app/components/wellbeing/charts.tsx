@@ -12,8 +12,15 @@ import {
  * bundle, for two charts of at most a year of single-value points. Colours are
  * DaisyUI channel variables rather than literals, so the same markup follows
  * silk, bumblebee and autumn instead of pinning one palette into the theme
- * switcher.
+ * switcher — which is also why the fills are gradients over those same
+ * variables and never a second, hand-picked colour.
+ *
+ * SVG ids live in the document, not the element, so every gradient here is
+ * prefixed: the widget's sparkline and the page's charts can be on screen at
+ * once, and a duplicate id means one of them silently paints with the other's
+ * fill.
  */
+const ID = 'wb';
 
 const VIEW_W = 720;
 const VIEW_H = 190;
@@ -51,11 +58,11 @@ function axisTicks(days: DayPoint[]): number[] {
   return ticks;
 }
 
-type Series = { key: 'mood' | 'energy'; label: string; color: string };
+type Series = { key: 'mood' | 'energy'; label: string; icon: string; color: string };
 
 const SERIES: Series[] = [
-  { key: 'mood', label: 'Mood', color: 'hsl(var(--p))' },
-  { key: 'energy', label: 'Energy', color: 'hsl(var(--s))' },
+  { key: 'mood', label: 'Mood', icon: '🙂', color: 'hsl(var(--p))' },
+  { key: 'energy', label: 'Energy', icon: '⚡', color: 'hsl(var(--s))' },
 ];
 
 /**
@@ -90,6 +97,20 @@ function segmentsOf(days: DayPoint[], key: Series['key']): Array<Array<{ x: numb
   return segments;
 }
 
+/**
+ * The line closed down to the floor, so the gradient has something to fill.
+ *
+ * A one-point segment has no width and would fill nothing but a hairline, so it
+ * returns null and only the dot is drawn.
+ */
+function areaPath(segment: Array<{ x: number; y: number }>): string | null {
+  if (segment.length < 2) return null;
+
+  const floor = PAD.top + plotH;
+  const line = segment.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+  return `${line} L${segment[segment.length - 1].x},${floor} L${segment[0].x},${floor} Z`;
+}
+
 export function TrendChart({ days }: { days: DayPoint[] }) {
   const ticks = axisTicks(days);
   const gridValues = [1, 2, 3, 4, 5];
@@ -101,6 +122,7 @@ export function TrendChart({ days }: { days: DayPoint[] }) {
         {SERIES.map((s) => (
           <span key={s.key} className="flex items-center gap-1.5 text-xs text-base-content/60">
             <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
+            <span aria-hidden>{s.icon}</span>
             {s.label}
           </span>
         ))}
@@ -112,6 +134,15 @@ export function TrendChart({ days }: { days: DayPoint[] }) {
         role="img"
         aria-label="Mood and energy over time, on a scale of 1 to 5"
       >
+        <defs>
+          {SERIES.map((series) => (
+            <linearGradient key={series.key} id={`${ID}-${series.key}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={series.color} stopOpacity={0.32} />
+              <stop offset="100%" stopColor={series.color} stopOpacity={0.02} />
+            </linearGradient>
+          ))}
+        </defs>
+
         {gridValues.map((value) => {
           const y = PAD.top + plotH * (1 - (value - WELLBEING_SCALE_MIN) / span);
           return (
@@ -137,8 +168,20 @@ export function TrendChart({ days }: { days: DayPoint[] }) {
           );
         })}
 
+        {/* Both fills go down before either line, or the second series' area
+            washes over the first series' line and the two stop matching the
+            legend. */}
         {SERIES.map((series) => (
-          <g key={series.key}>
+          <g key={`fill-${series.key}`}>
+            {segmentsOf(days, series.key).map((segment, i) => {
+              const area = areaPath(segment);
+              return area ? <path key={i} d={area} fill={`url(#${ID}-${series.key})`} /> : null;
+            })}
+          </g>
+        ))}
+
+        {SERIES.map((series) => (
+          <g key={`line-${series.key}`}>
             {segmentsOf(days, series.key).map((segment, i) => (
               <polyline
                 key={i}
@@ -150,10 +193,19 @@ export function TrendChart({ days }: { days: DayPoint[] }) {
                 strokeLinejoin="round"
               />
             ))}
+
             {segmentsOf(days, series.key)
               .flat()
               .map((p, i) => (
-                <circle key={i} cx={p.x} cy={p.y} r={2.6} fill={series.color} />
+                <circle
+                  key={i}
+                  cx={p.x}
+                  cy={p.y}
+                  r={2.8}
+                  fill={series.color}
+                  stroke="hsl(var(--b1))"
+                  strokeWidth={1.2}
+                />
               ))}
           </g>
         ))}
@@ -182,7 +234,14 @@ export function SleepChart({ days }: { days: DayPoint[] }) {
     .filter((v): v is number => typeof v === 'number');
 
   if (values.length === 0) {
-    return <p className="text-sm text-base-content/50">No sleep logged yet.</p>;
+    return (
+      <p className="text-sm text-base-content/50">
+        <span aria-hidden className="mr-1">
+          😴
+        </span>
+        No sleep logged yet.
+      </p>
+    );
   }
 
   // Rounded up to the next whole hour, floor of 8, so a run of short nights
@@ -200,6 +259,23 @@ export function SleepChart({ days }: { days: DayPoint[] }) {
         role="img"
         aria-label="Hours slept per night"
       >
+        {/* Anchored to the plot rather than to each bar (the default), so the
+            colour a bar reaches says how long the night was. Per-bar units
+            would give a two-hour night and a nine-hour one the same gradient. */}
+        <defs>
+          <linearGradient
+            id={`${ID}-sleep`}
+            gradientUnits="userSpaceOnUse"
+            x1="0"
+            y1={PAD.top}
+            x2="0"
+            y2={PAD.top + plotH}
+          >
+            <stop offset="0%" stopColor="hsl(var(--a))" stopOpacity={0.95} />
+            <stop offset="100%" stopColor="hsl(var(--p))" stopOpacity={0.55} />
+          </linearGradient>
+        </defs>
+
         {[0, maxMinutes / 2, maxMinutes].map((minutes) => {
           const y = PAD.top + plotH * (1 - minutes / maxMinutes);
           return (
@@ -235,9 +311,8 @@ export function SleepChart({ days }: { days: DayPoint[] }) {
               y={PAD.top + plotH - height}
               width={barW}
               height={height}
-              rx={2}
-              fill="hsl(var(--a))"
-              opacity={0.85}
+              rx={3}
+              fill={`url(#${ID}-sleep)`}
             >
               <title>{`${day.date}: ${formatSleep(day.sleepMinutes)}`}</title>
             </rect>
@@ -291,6 +366,25 @@ export function Sparkline({ days, className }: { days: DayPoint[]; className?: s
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className={className} role="img" aria-label="Recent mood trend">
+      <defs>
+        <linearGradient id={`${ID}-spark`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="hsl(var(--p))" stopOpacity={0.3} />
+          <stop offset="100%" stopColor="hsl(var(--p))" stopOpacity={0} />
+        </linearGradient>
+      </defs>
+
+      {segments.map((segment, i) =>
+        segment.length < 2 ? null : (
+          <path
+            key={`fill-${i}`}
+            d={`${segment.map((p, j) => `${j === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')} L${
+              segment[segment.length - 1].x
+            },${H} L${segment[0].x},${H} Z`}
+            fill={`url(#${ID}-spark)`}
+          />
+        ),
+      )}
+
       {segments.map((segment, i) => (
         <polyline
           key={i}

@@ -36,6 +36,33 @@ export const SCALE_LABELS: Record<number, string> = {
   5: 'Very good',
 };
 
+/**
+ * The same five points as a face, for the log and the summary cards.
+ *
+ * Beside the labels for the reason everything else here is: the page renders on
+ * the server and the log is a client component, so the tracker's vocabulary has
+ * to be one list either way. Decoration only — nothing is stored, matched or
+ * charted from a face, and it always sits next to the number it restates.
+ */
+export const SCALE_FACES: Record<number, string> = {
+  1: '😞',
+  2: '🙁',
+  3: '😐',
+  4: '🙂',
+  5: '😄',
+};
+
+/**
+ * The face for a value that may be an average, or missing.
+ *
+ * Returns '' rather than a fallback face for anything off the scale: no face is
+ * obviously nothing, where a wrong one reads as a rating nobody gave.
+ */
+export function faceFor(value: number | null | undefined): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '';
+  return SCALE_FACES[Math.round(value)] ?? '';
+}
+
 export function isOnScale(value: number): boolean {
   return (
     Number.isInteger(value) && value >= WELLBEING_SCALE_MIN && value <= WELLBEING_SCALE_MAX

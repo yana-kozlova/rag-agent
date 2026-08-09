@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 
-import { SCALE_LABELS, formatSleep } from '@/lib/wellbeing/scale';
+import { SCALE_FACES, SCALE_LABELS, formatSleep } from '@/lib/wellbeing/scale';
 
 export type EntryView = {
   id: string;
@@ -78,15 +78,26 @@ export default function EntryList({ entries }: { entries: EntryView[] }) {
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                     {entry.mood !== null && (
                       <span>
+                        <span aria-hidden className="mr-1">
+                          {SCALE_FACES[entry.mood]}
+                        </span>
                         Mood <strong>{entry.mood}</strong>
                         <span className="text-base-content/50"> · {SCALE_LABELS[entry.mood]}</span>
                       </span>
                     )}
                     {entry.energy !== null && (
-                      <span className="text-base-content/70">Energy {entry.energy}</span>
+                      <span className="text-base-content/70">
+                        <span aria-hidden className="mr-1">
+                          ⚡
+                        </span>
+                        Energy {entry.energy}
+                      </span>
                     )}
                     {entry.sleepMinutes !== null && (
                       <span className="text-base-content/70">
+                        <span aria-hidden className="mr-1">
+                          😴
+                        </span>
                         Slept {formatSleep(entry.sleepMinutes)}
                       </span>
                     )}
