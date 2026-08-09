@@ -4,6 +4,11 @@
  *
  * Rule of thumb: if you add a new generateObject / streamText / embed* call,
  * wire it up here too, otherwise token spend becomes invisible.
+ *
+ * Written with `console.info`, not `console.log`, and that is load-bearing:
+ * `next.config.mjs` strips `console.log` in production builds, so this ledger
+ * used to record everything in development and nothing in the deployment where
+ * the money is actually spent. `info` is on that file's exclude list.
  */
 
 export type LlmOp = 'embed' | 'embedMany' | 'generateObject' | 'generateText' | 'streamText';
@@ -76,7 +81,7 @@ export function logLlmUsage(entry: LlmLogEntry): void {
   if (entry.note) parts.push(`note="${entry.note}"`);
 
   // eslint-disable-next-line no-console
-  console.log(parts.join(' '));
+  console.info(parts.join(' '));
 }
 
 export function getLlmTotals(): Readonly<Totals> {

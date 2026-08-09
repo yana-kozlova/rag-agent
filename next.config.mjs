@@ -13,8 +13,15 @@ const nextConfig = {
   },
   // Target modern browsers only (no legacy JS)
   compiler: {
+    // `info` is kept alongside `error`/`warn` because it is what survives into
+    // production on purpose. `lib/ai/telemetry.ts` is the single place every
+    // paid OpenAI call is recorded, and it wrote through `console.log` — which
+    // this transform strips, so the one ledger of what the app spends existed
+    // in development and nowhere else. Chatty per-request diagnostics stay on
+    // `console.log` and stay stripped; anything that must be readable in a
+    // deployed log uses `console.info` and says so.
     removeConsole: process.env.NODE_ENV === 'production' ? {
-      exclude: ['error', 'warn'],
+      exclude: ['error', 'warn', 'info'],
     } : false,
   },
   experimental: {
