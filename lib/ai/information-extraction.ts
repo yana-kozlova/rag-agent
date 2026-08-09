@@ -129,8 +129,9 @@ export const informationExtractionSchema = z.object({
     // Relative to the user and nobody else. A note states relations between
     // third parties all the time ("Артем is my kuma's godson"), and lifting the
     // relation out of the sentence it was in makes the user the other end of
-    // it — so the graph learns that the user's own son is their godson, prints
-    // it beside his name as fact, and reads it back when asked who he is.
+    // it — so the graph learns that the user's own son is their godson and
+    // prints it beside his name as fact. `setRelationship` is the correction;
+    // this is the rule that stops it needing one.
     relationship: z.string().nullish().default(null).describe('How this entity relates to THE USER specifically (e.g., "friend", "colleague", "hobby"). If the message only states how it relates to someone else, either say so in full ("godson of the user\'s kuma") or leave this null — never record that relation as if it were the user\'s.'),
     attributes: z
       .array(z.object({ key: z.string(), value: z.string() }))

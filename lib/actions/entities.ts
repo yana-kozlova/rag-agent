@@ -274,7 +274,7 @@ export async function syncEntitiesForResource(params: {
         await db
           .update(entities)
           .set({ relationship: candidate.relationship, updatedAt: new Date() })
-          .where(eq(entities.id, entityId));
+          .where(and(eq(entities.id, entityId), eq(entities.relationshipSource, 'model')));
       }
     } else {
       // Upsert rather than select-then-insert: concurrent saves of the same
@@ -293,9 +293,13 @@ export async function syncEntitiesForResource(params: {
           target: [entities.userId, entities.normalizedName, entities.type],
           set: {
             // Keep the latest spelling and any relationship we have learned,
-            // but never overwrite a known relationship with nothing.
+            // but never overwrite a known relationship with nothing — and never
+            // overwrite the user's own word with either. In `do update set` an
+            // unqualified column still reads the existing row, so this compares
+            // the stored source, not the one being proposed.
             name: candidate.name,
-            relationship: raw`coalesce(${candidate.relationship}, ${entities.relationship})`,
+            relationship: raw`case when ${entities.relationshipSource} = 'user' then ${entities.relationship}
+                              else coalesce(${candidate.relationship}, ${entities.relationship}) end`,
             updatedAt: new Date(),
           },
         })

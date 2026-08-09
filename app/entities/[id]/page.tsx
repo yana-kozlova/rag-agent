@@ -4,6 +4,7 @@ import { auth } from '@/app/api/auth/auth';
 import { getEntityWithMentions } from '@/lib/actions/entities';
 import { EntityDelete } from './EntityDelete';
 import { EntityIdentity } from './EntityIdentity';
+import { EntityRelationship } from './EntityRelationship';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -68,16 +69,23 @@ export default async function EntityPage({ params }: { params: { id: string } })
             </p>
           </div>
 
-          {/* Three corrections, all of them decisions the graph has to record
-              rather than edits to a column: the name here is the model's and is
-              rewritten on every note that mentions this node, and the row itself
-              is rebuilt from those notes. */}
+          {/* Four corrections, all of them decisions the graph has to record
+              rather than edits to a column: the name and the relationship here
+              are the model's and are rewritten on every note that mentions this
+              node, and the row itself is rebuilt from those notes. */}
           <EntityIdentity
             entity={{
               id: entity.id,
               name: entity.name,
               type: entity.type,
               mentionCount: entity.mentionCount,
+            }}
+          />
+          <EntityRelationship
+            entity={{
+              id: entity.id,
+              relationship: entity.relationship,
+              relationshipSource: entity.relationshipSource,
             }}
           />
           <EntityDelete

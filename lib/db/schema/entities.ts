@@ -32,8 +32,26 @@ export const entities = pgTable(
      */
     normalizedName: text('normalized_name').notNull(),
     type: text('type').notNull(),
-    /** How they relate to the user — "colleague", "sister", "hobby". */
+    /** How they relate to *the user* — "colleague", "sister", "hobby". */
     relationship: text('relationship'),
+    /**
+     * Whose word `relationship` is: `model` if extraction wrote it, `user` if
+     * the account holder did.
+     *
+     * Needed for the same reason `entity_aliases` is. This column is a
+     * projection — `syncEntitiesForResource` rewrites it from every note that
+     * mentions the node — so an edit that only touched the value would hold
+     * until the next mention and then quietly revert, which is worse than no
+     * edit at all because nobody watches a relationship change back.
+     *
+     * Unlike a name, though, the row itself survives a sync (the upsert
+     * updates, it never deletes), so one flag on the row is enough and no
+     * second table is needed. `user` means the sync leaves the value alone,
+     * including when the user's answer was "nothing" — the model reading a
+     * relationship off a sentence about somebody else is precisely the failure
+     * being overruled, and it will read the same sentence the same way again.
+     */
+    relationshipSource: text('relationship_source').notNull().default('model'),
     /** Free-form details the model attached; shape varies by entity type. */
     attributes: jsonb('attributes'),
     /**
