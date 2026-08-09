@@ -22,7 +22,17 @@ import { deleteStoredImage } from '@/lib/storage/images';
 export const createResource = async (input: NewResourceParams) => {
   try {
     const parsed = insertResourceSchema.parse(input);
-    const { content, title, metadata, userId } = parsed;
+    const { content, title, metadata } = parsed;
+
+    // Who this is being saved for is read from the request context, never from
+    // the caller. This is a `'use server'` module, so each export is a reachable
+    // endpoint, and the owner used to arrive in the payload — the one write in
+    // the codebase that trusted its caller for that, while `updateResource` and
+    // `deleteResource` below and every action in `user-tables.ts` resolve it
+    // themselves. Cookie-less entry points (Telegram, cron) already push their
+    // user onto the context, so this resolves for them too.
+    const session = await getSessionOrNull();
+    const userId = session?.user?.id;
 
     if (!userId) {
       return { success: false, message: 'Unauthorized. Please sign in.' };
@@ -270,18 +280,23 @@ export const deleteResource = async (resourceId: string) => {
       return { success: false, message: 'Resource not found or access denied.' };
     }
 
-    // Delete embeddings (cascade should handle this, but being explicit)
-      await db
+    // Both deletes or neither. They used to be two loose statements, so a
+    // failure on the second left the note in place with its vectors already
+    // gone: still readable on its own page, absent from every search, with
+    // nothing to retry it — the exact state `createResource` and
+    // `updateResource` above go to such lengths to make impossible.
+    await db.transaction(async (tx) => {
+      await tx
         .delete(embeddingsTable)
         .where(eq(embeddingsTable.sourceId, resourceId));
 
-    // Delete resource
-    await db
-      .delete(resources)
-      .where(and(
-        eq(resources.id, resourceId),
-        eq(resources.userId, userId as string)
-      ));
+      await tx
+        .delete(resources)
+        .where(and(
+          eq(resources.id, resourceId),
+          eq(resources.userId, userId as string)
+        ));
+    });
 
     embeddingCache.clearForUser(userId);
 

@@ -200,7 +200,6 @@ export async function ingestDocument({
   const title = caption?.trim() || fileName;
   const result = await createResource({
     content: extracted.text,
-    userId,
     title,
     metadata: {
       type: 'document',

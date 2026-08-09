@@ -109,7 +109,6 @@ export async function POST(req: Request) {
 
     const result = await createResource({
       content: extractionResult.text,
-      userId,
       title: resourceTitle,
       metadata: {
         type: 'document',

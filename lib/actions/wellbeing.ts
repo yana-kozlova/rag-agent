@@ -111,7 +111,6 @@ async function syncDayNote(
   }
 
   const created = await createResource({
-    userId,
     title: `Check-in · ${localDate}`,
     content,
     metadata,

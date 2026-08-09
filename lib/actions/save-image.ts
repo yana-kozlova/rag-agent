@@ -58,7 +58,6 @@ export async function saveImageResource({
 
   const result = await createResource({
     content: buildContent(description.text, caption),
-    userId,
     title: title?.trim() || caption?.trim() || fileName,
     metadata: {
       type: 'image',

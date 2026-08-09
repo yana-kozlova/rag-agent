@@ -167,7 +167,6 @@ export const addResourceTool = {
 
     const created = await createResource({
       content: structuredContent,
-      userId: session.user.id,
       title: extractedTitle || undefined,
       metadata,
     });

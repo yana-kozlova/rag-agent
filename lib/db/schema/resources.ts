@@ -108,11 +108,21 @@ export const resourceMetadataSchema = z.object({
   })).optional(),
 }).passthrough();
 
-// Schema for resources - used to validate API requests
+/**
+ * What a caller may say about a new resource — deliberately not who owns it.
+ *
+ * `userId` used to be part of this, and `createResource` took it at its word.
+ * That module is `'use server'`, so every export of it is a network-reachable
+ * endpoint: an owner supplied by the caller is an owner supplied by whoever can
+ * reach the endpoint, and a note written into someone else's base is a note
+ * their assistant will later read back to them as fact. Every other write in
+ * this codebase resolves the user from the request context; this one now does
+ * too, which is why the column is absent here rather than merely ignored.
+ */
 export const insertResourceSchema = createInsertSchema(resources, {
   title: z.string().optional(),
   metadata: resourceMetadataSchema.optional(),
-}).pick({ content: true, userId: true, title: true, metadata: true });
+}).pick({ content: true, title: true, metadata: true });
 
 // Update schema for resources
 export const updateResourceSchema = createInsertSchema(resources, {

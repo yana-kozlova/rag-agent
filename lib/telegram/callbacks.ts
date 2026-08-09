@@ -1,4 +1,5 @@
 import { createResource } from '@/lib/actions/resources';
+import { runWithUser } from '@/lib/auth/context';
 import { splitNotification } from '@/lib/push/deliver';
 import { enqueueNotification } from '@/lib/push/queue';
 import { answerCallbackQuery, clearReplyMarkup } from './api';
@@ -73,12 +74,18 @@ export async function handleCallbackQuery(query: TelegramCallbackQuery): Promise
     return;
   }
 
-  if (parsed.action === 'snooze') {
-    await snooze(user.id, text, parsed.minutes, queryId, chatId, messageId);
-    return;
-  }
+  // Everything past here writes on the user's behalf, so it runs inside their
+  // context for the same reason `processUpdate` does: a button press carries no
+  // cookie, and anything that resolves its owner by falling back to the session
+  // — `createResource` does — would otherwise find nobody and refuse the write.
+  await runWithUser({ id: user.id, name: user.name, surface: 'telegram' }, async () => {
+    if (parsed.action === 'snooze') {
+      await snooze(user.id, text, parsed.minutes, queryId, chatId, messageId);
+      return;
+    }
 
-  await save(user.id, text, queryId, chatId, messageId);
+    await save(text, queryId, chatId, messageId);
+  });
 }
 
 /**
@@ -125,7 +132,6 @@ async function snooze(
 
 /** Keep the notification's text in the knowledge base. */
 async function save(
-  userId: string,
   text: string,
   queryId: string,
   chatId: string,
@@ -136,8 +142,7 @@ async function save(
   const result = await createResource({
     content: text,
     title: original.title || undefined,
-    userId,
-  } as any);
+  });
 
   if (!result?.success) {
     await answerCallbackQuery(queryId, 'Не змогла зберегти 😔');
