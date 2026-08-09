@@ -21,13 +21,22 @@ erDiagram
     user ||--o{ session : "has"
     user ||--o{ resources : "owns"
     user ||--o{ entities : "owns"
-    user ||--o{ conversations : "owns"
+    user ||--o{ entity_aliases : "owns"
+    user ||--o{ entity_exclusions : "owns"
+    user ||--|| conversations : "owns"
     user ||--o{ user_tables : "owns"
+    user ||--o{ timeline_events : "owns"
+    user ||--o{ wellbeing_entries : "owns"
+    user ||--o{ assistant_directives : "owns"
     user ||--o{ notification_queue : "owns"
     user ||--o{ sent_notifications : "owns"
 
     resources ||--o{ entity_mentions : "evidences"
     entities  ||--o{ entity_mentions : "mentioned in"
+    entities  ||--o{ entity_aliases : "answers to"
+    resources ||--o{ timeline_events : "evidences"
+    entities  ||--o{ timeline_events : "is about"
+    resources ||--o{ wellbeing_entries : "searchable copy of"
 
     conversations ||--o{ messages : "contains"
     user_tables   ||--o{ user_tables_data : "contains"
@@ -230,7 +239,7 @@ Indexes: HNSW on `embedding` with `vector_cosine_ops` — this is what lets
 `ORDER BY embedding <=> query` use the index instead of a sequential scan — plus
 btree on `source_id` and `source`.
 
-### 3. Entity graph — `entities`, `entity_mentions`
+### 3. Entity graph — `entities`, `entity_mentions`, `entity_aliases`, `entity_exclusions`
 
 The nodes over the document pile. Extraction finds people, projects and
 organisations inside a note; without this layer three notes mentioning the same
@@ -246,12 +255,42 @@ Marta?".
   render.
 - `entity_mentions` is the edge, with `context` holding the sentence that
   produced it so the UI can show *why* the link exists.
+- `relationship_source` (`model` | `user`) is why a hand-set relationship is not
+  overwritten on the next mention: the upsert compares the *stored* source, and
+  a merge keeps the user's answer from whichever side it came from.
+
+`entities` is a **projection**, rebuilt by `syncEntitiesForResource` from every
+note's `metadata.entities`. That is the whole reason the next two tables exist —
+editing or deleting a row alone lasts only until the next note mentions the name.
+
+- **`entity_aliases`** — spellings the user has decided mean an existing node.
+  Written by a merge and by a rename, and consulted before any upsert, so the
+  decision survives re-extraction. Without it a merge is undone by the next note.
+- **`entity_exclusions`** — the mirror: names the user has decided are *not*
+  nodes at all. An alias says a spelling means that node; an exclusion says it
+  means nothing. Keyed on the same `(user_id, normalized_name, type)` triple as
+  `entities_identity_unique`, and deliberately carries no FK to `entities` — the
+  row has to outlive the node it buried. Deleting is therefore recoverable:
+  nothing the user wrote is touched, so `restoreEntity` replays the sync over the
+  notes that still name it.
 
 ### 4. Chat — `conversations`, `messages`
 
 One `conversations` row per user thread, shared across **both** surfaces: the web
 chat and Telegram write to the same row, which is why a thread continues across
 them.
+
+- `conversations_user_unique` on `user_id` is what makes "one row" true rather
+  than merely intended. Three call sites did "select … limit 1, else insert";
+  two first messages arriving together — plausible precisely because the two
+  surfaces share the row — created two conversations, after which an unordered
+  `limit 1` could hand the reader and the writer different threads. The single
+  get-or-create is `lib/chat/conversation.ts`.
+- `messages.seq` (bigserial, unique) is the order messages were written in and
+  the cursor history pages on. `created_at` can do neither job: `persistTurn`
+  inserts a turn's question and answer in one statement, so both carry the same
+  `now()` — ordering on it leaves the pair undefined, and a `created_at < before`
+  cursor silently drops whichever of the two a page ended on.
 
 ### 5. User tables — `user_tables`, `user_tables_data`
 
@@ -285,6 +324,70 @@ reachability. `push_subscriptions` was dropped in `0017` along with Web Push.
   insert that conflicts means "already sent". Keys are caller-defined and stable,
   e.g. `briefing:2026-07-21`, `event:<googleEventId>:<startISO>`.
 
+### 7. Timeline — `timeline_events`
+
+One row per dated thing worth finding years later: births, moves, weddings, first
+days, trips, diagnoses. The projection of every note's `metadata.dates` onto one
+ordered axis, exactly as `entities` is the projection of its `metadata.entities`.
+A date is stored twice on purpose — the note keeps its wording and stays
+searchable, this keeps the day, because no amount of embedding puts prose in
+order.
+
+Two columns that look alike and are not:
+
+- **`precision`** (`day` | `month` | `year` | `day-month`) says which components
+  of `occurred_on` are real. "We moved in 2022" is a year, and a bare `date`
+  column would turn it into 1 January and print it back as if someone had said
+  so. `day-month` — a birthday with no year — stores `PLACEHOLDER_YEAR` (2000, a
+  leap year, so `--02-29` survives), never prints it, and stays off the
+  historical axis entirely: it has no origin, only occurrences ahead of it.
+- **`recurrence`** (`none` | `annual`) is orthogonal. A wedding on a known day
+  recurs; a known-to-the-day hospital visit does not.
+
+`resource_id` **cascades** (the note is the evidence) while `entity_id` **sets
+null** (losing a node is no reason to forget when someone's child was born). A
+date the user stated outright via `rememberDate` has neither, so nothing that
+happens in the knowledge base can touch it. Identity is
+`(user_id, occurred_on, kind, subject_key, lower(btrim(title)))` — deliberately
+conservative, since a visible duplicate can be deleted and a silently swallowed
+second event on the same day cannot be recovered.
+
+### 8. Wellbeing — `wellbeing_entries`
+
+Mood, energy, sleep and symptoms, logged conversationally. State is stored twice
+for the same reason dates are: the scales go here where a chart can read them,
+the user's own words go to `resources` (via `resource_id`) where retrieval can.
+The row is written first and the note indexed after — the measurement costs one
+INSERT and must not be lost to a failing embedding call.
+
+- **One row per check-in, never one per day.** "Fine in the morning, headache
+  after lunch" is two measurements and the time between them is the point.
+  Folding to one point per day happens at read time in `lib/wellbeing/aggregate.ts`.
+- `local_date` is denormalised because charts group by local day, and
+  re-deriving that from a UTC instant applies today's offset to an entry made
+  before a DST change.
+- `sleep_minutes` is an integer because "7 h 20 m" as a float comes back out as
+  something else.
+- The 1–5 scale is enforced in zod **and** as a SQL CHECK: a 7 on a 1–5 axis is
+  not a bad reading, it is a broken chart.
+
+### 9. Response preferences — `assistant_directives`
+
+Standing instructions about how the assistant should answer — language, length,
+format, what to skip. These are **prepended to every system prompt, not
+retrieved**, which is the whole point: a preference stored as a resource is only
+found when something searches for it, and nothing searches before answering
+"what's on tomorrow?".
+
+Capped at 20 rows × 200 characters, the length enforced in zod and as a SQL
+CHECK. The caps are the difference between a preference memory and a slowly
+rotting system prompt — these compete with the user's actual question for
+attention. Hitting the cap is reported to the model, never resolved by evicting
+the oldest: the user typed each of these. `source` (`user` | `inferred`) changes
+nothing about how a rule is followed; it exists so the settings screen can show
+that a rule was the model's reading of a repeated correction and was never asked
+for.
+
 ---
 
 ## Cascade map
@@ -299,14 +402,27 @@ flowchart LR
     U -->|cascade| S[session]
     U -->|cascade| R[resources]
     U -->|cascade| E[entities]
+    U -->|cascade| EA[entity_aliases]
+    U -->|cascade| EX[entity_exclusions]
     U -->|cascade| C[conversations]
     U -->|cascade| T[user_tables]
+    U -->|cascade| TL[timeline_events]
+    U -->|cascade| W[wellbeing_entries]
+    U -->|cascade| AD[assistant_directives]
     U -->|cascade| NQ[notification_queue]
     U -->|cascade| SN[sent_notifications]
     R -->|cascade| EM[entity_mentions]
     E -->|cascade| EM
+    E -->|cascade| EA
     C -->|cascade| M[messages]
     T -->|cascade| TD[user_tables_data]
+    R -->|cascade| TL
+    R -->|set null| W
+    E -->|set null| TL
     R -.->|no FK, app-managed| EMB[embeddings]
     TD -.->|no FK, app-managed| EMB
 ```
+
+`entity_exclusions` deliberately hangs off `user` alone: a tombstone that
+cascaded from the entity it buried would be deleted by the very operation it
+records.
