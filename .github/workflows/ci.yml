@@ -1,0 +1,50 @@
+name: CI
+
+# Four checks, and `build` is the point of it.
+#
+# The audit that added this file found the build broken on a working tree where
+# typecheck, lint and the whole test suite were green: a synchronous export from
+# a `'use server'` module is a Next.js rule that only the bundler enforces, and
+# Vitest imports such a module directly, so nothing else could see it. Any one
+# of these three passing is not evidence the app deploys.
+#
+# Installs with npm rather than pnpm, and not as a preference: `package-lock.json`
+# is the lockfile this repo commits and `pnpm-lock.yaml` is in `.gitignore`, so
+# it is the only one CI can reproduce an install from. The docs recommend pnpm.
+# Reconciling the two is a standing decision that has not been made — when it is,
+# this job follows it.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npx vitest run
+
+      # No database and no API keys here, so validation is skipped the way
+      # `lib/env.mjs` documents. This builds the bundle, which is the check that
+      # was missing; it does not exercise anything needing a secret.
+      - name: Build
+        run: npm run build
+        env:
+          SKIP_ENV_VALIDATION: '1'
