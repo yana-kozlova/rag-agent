@@ -3,6 +3,7 @@
 import { and, eq, inArray, sql as raw } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { entities, entityAliases, entityMentions } from '@/lib/db/schema';
+import { pickRelationship } from '@/lib/entities/relationship';
 import { getSessionOrNull } from '@/lib/utils/auth';
 import { clearExclusions } from './entities';
 import { matchNames, type MatchReason } from './entity-identity';
@@ -38,37 +39,6 @@ function pickWinner(a: Row, b: Row): [Row, Row] {
     return a.mentionCount > b.mentionCount ? [a, b] : [b, a];
   }
   return a.name.length >= b.name.length ? [a, b] : [b, a];
-}
-
-type Related = { relationship: string | null; relationshipSource: string };
-
-/**
- * Which of two relationships the merged node keeps.
- *
- * The winner's own value wins, as everything else here does — except against a
- * relationship the user set by hand, which wins from either side. Which of two
- * duplicates survives is decided by mention count, a detail the user never sees
- * and never chose; if they have told this graph who somebody is, that answer
- * cannot depend on which of the two rows the model happened to write more notes
- * about. Keyed on the source rather than on the value, so a deliberately
- * emptied relationship also survives — it is an answer too.
- *
- * Two hand-set values is the one genuinely ambiguous case, and there the winner
- * takes it: the merge dialog names the survivor, so that is the answer the user
- * is looking at while they confirm.
- */
-export function pickRelationship(winner: Related, loser: Related): Related {
-  if (winner.relationshipSource === loser.relationshipSource) {
-    return {
-      relationship: winner.relationship ?? loser.relationship,
-      relationshipSource: winner.relationshipSource,
-    };
-  }
-
-  // Rebuilt rather than returned whole: the callers pass their full entity rows
-  // in, and this result is spread straight into an `update ... set`.
-  const chosen = winner.relationshipSource === 'user' ? winner : loser;
-  return { relationship: chosen.relationship, relationshipSource: chosen.relationshipSource };
 }
 
 export async function findMergeCandidates(userId: string): Promise<MergeCandidate[]> {

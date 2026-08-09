@@ -1,12 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-// Both modules reach for the database and the session at import time; the rules
-// under test do neither.
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/utils/auth', () => ({ getSessionOrNull: async () => null }));
-
-import { pickRelationship } from '@/lib/actions/entity-merge';
-import { normalizeRelationship } from '@/lib/entities/relationship';
+import { normalizeRelationship, pickRelationship } from '@/lib/entities/relationship';
 
 /**
  * Who someone is *to the user*.
