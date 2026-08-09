@@ -3,7 +3,9 @@ import {
   streamText,
   UIMessage,
 } from 'ai';
+import { z } from 'zod';
 import { agentModelName, agentOptions } from '@/lib/ai/agent';
+import { getUser } from '@/lib/auth/context';
 import { saveUserMessage } from '@/lib/middleware/save-user-message';
 import { logLlmUsage } from '@/lib/ai/telemetry';
 import { AUTO_GREETING_MARKER, isAutoGreetingText, stripAutoGreetingMarker } from '@/lib/chat/auto-greeting';
@@ -33,12 +35,60 @@ function stripAutoGreetingFromMessage(m: any): any {
   return { ...m, parts, content };
 }
 
+/**
+ * Tools run here, and tools resolve their user through `AsyncLocalStorage`,
+ * which does not exist on the Edge runtime. This is the default today, but it
+ * is the one invariant on this route that fails as a wrong answer rather than
+ * an error — so it is declared rather than inherited, as every other route in
+ * the app declares it.
+ */
+export const runtime = 'nodejs';
+
 // Allow streaming responses up to 60 seconds
 export const maxDuration = 60;
 
+/**
+ * What a turn may contain.
+ *
+ * The body used to be destructured straight out of `req.json()` and handed to
+ * `convertToModelMessages`, with no schema, no cap on how many messages, and no
+ * cap on their length. Every other route in the app validates its input; this
+ * one both spends money per request and is the widest input surface there is.
+ * The ceilings are generous — they exist to bound a runaway or a hostile body,
+ * not to second-guess a long conversation.
+ */
+const MAX_MESSAGES = 200;
+const MAX_MESSAGE_CHARS = 100_000;
+
+const chatRequestSchema = z.object({
+  messages: z
+    .array(z.object({ role: z.string() }).passthrough())
+    .min(1)
+    .max(MAX_MESSAGES),
+});
+
 export async function POST(req: Request) {
   try {
-    const { messages }: { messages: UIMessage[] } = await req.json();
+    // This route is gated by `middleware.ts` like every other page, but it is
+    // the only one that never checked for itself — and it is the one that runs
+    // tools and spends tokens. A missing session here used to mean the model
+    // still answered while every tool failed to resolve a user.
+    const user = await getUser();
+    if (!user) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+
+    const parsed = chatRequestSchema.safeParse(await req.json());
+    if (!parsed.success) {
+      return new Response('Bad Request', { status: 400 });
+    }
+
+    const messages = parsed.data.messages as unknown as UIMessage[];
+
+    const oversized = messages.some((m: any) => extractText(m).length > MAX_MESSAGE_CHARS);
+    if (oversized) {
+      return new Response('Message too long', { status: 413 });
+    }
 
     // Process messages - detect hidden resourceIds marker and add technical info
     const processedMessages = messages.map((m: any, idx: number) => {
