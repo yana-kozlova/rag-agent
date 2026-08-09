@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { mergeEntities } from '@/lib/actions/entity-merge';
-import type { MergeCandidate } from '@/lib/actions/entity-merge';
+import type { MergeCandidate } from '@/lib/entities/merge-candidates';
 
 /**
  * "These two look like one person — are they?"

@@ -1,7 +1,12 @@
-'use server';
-
 /**
  * Convention-based resource → table auto-routing.
+ *
+ * Not `'use server'`, deliberately. Nothing in the browser calls this — its one
+ * caller is `createResource`, on the server, immediately after a write. The
+ * directive was there anyway, which made `autoRouteResource(resourceId, userId)`
+ * a reachable endpoint taking *whose* resource to route as an argument. It is a
+ * plain module now, so the only way in is through the code that already knows
+ * who it is acting for.
  *
  * Zero LLM calls: uses only metadata that was already extracted during
  * createResource (facts, entities, keyPoints, tags, contentType) and maps

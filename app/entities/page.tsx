@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { auth } from '@/app/api/auth/auth';
 import { listEntities, listHiddenEntities } from '@/lib/actions/entities';
-import { findMergeCandidates } from '@/lib/actions/entity-merge';
+import { findMergeCandidates } from '@/lib/entities/merge-candidates';
 import { HiddenEntities } from './HiddenEntities';
 import { MergeSuggestions } from './MergeSuggestions';
 
