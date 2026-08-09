@@ -2,8 +2,8 @@
 
 import { getSessionOrNull } from '@/lib/utils/auth';
 import { db } from '@/lib/db';
-import { conversations, messages } from '@/lib/db/schema/chat';
-import { eq } from 'drizzle-orm';
+import { messages } from '@/lib/db/schema/chat';
+import { getOrCreateConversation } from '@/lib/chat/conversation';
 
 /**
  * Simple function to save user messages to the messages table (chat history)
@@ -21,20 +21,7 @@ export async function saveUserMessage(content: string): Promise<{ saved: boolean
       return { saved: false, reason: 'Empty content' };
     }
 
-    // Get or create conversation for user
-    let convoId: string | null = null;
-    const existing = await db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(eq(conversations.userId, userId as string))
-      .limit(1);
-    
-    if (existing.length > 0) {
-      convoId = existing[0].id;
-    } else {
-      const inserted = await db.insert(conversations).values({ userId: userId as string }).returning({ id: conversations.id });
-      convoId = inserted[0].id;
-    }
+    const convoId = await getOrCreateConversation(userId as string);
 
     // Save message to messages table
     const [insertedMsg] = await db

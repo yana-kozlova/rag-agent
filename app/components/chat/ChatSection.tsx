@@ -54,7 +54,10 @@ export default function ChatSection() {
   });
   
 
-  type HistoryMessage = { id: string; role: string; content: string; createdAt?: string | Date };
+  // `seq` is the pagination cursor — see the note in /api/chat/history. It is
+  // carried on the message rather than derived from `createdAt`, which a turn's
+  // question and answer share.
+  type HistoryMessage = { id: string; role: string; content: string; seq?: number; createdAt?: string | Date };
   const [history, setHistory] = useState<HistoryMessage[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const historyUi = history.map((h) => ({
@@ -183,9 +186,12 @@ export default function ChatSection() {
     if (loadingMoreRef.current || !hasMore || historyRef.current.length === 0) return;
     try {
       setLoadingMore(true);
-      const oldest = historyRef.current[0]?.createdAt;
-      const oldestISO = typeof oldest === 'string' ? oldest : oldest instanceof Date ? oldest.toISOString() : '';
-      const res = await fetch(`/api/chat/history?limit=15&before=${encodeURIComponent(oldestISO)}`);
+      const oldestSeq = historyRef.current[0]?.seq;
+      if (typeof oldestSeq !== 'number') {
+        setHasMore(false);
+        return;
+      }
+      const res = await fetch(`/api/chat/history?limit=15&before=${oldestSeq}`);
       const data = await res.json();
       const arr: HistoryMessage[] = Array.isArray(data.messages) ? (data.messages as HistoryMessage[]) : [];
       

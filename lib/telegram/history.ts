@@ -1,7 +1,8 @@
 import { desc, eq } from 'drizzle-orm';
 import type { ModelMessage } from 'ai';
 import { db } from '@/lib/db';
-import { conversations, messages } from '@/lib/db/schema/chat';
+import { messages } from '@/lib/db/schema/chat';
+import { getOrCreateConversation } from '@/lib/chat/conversation';
 
 /**
  * Chat history for the Telegram surface.
@@ -17,25 +18,13 @@ const HISTORY_LIMIT = 20;
 /**
  * Matches the web chat's convention of a single ongoing conversation per user.
  *
- * Resolved once per incoming message and passed to both helpers below — calling
- * it from each of them would repeat two queries and, on a user's very first
- * message, risk inserting two conversations.
+ * Resolved once per incoming message and passed to both helpers below, so a
+ * turn cannot straddle two rows. The get-or-create itself lives in
+ * `lib/chat/conversation.ts` — it was written out three times, once here, and
+ * every copy raced on a user's first message.
  */
 export async function getConversationId(userId: string): Promise<string> {
-  const existing = await db
-    .select({ id: conversations.id })
-    .from(conversations)
-    .where(eq(conversations.userId, userId))
-    .limit(1);
-
-  if (existing[0]) return existing[0].id;
-
-  const [created] = await db
-    .insert(conversations)
-    .values({ userId })
-    .returning({ id: conversations.id });
-
-  return created.id;
+  return getOrCreateConversation(userId);
 }
 
 export async function loadRecentTurns(
@@ -43,12 +32,14 @@ export async function loadRecentTurns(
   limit = HISTORY_LIMIT
 ): Promise<ModelMessage[]> {
   // Newest-first so the limit keeps the *recent* end, then flipped back into
-  // reading order for the model.
+  // reading order for the model. Ordered by `seq`, not `created_at`: a turn's
+  // question and answer are written in one statement and share a timestamp, so
+  // sorting on that can hand the model its own reply as the user's next line.
   const rows = await db
     .select({ role: messages.role, content: messages.content })
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
-    .orderBy(desc(messages.createdAt))
+    .orderBy(desc(messages.seq))
     .limit(limit);
 
   return rows
