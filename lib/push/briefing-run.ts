@@ -94,7 +94,7 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
   // calendar event for is exactly the thing this is meant to catch.
   const dates = await upcomingDatesForBriefing(userId);
 
-  const briefing = await generateBriefing(events, tz, notes, u.locale, dates);
+  const briefing = await generateBriefing(events, tz, notes, u.locale, dates, now);
 
   const delivered = await deliverToUser(
     userId,

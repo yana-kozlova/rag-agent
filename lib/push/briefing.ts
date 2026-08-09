@@ -6,6 +6,7 @@ import { GoogleCalendarService } from '@/lib/services/calendar';
 import type { DayNote } from './day-notes';
 import { timelineKindIcon } from '@/lib/timeline/timeline';
 import { copyFor, type NotificationCopy } from './copy';
+import { getLocalDateKey } from './timezone';
 import {
   type CalendarEvent,
   fetchEventsBetween,
@@ -55,8 +56,14 @@ const MAX_EVENT_LINES = 8;
  * the constraint is now editorial rather than technical: long enough to name a
  * clash and work in a detail from a note, short enough that the schedule below
  * is still the first thing the eye lands on.
+ *
+ * A ceiling is not a target, and 400 was being read as one. A day with a single
+ * all-day entry has one sentence in it; asked for a paragraph anyway, the model
+ * padded to length with atmosphere — the day "will be festive", which "may get
+ * in the way of plans". The prompt below now sets the length from the day and
+ * this stays as what it always was, a guard against a runaway generation.
  */
-const MAX_HEADLINE = 400;
+const MAX_HEADLINE = 300;
 
 /**
  * Ceiling on one event's title.
@@ -137,6 +144,28 @@ function truncate(title: string): string {
 }
 
 /**
+ * The model's sentence, or nothing.
+ *
+ * It is told that a day with nothing to add gets no sentence, and a model asked
+ * for an empty string rarely sends one — it sends a dash, a full stop, "N/A",
+ * "(none)". Printed above the schedule each of those is a line of noise that
+ * looks like a bug, so a reply carrying no letters is read as the silence it
+ * was meant to be. Bracketed and quoted forms go the same way: "(none)" is not
+ * a sentence about anyone's morning.
+ */
+export function cleanHeadline(text: string): string {
+  const trimmed = text
+    .trim()
+    .replace(/^["'“”«»(\[]+|["'“”«»)\]]+$/g, '')
+    .trim();
+
+  if (!/\p{L}/u.test(trimmed)) return '';
+  if (/^(n\/?a|none|nothing|empty|null)\.?$/i.test(trimmed)) return '';
+
+  return trimmed.slice(0, MAX_HEADLINE);
+}
+
+/**
  * Build the morning briefing: today's schedule, plus anything from the user's
  * saved notes that relates to it, condensed into notification-sized copy.
  */
@@ -150,7 +179,12 @@ export async function generateBriefing(
   dayNotes: DayNote[] = [],
   locale?: string | null,
   /** Saved dates falling within the week. Empty on all but a few mornings a year. */
-  dates: BriefingDate[] = []
+  dates: BriefingDate[] = [],
+  /**
+   * The instant the briefing is being built for. Only the model path uses it,
+   * to date the day and the notes against each other — see `notes` below.
+   */
+  now: Date = new Date()
 ): Promise<Briefing> {
   const copy = copyFor(locale);
   const eventCount = events.length;
@@ -179,9 +213,17 @@ export async function generateBriefing(
     )
     .join('\n');
 
+  const today = getLocalDateKey(now, tz);
+
+  // Every note carries the day it was written, and the prompt says what day it
+  // is now — the two are only useful together. Undated, a note from Tuesday
+  // reads as this morning, and the model repeated one back in the present
+  // tense: the user's mood three days ago, reported as how they had woken up.
+  // `fetchDayNotes` drops check-ins outright, so this guards the general case —
+  // any note about a past day arriving as background for today.
   const notes = dayNotes
     .slice(0, 4)
-    .map((n) => `- ${n.text.slice(0, 300)}`)
+    .map((n) => `- ${n.writtenOn ? `[written ${n.writtenOn}] ` : ''}${n.text.slice(0, 300)}`)
     .join('\n');
 
   if (!env.OPENAI_API_KEY) {
@@ -195,16 +237,24 @@ export async function generateBriefing(
     const { text, usage } = await generateText({
       model: openai(modelName),
       system: [
-        'You write the opening paragraph of a morning briefing.',
-        'The schedule is listed underneath your text by the application, so never list or enumerate the events yourself — say what the shape of the day is.',
-        `Hard limit: ${MAX_HEADLINE} characters. Two or three sentences at most. No greeting, no emoji, no markdown, no preamble.`,
-        'Lead with what matters most: a clash, a tight gap, a long unbroken stretch, or the one commitment the day turns on.',
-        'Mention times as HH:mm, and only when the point needs one. If saved notes are relevant to a meeting, work in one concrete detail.',
-        'Write plainly, like a competent assistant. Never invent events or details.',
+        'You write the opening line of a morning briefing.',
+        'The schedule and the dates are listed underneath your text by the application, so never list, enumerate or restate them — one all-day event needs no summary, because the line below already says it.',
+        // The old prompt asked for "two or three sentences" and named four
+        // things to lead with, all of which presuppose a busy day. On a day
+        // holding one entry the model had to invent a clash to have something
+        // to lead with. Length is now a property of the day.
+        'Say only what the list below does not: a clash, a tight gap between two places, a long unbroken stretch, an early start. One short sentence is the normal length. If the day holds nothing of that kind, say nothing at all and return an empty string — a briefing that is only the schedule is a good briefing.',
+        `Never exceed ${MAX_HEADLINE} characters or three sentences. No greeting, no emoji, no markdown, no preamble, no sign-off.`,
+        'Mention times as HH:mm, and only when the point needs one.',
+        // What actually went wrong was not a fabricated event but fabricated
+        // characterisation, which "never invent events" did not cover.
+        'State facts, never mood, atmosphere or consequence. Do not predict how the day will feel or go, do not say an event will affect anything, and do not offer encouragement or advice.',
+        'Saved notes are background, most of it about other days. Work in a detail only when it is concrete and bears on something scheduled today. Never repeat back how the user has been feeling.',
         copy.writeIn,
       ].join(' '),
       prompt: [
-        `Today's schedule (timezone ${tz}):`,
+        `Today is ${today} (timezone ${tz}).`,
+        "Today's schedule:",
         scheduleText,
         // Given as context, listed by the application: the same division as the
         // schedule. The sentence may lead with a birthday; the dates under it
@@ -214,7 +264,9 @@ export async function generateBriefing(
               .map((d) => `- ${d.title} (${d.daysAway === 0 ? 'today' : `in ${d.daysAway} days`})`)
               .join('\n')}`
           : '',
-        notes ? `\nSaved notes that may be relevant:\n${notes}` : '',
+        notes
+          ? `\nBackground from saved notes — written on the days shown, not necessarily about today:\n${notes}`
+          : '',
       ].join('\n'),
     });
 
@@ -233,7 +285,7 @@ export async function generateBriefing(
       note: `events=${eventCount}`,
     });
 
-    const headline = text.trim().slice(0, MAX_HEADLINE);
+    const headline = cleanHeadline(text);
 
     return {
       title: copy.briefing.thingsToday(eventCount),

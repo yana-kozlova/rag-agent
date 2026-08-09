@@ -737,6 +737,11 @@ export const findRelevantContent = async (
       source: row.source,
       sourceId: row.sourceId,
       metadata: row.embeddingMetadata || row.resourceMetadata || null,
+      // When the note was written. Already selected — `recencyBoost` ranks on
+      // it — and until now thrown away before any caller could see it. A caller
+      // that puts retrieved text in front of the user unasked has to be able to
+      // say how old it is: undated, a note from Tuesday reads as this morning.
+      createdAt: row.createdAt ?? null,
     }));
 
     // Cache results

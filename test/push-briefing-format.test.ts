@@ -15,7 +15,7 @@ vi.mock('@/lib/env.mjs', () => ({
   },
 }));
 
-import { generateBriefing, type BriefingEvent } from '@/lib/push/briefing';
+import { generateBriefing, cleanHeadline, type BriefingEvent } from '@/lib/push/briefing';
 import { renderNotification, splitNotification } from '@/lib/push/deliver';
 
 const TZ = 'Europe/Kyiv';
@@ -128,6 +128,36 @@ describe('the whole message', () => {
     const rendered = renderNotification({ title: briefing.title, body: briefing.body });
 
     expect(rendered.length).toBeLessThan(4096);
+  });
+});
+
+/**
+ * The model is told that a day with nothing to add gets no sentence at all —
+ * a briefing that is only the schedule is a good briefing. A model asked for an
+ * empty string rarely sends one, and every near-miss it sends instead would be
+ * printed above the schedule as a line of noise that reads like a bug.
+ */
+describe('the model’s sentence', () => {
+  it('is dropped when it carries no words', () => {
+    for (const reply of ['', '  ', '—', '-', '.', '...', '""', '(  )']) {
+      expect(cleanHeadline(reply)).toBe('');
+    }
+  });
+
+  it('is dropped when it is a way of saying nothing', () => {
+    for (const reply of ['none', 'None.', 'N/A', 'n/a', '(none)', 'nothing', 'null']) {
+      expect(cleanHeadline(reply)).toBe('');
+    }
+  });
+
+  it('keeps a real sentence, unquoted', () => {
+    expect(cleanHeadline('  "Між 14:00 і 15:00 лише 20 хвилин на дорогу."  ')).toBe(
+      'Між 14:00 і 15:00 лише 20 хвилин на дорогу.'
+    );
+  });
+
+  it('caps a runaway generation', () => {
+    expect(cleanHeadline('т'.repeat(2000))).toHaveLength(300);
   });
 });
 
