@@ -13,6 +13,13 @@ name: CI
 # it is the only one CI can reproduce an install from. The docs recommend pnpm.
 # Reconciling the two is a standing decision that has not been made — when it is,
 # this job follows it.
+#
+# Node 22 because `unpdf` declares `engines: { node: ">=22" }`. On 20 this job
+# failed inside `npm ci` on every run it ever made, reporting a picomatch
+# mismatch: npm resolves an unsatisfied engine into a different tree than the
+# lockfile records, and reports where that tree diverges rather than why. The
+# EBADENGINE warning naming `unpdf` sits directly above the error. Anything that
+# raises the floor again — here or in a dependency — belongs in this number too.
 
 on:
   push:
@@ -27,7 +34,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm ci
