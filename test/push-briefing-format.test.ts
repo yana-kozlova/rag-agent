@@ -45,6 +45,40 @@ describe('an empty day', () => {
   });
 });
 
+/**
+ * `[]` is a claim about the day; `null` is the absence of one. Collapsing them
+ * is what sent "nothing scheduled — your calendar is clear" every morning for
+ * five days while the account's Google token was dead.
+ */
+describe('a calendar that could not be read', () => {
+  it('says so instead of claiming the day is free', async () => {
+    const uk = await generateBriefing(null, TZ, [], 'uk');
+    const en = await generateBriefing(null, TZ, [], 'en');
+
+    expect(uk.body).toContain('Не вдалося прочитати календар');
+    expect(uk.body).not.toContain('нічого не заплановано');
+    expect(en.body).toContain('Could not read your calendar');
+    expect(en.body).not.toContain('Nothing scheduled');
+  });
+
+  it('still delivers the week’s saved dates, which do not come from Google', async () => {
+    const briefing = await generateBriefing(null, TZ, [], 'uk', [
+      { title: 'Андрій', kind: 'birth', daysAway: 0, years: 41 },
+    ]);
+
+    expect(briefing.body).toContain('Не вдалося прочитати календар');
+    expect(briefing.body).toContain('🎂 Андрій — сьогодні');
+  });
+
+  it('is not the same briefing as a genuinely empty day', async () => {
+    const unreadable = await generateBriefing(null, TZ, [], 'uk');
+    const empty = await generateBriefing([], TZ, [], 'uk');
+
+    expect(unreadable.body).not.toBe(empty.body);
+    expect(empty.body).toContain('нічого не заплановано');
+  });
+});
+
 describe('the schedule', () => {
   it('gets one line per event, in order, with local times', async () => {
     const briefing = await generateBriefing(

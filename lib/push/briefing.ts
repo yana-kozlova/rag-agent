@@ -170,7 +170,14 @@ export function cleanHeadline(text: string): string {
  * saved notes that relates to it, condensed into notification-sized copy.
  */
 export async function generateBriefing(
-  events: BriefingEvent[],
+  /**
+   * The day's events, or `null` when the calendar could not be read at all.
+   *
+   * The distinction is the point: `[]` is a claim about the day, `null` is the
+   * absence of one, and collapsing them is what let five days of unreadable
+   * calendar go out as "nothing scheduled — your calendar is clear".
+   */
+  events: BriefingEvent[] | null,
   tz: string,
   /**
    * Notes already retrieved for this day. Passed in rather than fetched here so
@@ -187,8 +194,21 @@ export async function generateBriefing(
   now: Date = new Date()
 ): Promise<Briefing> {
   const copy = copyFor(locale);
-  const eventCount = events.length;
   const datesBlock = dateLines(dates, copy);
+
+  // Saved dates still go out: they come from the timeline, not from Google, and
+  // a birthday is the one thing a broken calendar must not be allowed to eat.
+  if (events === null) {
+    return {
+      title: copy.briefing.morningTitle,
+      body: datesBlock
+        ? `${copy.briefing.calendarUnreadable}\n\n${datesBlock}`
+        : copy.briefing.calendarUnreadable,
+      eventCount: 0,
+    };
+  }
+
+  const eventCount = events.length;
 
   // An empty calendar is not an empty morning: a birthday tomorrow is the whole
   // reason to send anything at all on a day with nothing scheduled.

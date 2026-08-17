@@ -58,7 +58,33 @@ export function localDayBounds(
   };
 }
 
-/** Everything on the user's followed calendars within the given instants. */
+/**
+ * An event the user said no to.
+ *
+ * Their own copy of a declined invitation stays on the calendar and Google
+ * keeps returning it — `responseStatus` is the only thing that says they are
+ * not going. The detectors in `insights.ts` have always known this; the
+ * briefing did not, and printed a week of meetings the user had cancelled out
+ * of as if they were the day's commitments.
+ */
+export function isDeclined(event: Pick<CalendarEvent, 'attendees'>): boolean {
+  return (event.attendees ?? []).some(
+    (a) => a.self === true && a.responseStatus === 'declined'
+  );
+}
+
+/**
+ * Everything on the user's followed calendars within the given instants.
+ *
+ * Throws when every calendar failed. An empty array is a claim — "nothing is
+ * on" — and returning one for a calendar that could not be read is the same
+ * mistake `listCalendars` was fixed for: to everything downstream "Google would
+ * not answer" and "your day is free" look identical and mean opposite things.
+ * The briefing spent five days cheerfully reporting an empty calendar while the
+ * account's refresh token was dead, and said so nowhere. A partial failure
+ * still returns what was read, and is logged rather than thrown: one
+ * unreadable shared calendar should cost that calendar, not the morning.
+ */
 export async function fetchEventsBetween(
   calendarService: GoogleCalendarService,
   userId: string,
@@ -79,6 +105,22 @@ export async function fetchEventsBetween(
       })
     )
   );
+
+  const failed = results.flatMap((res, i) =>
+    res.status === 'rejected' ? [{ calendarId: calendarIds[i]!, reason: res.reason }] : []
+  );
+
+  for (const f of failed) {
+    console.error(`[push/calendar] Could not read calendar ${f.calendarId}:`, f.reason);
+  }
+
+  if (failed.length > 0 && failed.length === results.length) {
+    throw new Error(
+      `Could not read any of the user's ${results.length} calendar(s): ${
+        (failed[0].reason as any)?.message ?? failed[0].reason
+      }`
+    );
+  }
 
   const events = results.flatMap((res, i) => {
     if (res.status !== 'fulfilled') return [];
@@ -108,9 +150,15 @@ export async function fetchEventsBetween(
     if (e.start && !seen.has(e.id)) seen.set(e.id, e);
   }
 
-  return [...seen.values()].sort(
-    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
-  );
+  // Declined after the merge, never before: the copy carrying the user's
+  // `responseStatus` is the one on their own calendar, and dropping per-list
+  // would let a shared calendar's status-free copy of the same event survive as
+  // the winner. Filtering here is what makes this true for every caller —
+  // `scanDay` had its own guard and the briefing had none, which is the whole
+  // bug: a rule that has to be remembered three times gets remembered twice.
+  return [...seen.values()]
+    .filter((e) => !isDeclined(e))
+    .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 }
 
 /**

@@ -1,5 +1,5 @@
 import { getLocalDateKey } from './timezone';
-import type { CalendarEvent } from './calendar-window';
+import { isDeclined, type CalendarEvent } from './calendar-window';
 
 /**
  * Deterministic detection of things worth interrupting the user about.
@@ -102,12 +102,17 @@ function span(event: DayEvent): { start: Date; end: Date } | null {
   return { start, end };
 }
 
-/** Events the user said no to should not generate conflicts or crowd a run. */
-export function isDeclined(event: DayEvent): boolean {
-  return (event.attendees ?? []).some(
-    (a) => a.self === true && a.responseStatus === 'declined'
-  );
-}
+/**
+ * Events the user said no to should not generate conflicts or crowd a run.
+ *
+ * Defined in `calendar-window` and re-exported here, where it was first needed.
+ * `fetchEventsBetween` now applies it to everything it returns, so by the time
+ * a scan sees an event this has already been true — the guard stays because
+ * `scanDay` takes its events as an argument and cannot assume where they came
+ * from, and because a filter that is cheap and idempotent is the wrong thing to
+ * economise on.
+ */
+export { isDeclined };
 
 /** Timed, accepted events sorted by start — the input every detector wants. */
 function schedulable(events: DayEvent[]): Array<DayEvent & { _span: { start: Date; end: Date } }> {

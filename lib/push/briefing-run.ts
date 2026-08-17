@@ -5,7 +5,12 @@ import { deliverToUser } from '@/lib/push/deliver';
 import { getAccessTokenForUser, resolveUserTimezone } from '@/lib/push/google-token';
 import { getLocalHour, getLocalDateKey } from '@/lib/push/timezone';
 import { claimNotification } from '@/lib/push/dedupe';
-import { generateBriefing, fetchTodayEvents, type BriefingDate } from '@/lib/push/briefing';
+import {
+  generateBriefing,
+  fetchTodayEvents,
+  type BriefingDate,
+  type BriefingEvent,
+} from '@/lib/push/briefing';
 import { upcomingTimeline } from '@/lib/actions/timeline';
 import { BRIEFING_HORIZON_DAYS } from '@/lib/timeline/timeline';
 import { fetchDayNotes } from '@/lib/push/day-notes';
@@ -81,13 +86,30 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
     return { status: 'skipped', reason: 'claimed' };
   }
 
-  const events = accessToken
-    ? await fetchTodayEvents(new GoogleCalendarService(accessToken, userId), userId, now, tz)
-    : [];
+  // `null` means the calendar could not be read, which is not the same fact as
+  // an empty day and is not reported as one. Both ways of failing land here:
+  // no usable token — a refresh token Google has expired or revoked returns
+  // null from `getAccessTokenForUser` — and a read that Google refused.
+  let events: BriefingEvent[] | null = null;
+
+  if (!accessToken) {
+    console.error(`[push/briefing] No usable Google token for ${userId}; calendar unreadable`);
+  } else {
+    try {
+      events = await fetchTodayEvents(
+        new GoogleCalendarService(accessToken, userId),
+        userId,
+        now,
+        tz
+      );
+    } catch (error) {
+      console.error(`[push/briefing] Calendar read failed for ${userId}:`, error);
+    }
+  }
 
   // One retrieval, two consumers: the briefing works it into its sentence, the
   // scan matches it against who the user is meeting.
-  const notes = await fetchDayNotes(userId, events);
+  const notes = await fetchDayNotes(userId, events ?? []);
 
   // Saved dates falling within the week. Read from the timeline rather than the
   // calendar because that is where they are: a birthday nobody created a
@@ -115,7 +137,9 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
   let queued = 0;
   if (u.proactiveEnabled) {
     const insights = scanDay({
-      events,
+      // Nothing to scan when the calendar is unreadable — a nudge inferred from
+      // an absence of events would be inferred from an absence of knowledge.
+      events: events ?? [],
       notes,
       now,
       tz,

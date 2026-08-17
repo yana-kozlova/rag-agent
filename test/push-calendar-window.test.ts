@@ -96,12 +96,18 @@ describe('fetchEventsBetween', () => {
     expect(event.attendees).toBeUndefined();
   });
 
+  /**
+   * The marker is `tentative` rather than `declined` because a declined event
+   * is now dropped outright — see `push-calendar-declined.test.ts`, which
+   * covers that the drop survives exactly this shape, a status-free copy of the
+   * same event sitting on a shared calendar.
+   */
   it('prefers the primary copy of an event shared across calendars', async () => {
     // Only the user's own copy carries their responseStatus, so it must win.
     const service = serviceReturning(
       {
         items: [
-          apiEvent({ attendees: [{ self: true, responseStatus: 'declined' }] }),
+          apiEvent({ attendees: [{ self: true, responseStatus: 'tentative' }] }),
         ],
       },
       { items: [apiEvent({ attendees: [] })] }
@@ -111,7 +117,7 @@ describe('fetchEventsBetween', () => {
 
     expect(events).toHaveLength(1);
     expect(events[0].calendarId).toBe('primary');
-    expect(events[0].attendees?.[0]?.responseStatus).toBe('declined');
+    expect(events[0].attendees?.[0]?.responseStatus).toBe('tentative');
   });
 
   it('marks all-day events and orders the day by start', async () => {

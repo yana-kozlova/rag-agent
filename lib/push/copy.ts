@@ -50,6 +50,13 @@ export type NotificationCopy = {
     morningTitle: string;
     thingsToday: (count: number) => string;
     nothingScheduled: string;
+    /**
+     * The calendar could not be read — a different fact from an empty day, and
+     * the reason it needs its own line rather than reusing `nothingScheduled`.
+     * It names the action only the account holder can take, and names no
+     * setting: whoever is reading may be a guest on someone else's deployment.
+     */
+    calendarUnreadable: string;
     more: (count: number) => string;
     allDay: string;
   };
@@ -89,6 +96,8 @@ const UK: NotificationCopy = {
     morningTitle: '☀️ Доброго ранку',
     thingsToday: (n) => `☀️ ${n} ${pluralUk(n, 'справа', 'справи', 'справ')} сьогодні`,
     nothingScheduled: 'На сьогодні нічого не заплановано — календар вільний.',
+    calendarUnreadable:
+      'Не вдалося прочитати календар, тож я не знаю, що на сьогодні. Схоже, доступ до Google треба надати заново — увійдіть у застосунок ще раз.',
     more: (n) => `+ще ${n}`,
     allDay: 'увесь день',
   },
@@ -132,6 +141,8 @@ const EN: NotificationCopy = {
     morningTitle: '☀️ Good morning',
     thingsToday: (n) => `☀️ ${n} ${n === 1 ? 'thing' : 'things'} today`,
     nothingScheduled: 'Nothing scheduled today. Your calendar is clear.',
+    calendarUnreadable:
+      'Could not read your calendar, so I do not know what today holds. Google access looks like it needs granting again — sign in to the app once more.',
     more: (n) => `+${n} more`,
     allDay: 'all day',
   },
