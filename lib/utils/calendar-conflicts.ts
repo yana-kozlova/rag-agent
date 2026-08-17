@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import type { calendar_v3 } from 'googleapis';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 import { calendarIdsFor, type FollowedCalendar } from '@/lib/utils/calendars';
+import { formatUtcOffset } from '@/lib/push/timezone';
 
 export type CalendarConflict = {
   calendarId: string;
@@ -13,10 +14,36 @@ export type CalendarConflict = {
   end: string;
 };
 
+/** Why an event that covers the requested time is nevertheless not in the way. */
+export type OverlapReason = 'all-day' | 'free' | 'declined' | 'working-location';
+
+/** Something happening at the same time that is context, not an obstacle. */
+export type CalendarOverlap = CalendarConflict & { reason: OverlapReason };
+
 export type SuggestedSlot = {
   start: string;
   end: string;
 };
+
+/**
+ * Overlapping in time and being in the way are different questions.
+ *
+ * An anniversary is an all-day event, so it spans midnight to midnight and
+ * collided with every hour of the day it fell on — one birthday made a whole
+ * day unbookable. The other three are Google's own answer to the same question
+ * (`transparency: 'transparent'` is the "Free" toggle, which is how standing
+ * working-hours blocks are usually kept) and were being overruled too.
+ */
+export function nonBlockingReason(e: calendar_v3.Schema$Event): OverlapReason | null {
+  // All-day events carry `start.date`; a timed one carries `start.dateTime`.
+  if (!e.start?.dateTime) return 'all-day';
+  if (e.transparency === 'transparent') return 'free';
+  if (e.eventType === 'workingLocation') return 'working-location';
+  if ((e.attendees ?? []).some((a) => a.self === true && a.responseStatus === 'declined')) {
+    return 'declined';
+  }
+  return null;
+}
 
 function parseEventDateTime(value?: string) {
   if (!value) return null;
@@ -67,14 +94,19 @@ export async function getCalendarIdsForUser(userId: string) {
   return calendarIdsFor(followed, row?.email);
 }
 
-export async function findConflictsForTimeRange(params: {
+/**
+ * Everything overlapping the range, split by whether it is actually in the way.
+ * The blocking half decides whether to stop; the rest is worth one mention
+ * ("you have your anniversary that day") and nothing more.
+ */
+export async function findOverlapsForTimeRange(params: {
   calendarService: GoogleCalendarService;
   userId: string;
   startISO: string;
   endISO: string;
   includeFollowedCalendars?: boolean;
   exclude?: { calendarId: string; eventId: string };
-}) {
+}): Promise<{ blocking: CalendarConflict[]; nonBlocking: CalendarOverlap[] }> {
   const start = new Date(params.startISO);
   const end = new Date(params.endISO);
   if (isNaN(start.getTime()) || isNaN(end.getTime()) || start >= end) {
@@ -97,7 +129,8 @@ export async function findConflictsForTimeRange(params: {
     )
   );
 
-  const conflicts: CalendarConflict[] = [];
+  const blocking: CalendarConflict[] = [];
+  const nonBlocking: CalendarOverlap[] = [];
 
   results.forEach((res, idx) => {
     if (res.status !== 'fulfilled') return;
@@ -112,19 +145,39 @@ export async function findConflictsForTimeRange(params: {
       if (!t) continue;
       if (!overlaps(start, end, t.start, t.end)) continue;
 
-      conflicts.push({
+      const row = {
         calendarId,
         eventId,
         title: ev.summary || 'No Title',
         start: (t.startText ?? t.start.toISOString()) as string,
         end: (t.endText ?? t.end.toISOString()) as string,
-      });
+      };
+
+      const reason = nonBlockingReason(ev);
+      if (reason) nonBlocking.push({ ...row, reason });
+      else blocking.push(row);
     }
   });
 
   // Stable ordering for output
-  conflicts.sort((a, b) => a.start.localeCompare(b.start));
-  return conflicts;
+  blocking.sort((a, b) => a.start.localeCompare(b.start));
+  nonBlocking.sort((a, b) => a.start.localeCompare(b.start));
+  return { blocking, nonBlocking };
+}
+
+/**
+ * The blocking half alone, for callers that only ask "is this time taken?".
+ */
+export async function findConflictsForTimeRange(params: {
+  calendarService: GoogleCalendarService;
+  userId: string;
+  startISO: string;
+  endISO: string;
+  includeFollowedCalendars?: boolean;
+  exclude?: { calendarId: string; eventId: string };
+}) {
+  const { blocking } = await findOverlapsForTimeRange(params);
+  return blocking;
 }
 
 function extractTimezoneOffset(isoString: string): string {
@@ -138,13 +191,43 @@ function extractTimezoneOffset(isoString: string): string {
   return '+00:00';
 }
 
-function formatDateWithOffset(date: Date, offset: string): string {
-  // Parse the offset to get the shift in minutes
+function offsetMinutesOf(offset: string): number | null {
   const match = offset.match(/^([+-])(\d{2}):(\d{2})$/);
-  if (!match) return date.toISOString();
-
+  if (!match) return null;
   const sign = match[1] === '+' ? 1 : -1;
-  const offsetMinutes = sign * (parseInt(match[2], 10) * 60 + parseInt(match[3], 10));
+  return sign * (parseInt(match[2], 10) * 60 + parseInt(match[3], 10));
+}
+
+function hourInOffset(date: Date, offsetMinutes: number): number {
+  return new Date(date.getTime() + offsetMinutes * 60_000).getUTCHours();
+}
+
+/**
+ * Whether a whole slot falls inside the hours worth proposing.
+ *
+ * This used to read `getHours()` — the server's zone, UTC on Vercel — so for a
+ * Kyiv user the window it enforced ran 10:00 to 01:00. Exported because that
+ * bug is visible or invisible depending on where the suite runs, which is no
+ * way to keep it fixed. The end is measured a millisecond early because it is
+ * exclusive: 21:30–22:00 finishes inside the day.
+ */
+export function isSlotWithinHours(params: {
+  start: Date;
+  end: Date;
+  offsetMinutes: number;
+  minHour: number;
+  maxHour: number;
+}): boolean {
+  const inRange = (d: Date) => {
+    const hour = hourInOffset(d, params.offsetMinutes);
+    return hour >= params.minHour && hour < params.maxHour;
+  };
+  return inRange(params.start) && inRange(new Date(params.end.getTime() - 1));
+}
+
+function formatDateWithOffset(date: Date, offset: string): string {
+  const offsetMinutes = offsetMinutesOf(offset);
+  if (offsetMinutes === null) return date.toISOString();
 
   // Shift UTC time by the offset to get the local wall-clock time
   const local = new Date(date.getTime() + offsetMinutes * 60_000);
@@ -171,6 +254,8 @@ export async function suggestAlternativeSlots(params: {
   exclude?: { calendarId: string; eventId: string }; // exclude current event when moving
   minHour?: number; // default 7 - don't suggest slots before this hour
   maxHour?: number; // default 22 - don't suggest slots after this hour
+  /** IANA zone of the person being offered these times. See below. */
+  timeZone?: string;
 }) {
   const desiredStart = new Date(params.desiredStartISO);
   const desiredEnd = new Date(params.desiredEndISO);
@@ -182,8 +267,19 @@ export async function suggestAlternativeSlots(params: {
     throw new Error('Invalid desired time range for suggestions');
   }
 
-  // Extract timezone offset from desired time to preserve it in alternatives
-  const timezoneOffset = extractTimezoneOffset(params.desiredStartISO);
+  /*
+   * Whose day the suggested times have to sit inside.
+   *
+   * `scheduleEvent` arrives with a real offset (its schema rejects `Z` and
+   * `+00:00` so that it does). `optimizeSchedule` works in `Date`s and can only
+   * pass `.toISOString()`, which always parses back as `+00:00` — reverting
+   * every hour decision below to UTC — so it passes `timeZone`, which wins.
+   * Held for the whole window, so a DST change inside it shifts the far end by
+   * an hour: the same trade `localDayBounds` makes.
+   */
+  const timezoneOffset = params.timeZone
+    ? formatUtcOffset(desiredStart, params.timeZone)
+    : extractTimezoneOffset(params.desiredStartISO);
 
   const durationMs = desiredEnd.getTime() - desiredStart.getTime();
   const step = params.stepMinutes ?? 15;
@@ -223,6 +319,9 @@ export async function suggestAlternativeSlots(params: {
       if (!eventId) continue;
       if (ev.status === 'cancelled') continue;
       if (params.exclude && params.exclude.calendarId === calendarId && params.exclude.eventId === eventId) continue;
+      // The same rule as the conflict check, or the two contradict each other
+      // and the day has no conflict and still no free slot to offer.
+      if (nonBlockingReason(ev)) continue;
       const t = normalizeEventTime(ev);
       if (!t) continue;
       busy.push({ start: t.start, end: t.end });
@@ -241,17 +340,14 @@ export async function suggestAlternativeSlots(params: {
     return false;
   };
 
-  const isWithinAllowedHours = (date: Date) => {
-    const hour = date.getHours();
-    return hour >= minHour && hour < maxHour;
-  };
+  const tzMinutes = offsetMinutesOf(timezoneOffset) ?? 0;
 
   while (suggestions.length < max && cursor.getTime() + durationMs <= windowEnd.getTime()) {
     const candStart = cursor;
     const candEnd = new Date(candStart.getTime() + durationMs);
     
     // Skip if outside allowed hours (night time)
-    if (!isWithinAllowedHours(candStart) || !isWithinAllowedHours(candEnd)) {
+    if (!isSlotWithinHours({ start: candStart, end: candEnd, offsetMinutes: tzMinutes, minHour, maxHour })) {
       cursor = new Date(cursor.getTime() + step * 60_000);
       continue;
     }
@@ -281,7 +377,7 @@ export async function conflictsAndAlternatives(params: {
   includeFollowedCalendars: boolean;
   exclude?: { calendarId: string; eventId: string };
 }) {
-  const conflicts = await findConflictsForTimeRange({
+  const { blocking: conflicts, nonBlocking: alsoDuring } = await findOverlapsForTimeRange({
     calendarService: params.calendarService,
     userId: params.userId,
     startISO: params.start,
@@ -291,7 +387,7 @@ export async function conflictsAndAlternatives(params: {
   });
 
   if (conflicts.length === 0) {
-    return { conflicts, alternatives: [] };
+    return { conflicts, alternatives: [], alsoDuring };
   }
 
   const alternatives = await suggestAlternativeSlots({
@@ -308,7 +404,7 @@ export async function conflictsAndAlternatives(params: {
     maxHour: 22, // Don't suggest after 10 PM
   });
 
-  return { conflicts, alternatives };
+  return { conflicts, alternatives, alsoDuring };
 }
 
 export function formatWhen(params: { start: string; end: string }) {

@@ -11,11 +11,19 @@ function addHours(d: Date, hours: number) {
   return new Date(d.getTime() + hours * 60 * 60_000);
 }
 
+/** How far either side of the wanted time to look for the event being moved. */
+const MOVE_SEARCH_HOURS = 72;
+
+/** Said to the model rather than left to be guessed, which is how `ignoreConflicts` came to be ignored. */
+const ALSO_DURING_NOTE =
+  'The "alsoDuring" list, when present, is what is happening at that time without occupying it (an all-day event, a block marked Free, a declined invitation). Mention it once as context — never as a reason to refuse or to re-ask.';
+
 export const scheduleEventTool = {
-  description: `Create or reschedule a calendar event. Patches existing event if same day+title match found. Blocks on conflicts unless ignoreConflicts=true. Times must use offset (e.g. +03:00), never "Z".`,
+  description: `Create or reschedule a calendar event. Patches existing event if same day+title match found. A busy time is reported back and nothing is written; call again with ignoreConflicts=true once the user has said to book it anyway. Times must use offset (e.g. +03:00), never "Z".`,
   inputSchema: z.object({
     calendarId: z.string().optional().describe('Google Calendar ID (defaults to primary)'),
     title: z.string().min(1, 'Title is required'),
+    location: z.string().optional().describe('Where it happens — address or place name, if the user gave one'),
     start: z.string().min(1).refine(
       (val) => {
         const match = val.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2})$/);
@@ -35,7 +43,7 @@ export const scheduleEventTool = {
       { message: 'ISO-8601 datetime must include explicit timezone offset (e.g. +02:00, -05:00). Do NOT use +00:00 (UTC) or Z suffix.' }
     ).describe('ISO-8601 datetime with timezone offset (e.g. 2025-12-26T20:00:00+02:00). Do NOT use +00:00 or Z.'),
     includeFollowedCalendars: z.boolean().default(true).describe('Conflict check includes followed calendars too'),
-    ignoreConflicts: z.boolean().default(false).describe('If true, creates/moves event even if conflicts are detected (conflicts will still be reported)'),
+    ignoreConflicts: z.boolean().default(false).describe('Set true when the user has been told the time is busy and wants it booked anyway, or when they repeat a time you already questioned. The event is written and the conflicts are still reported back.'),
     moveIfExists: z.boolean().default(true).describe('If true, will move an existing matching event instead of creating a duplicate'),
     matchQuery: z.string().optional().describe('Optional search query for matching existing events (defaults to title)'),
     dryRun: z.boolean().default(false).describe('If true, do not change calendar; only report what would happen'),
@@ -43,6 +51,7 @@ export const scheduleEventTool = {
   execute: async (rawInput: {
     calendarId?: string;
     title: string;
+    location?: string;
     start: string;
     end: string;
     includeFollowedCalendars?: boolean;
@@ -69,9 +78,13 @@ export const scheduleEventTool = {
     // If we are allowed to move existing events, try to find a matching event on the same day.
     let match: { eventId: string; currentStart?: string; currentEnd?: string; title: string } | null = null;
     if (input.moveIfExists !== false) {
-      // Avoid server timezone day-boundaries: search within a safe window around the desired time.
-      const timeMin = addHours(desiredStart, -24).toISOString();
-      const timeMax = addHours(desiredStart, 24).toISOString();
+      // Three days either side, not one: the event being moved is by definition
+      // not where it is wanted, and a day's reach missed "no, today" about an
+      // appointment sitting on Tuesday, writing a second copy. Not a week — a
+      // weekly series puts one instance inside three days and two inside seven,
+      // and a second candidate makes this refuse to move at all.
+      const timeMin = addHours(desiredStart, -MOVE_SEARCH_HOURS).toISOString();
+      const timeMax = addHours(desiredStart, MOVE_SEARCH_HOURS).toISOString();
       const q = input.matchQuery ?? input.title;
       const res = await calendarService.fetchEvents(calendarId, {
         timeMin,
@@ -109,7 +122,7 @@ export const scheduleEventTool = {
     }
 
     // Conflict check (exclude the matched event if we are moving it).
-    const { conflicts, alternatives } = await conflictsAndAlternatives({
+    const { conflicts, alternatives, alsoDuring } = await conflictsAndAlternatives({
       calendarService,
       userId: session.user.id as string,
       start: input.start,
@@ -122,10 +135,13 @@ export const scheduleEventTool = {
     if (conflicts.length > 0 && !input.ignoreConflicts) {
       return {
         success: false,
-        message: 'Conflicts detected; no calendar changes were made.',
+        message:
+          'The requested time is busy, so nothing was written yet. Tell the user what it clashes with and ask whether to book it anyway or take one of the alternatives — if they confirm the original time, or simply repeat it, call this tool again with the same times and ignoreConflicts=true. Do not keep offering alternatives to someone who has already answered. ' +
+          ALSO_DURING_NOTE,
         action: match ? 'would-move' : 'would-create',
         conflicts,
         alternatives,
+        ...(alsoDuring.length > 0 && { alsoDuring }),
       };
     }
 
@@ -135,7 +151,7 @@ export const scheduleEventTool = {
         dryRun: true,
         action: match ? 'would-move' : 'would-create',
         moveTarget: match ?? undefined,
-        desired: { title: input.title, start: input.start, end: input.end, calendarId },
+        desired: { title: input.title, start: input.start, end: input.end, calendarId, location: input.location },
       };
     }
 
@@ -144,6 +160,8 @@ export const scheduleEventTool = {
         start: input.start,
         end: input.end,
         title: input.title,
+        // Undefined leaves the stored value alone; a move never erases an address.
+        location: input.location,
       });
       const { label } = formatWhen({ start: input.start, end: input.end });
       return {
@@ -151,6 +169,7 @@ export const scheduleEventTool = {
         action: 'moved-existing',
         eventId: match.eventId,
         summary: `[Moved] ${input.title}. When: ${label}`,
+        ...(alsoDuring.length > 0 && { alsoDuring, note: ALSO_DURING_NOTE }),
         ...(conflicts.length > 0 && {
           warning: 'Event moved despite conflicts',
           conflicts,
@@ -161,6 +180,7 @@ export const scheduleEventTool = {
 
     const created = await calendarService.createEvent(calendarId, {
       title: input.title,
+      location: input.location,
       start: input.start,
       end: input.end,
     });
@@ -172,6 +192,8 @@ export const scheduleEventTool = {
       eventId: created.id,
       htmlLink: created.htmlLink,
       summary: `[Created] ${input.title}. When: ${label}`,
+      ...(input.location && { location: input.location }),
+      ...(alsoDuring.length > 0 && { alsoDuring, note: ALSO_DURING_NOTE }),
       ...(conflicts.length > 0 && {
         warning: 'Event created despite conflicts',
         conflicts,

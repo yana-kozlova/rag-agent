@@ -6,6 +6,7 @@ import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import type { calendar_v3 } from 'googleapis';
 import { findConflictsForTimeRange, suggestAlternativeSlots, SuggestedSlot } from '@/lib/utils/calendar-conflicts';
+import { getLocalParts } from '@/lib/push/timezone';
 
 type NormalizedEvent = {
   calendarId: string;
@@ -170,8 +171,20 @@ function findConflicts(events: NormalizedEvent[]): Conflict[] {
   return conflicts;
 }
 
-function withinWorkingHours(d: Date, workDayStartHour: number, workDayEndHour: number) {
-  const h = d.getHours() + d.getMinutes() / 60;
+/**
+ * `workDayStartHour`/`workDayEndHour` are hours of the user's day, not the
+ * server's — `getHours()` enforced "inside 09:00–18:00" three hours behind the
+ * person whose day it was. ICU is asked for the zone's wall clock rather than
+ * an offset, so DST days come out right too.
+ */
+export function withinWorkingHours(
+  d: Date,
+  workDayStartHour: number,
+  workDayEndHour: number,
+  timeZone: string
+) {
+  const { hour, minute } = getLocalParts(d, timeZone);
+  const h = hour + minute / 60;
   return h >= workDayStartHour && h <= workDayEndHour;
 }
 
@@ -183,6 +196,7 @@ function tryFindSlot(params: {
   stepMinutes: number;
   workDayStartHour?: number;
   workDayEndHour?: number;
+  timeZone: string;
 }) {
   const {
     weekStart,
@@ -192,6 +206,7 @@ function tryFindSlot(params: {
     stepMinutes,
     workDayStartHour,
     workDayEndHour,
+    timeZone,
   } = params;
 
   const busySorted = [...busy].sort((a, b) => a.start.getTime() - b.start.getTime());
@@ -202,11 +217,11 @@ function tryFindSlot(params: {
     const candidateEnd = new Date(candidateStart.getTime() + durationMin * 60_000);
 
     if (workDayStartHour != null && workDayEndHour != null) {
-      if (!withinWorkingHours(candidateStart, workDayStartHour, workDayEndHour)) {
+      if (!withinWorkingHours(candidateStart, workDayStartHour, workDayEndHour, timeZone)) {
         cursor = new Date(cursor.getTime() + stepMinutes * 60_000);
         continue;
       }
-      if (!withinWorkingHours(candidateEnd, workDayStartHour, workDayEndHour)) {
+      if (!withinWorkingHours(candidateEnd, workDayStartHour, workDayEndHour, timeZone)) {
         cursor = new Date(cursor.getTime() + stepMinutes * 60_000);
         continue;
       }
@@ -315,6 +330,11 @@ Core behavior:
       session.user.accessToken as string,
       session.user.id as string
     );
+
+    // Everything here is a `Date`, so slots reach the hour guards as `Z` and
+    // resolve to UTC — which proposed one in the morning to a user in Kyiv.
+    // `getTimeZone` falls back to the server zone itself, so this never throws.
+    const timeZone = await calendarService.getTimeZone();
 
     const weekStart = input.weekStart ? new Date(input.weekStart) : new Date();
     if (isNaN(weekStart.getTime())) throw new Error('Invalid weekStart: must be ISO-8601 datetime');
@@ -429,6 +449,7 @@ Core behavior:
         stepMinutes: input.stepMinutes ?? 15,
         workDayStartHour: input.workDayStartHour,
         workDayEndHour: input.workDayEndHour,
+        timeZone,
       });
 
       if (!slot) {
@@ -501,6 +522,7 @@ Core behavior:
                 maxSuggestions: 5,
                 minHour: 7, // Don't suggest before 7 AM
                 maxHour: 22, // Don't suggest after 10 PM
+                timeZone,
               });
               proposal.applyStatus = 'skipped';
               proposal.applyError = 'Live conflict check failed; move was not applied.';
@@ -584,6 +606,7 @@ Core behavior:
                 maxSuggestions: 5,
                 minHour: 7, // Don't suggest before 7 AM
                 maxHour: 22, // Don't suggest after 10 PM
+                timeZone,
               });
               proposal.applyStatus = 'skipped';
               proposal.applyError = 'Live conflict check failed; move was not applied.';
