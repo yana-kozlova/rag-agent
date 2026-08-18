@@ -37,16 +37,30 @@ export function weekdayOf(startOrDate: string): string | undefined {
 }
 
 /**
+ * The clock time to print, taken from the string rather than recomputed.
+ *
+ * The offset is already in the ISO value, so its `HH:mm` is the wall clock the
+ * user keeps; building a `Date` and formatting it answers in the server's zone.
+ * Supplied ready to print for the same reason the weekday is: every conversion
+ * the model performs on a time is a chance to print a different one.
+ */
+export function clockOf(start: string): string | undefined {
+  return start.match(/T(\d{2}:\d{2})/)?.[1];
+}
+
+/**
  * The exact text line the model has always received for one event. Kept in a
  * dependency-free module so the "model sees identical text" invariant can be
  * unit-tested without pulling in the db/calendar/session stack.
  */
 export function toLlmLine(e: ToolCalendarEvent): string {
   const weekday = e.start ? weekdayOf(e.start) : undefined;
+  const clock = e.start ? clockOf(e.start) : undefined;
   return [
     `[Event] ${e.title}`,
     e.start && e.end ? `When: ${e.start} - ${e.end}` : undefined,
     weekday ? `Day: ${weekday}` : undefined,
+    clock ? `At: ${clock}` : undefined,
     // Named so the model can present it as the standing block it is instead of
     // repeating it as a commitment on every day of the week.
     e.timeBlock ? 'Note: marked Free — a standing block, not a commitment' : undefined,

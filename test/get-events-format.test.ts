@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toLlmLine, eventsToModelOutput, weekdayOf } from '@/lib/ai/tools/events/get-events-format';
+import { toLlmLine, eventsToModelOutput, weekdayOf, clockOf } from '@/lib/ai/tools/events/get-events-format';
 import type { ToolCalendarEvent } from '@/types/calendar';
 
 const timed: ToolCalendarEvent = {
@@ -21,7 +21,7 @@ describe('getEvents model-output contract', () => {
    */
   it('states the segments in order, with the weekday supplied', () => {
     expect(toLlmLine(timed)).toBe(
-      '[Event] Standup. When: 2026-07-22T09:00:00+03:00 - 2026-07-22T09:15:00+03:00. Day: Wednesday. Location: Zoom',
+      '[Event] Standup. When: 2026-07-22T09:00:00+03:00 - 2026-07-22T09:15:00+03:00. Day: Wednesday. At: 09:00. Location: Zoom',
     );
   });
 
@@ -33,7 +33,7 @@ describe('getEvents model-output contract', () => {
   it('includes description after location, in order', () => {
     const full: ToolCalendarEvent = { ...timed, description: 'Daily sync' };
     expect(toLlmLine(full)).toBe(
-      '[Event] Standup. When: 2026-07-22T09:00:00+03:00 - 2026-07-22T09:15:00+03:00. Day: Wednesday. Location: Zoom. Description: Daily sync',
+      '[Event] Standup. When: 2026-07-22T09:00:00+03:00 - 2026-07-22T09:15:00+03:00. Day: Wednesday. At: 09:00. Location: Zoom. Description: Daily sync',
     );
   });
 
@@ -111,5 +111,21 @@ describe('toLlmLine — day and standing blocks', () => {
       end: '2026-08-18T12:30:00+03:00',
     } as any);
     expect(line).not.toContain('marked Free');
+  });
+});
+
+/**
+ * The clock time the reply prints, supplied rather than converted.
+ */
+describe('clockOf', () => {
+  it('reads the wall clock out of the offset the event carries', () => {
+    expect(clockOf('2026-08-19T10:00:00+03:00')).toBe('10:00');
+    // Same instant, written for a different zone: the printed time follows the
+    // string, not the server.
+    expect(clockOf('2026-08-19T00:30:00-05:00')).toBe('00:30');
+  });
+
+  it('has nothing to give for an all-day date', () => {
+    expect(clockOf('2026-08-19')).toBeUndefined();
   });
 });

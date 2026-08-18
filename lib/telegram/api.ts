@@ -107,6 +107,45 @@ export function flattenMarkdownLinks(text: string): string {
 }
 
 /**
+ * Strip the Markdown that Telegram is never going to render.
+ *
+ * `sendMessage` deliberately sends without `parse_mode`, so every `**` and
+ * `###` the model writes arrives as literal punctuation: a schedule came
+ * through as `### Завтра, 19 серпня` over `1. **Робочі години**: з 08:30`,
+ * which is noisier than the plain text it was decorating. The web chat renders
+ * the same reply properly, which is why this went unnoticed — one answer, two
+ * surfaces, and only one of them showing the marks.
+ *
+ * Removing the syntax rather than translating it to MarkdownV2, for the reason
+ * `sendMessage` already gives: that dialect requires a dozen characters to be
+ * escaped everywhere and rejects the entire message when one is missed. A
+ * message that always arrives unstyled beats a styled one that intermittently
+ * 400s.
+ *
+ * Emphasis is only unwrapped when the marks hug the text (`**word**`, not
+ * `** word`), so arithmetic and stray asterisks survive as themselves. List
+ * dashes and numbers are left alone: they read as a list in plain text, which
+ * is what they are.
+ */
+export function stripMarkdown(text: string): string {
+  return text
+    // Fenced code: drop the fence line, keep what it wrapped.
+    .replace(/^[ \t]*```[^\n]*\n?/gm, '')
+    // ATX headings, including the rare closing hashes.
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+(.*?)[ \t]*#*[ \t]*$/gm, '$1')
+    // Bold, italic, bold-italic, strikethrough — asterisk and underscore forms.
+    .replace(/(\*{1,3})(\S(?:[\s\S]*?\S)?)\1/g, '$2')
+    .replace(/(_{1,3})(\S(?:[\s\S]*?\S)?)\1/g, '$2')
+    .replace(/~~(\S(?:[\s\S]*?\S)?)~~/g, '$1')
+    // Inline code.
+    .replace(/`([^`\n]+)`/g, '$1')
+    // A horizontal rule is a row of punctuation with nothing to separate.
+    .replace(/^[ \t]{0,3}(?:[-*_][ \t]*){3,}$/gm, '')
+    // Blockquote markers.
+    .replace(/^[ \t]{0,3}> ?/gm, '');
+}
+
+/**
  * Send a reply, as plain text.
  *
  * No `parse_mode` on purpose: the model writes ordinary Markdown, while
@@ -124,7 +163,9 @@ export async function sendMessage(
   text: string,
   options: { replyMarkup?: unknown } = {}
 ): Promise<boolean> {
-  const pieces = splitForTelegram(flattenMarkdownLinks(text).trim() || '…');
+  // Links first: it rewrites `[label](href)`, whose brackets the stripper
+  // leaves alone, and spelling out a URL afterwards would re-introduce nothing.
+  const pieces = splitForTelegram(stripMarkdown(flattenMarkdownLinks(text)).trim() || '…');
   let delivered = true;
 
   for (const [index, piece] of pieces.entries()) {
