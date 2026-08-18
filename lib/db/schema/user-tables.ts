@@ -4,13 +4,15 @@ import { jsonb } from "../jsonb";
 import { z } from "zod";
 
 import { nanoid } from "@/lib/utils";
+import { TABLE_COLUMN_TYPES } from "@/lib/utils/table-columns";
 import { users } from "./auth";
 
-// Table column definition schema
+// Table column definition schema. The type list lives in `lib/utils` because
+// client components need it without drizzle — see that file.
 export const tableColumnSchema = z.object({
   id: z.string(),
   name: z.string(),
-  type: z.enum(['text', 'number', 'date', 'boolean', 'email', 'url']),
+  type: z.enum(TABLE_COLUMN_TYPES),
   width: z.number().optional(),
   required: z.boolean().optional(),
   defaultValue: z.string().optional(),

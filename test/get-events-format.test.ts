@@ -37,9 +37,17 @@ describe('getEvents model-output contract', () => {
     );
   });
 
-  it('hands the model a JSON array of lines (byte-identical to the old string[] return)', () => {
+  /*
+   * The event lines still come first and unchanged; what follows them is the
+   * day's free windows, which the model used to work out by subtracting these
+   * same times in the answer.
+   */
+  it('hands the model the event lines, then the free windows', () => {
     const out = eventsToModelOutput({ events: [timed], count: 1 });
-    expect(out).toEqual({ type: 'json', value: [toLlmLine(timed)] });
+    expect(out.type).toBe('json');
+    expect(out.value[0]).toBe(toLlmLine(timed));
+    expect(out.value[1]).toContain('[Free] 2026-07-22');
+    expect(out.value[1]).toContain('Total free:');
   });
 
   it('yields an empty array for no events, matching the old empty return', () => {

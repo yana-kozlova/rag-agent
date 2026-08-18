@@ -1,4 +1,5 @@
 import type { ToolCalendarEvent } from '@/types/calendar';
+import { freeTimeByDay, formatDuration } from '@/lib/utils/free-time';
 
 export type GetEventsOutput = { events: ToolCalendarEvent[]; count: number };
 
@@ -73,6 +74,26 @@ export function toLlmLine(e: ToolCalendarEvent): string {
  * What the LLM receives: the legacy JSON array of text lines, byte-identical to
  * the pre-refactor string[] return. The rich `events` payload is UI-only.
  */
+/**
+ * One line per day saying what is still open, so "скільки в мене вільного часу"
+ * is read off rather than worked out. Days with nothing free are skipped: the
+ * absence of a line is not a claim, while "0 хв" printed under a full day reads
+ * as one the model then has to explain.
+ */
+export function freeTimeLines(events: ToolCalendarEvent[]): string[] {
+  return freeTimeByDay(events)
+    .filter((day) => day.windows.length > 0)
+    .map((day) => {
+      const windows = day.windows
+        .map((w) => `${w.from}-${w.to} (${formatDuration(w.minutes)})`)
+        .join(', ');
+      return `[Free] ${day.date} ${weekdayOf(day.date) ?? ''}: ${windows}. Total free: ${formatDuration(day.totalMinutes)}`;
+    });
+}
+
 export function eventsToModelOutput(output: GetEventsOutput) {
-  return { type: 'json' as const, value: output.events.map(toLlmLine) };
+  return {
+    type: 'json' as const,
+    value: [...output.events.map(toLlmLine), ...freeTimeLines(output.events)],
+  };
 }

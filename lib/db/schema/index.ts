@@ -3,6 +3,7 @@ export { resources } from "./resources";
 export type { NewResourceParams } from "./resources";
 
 export * from './user-tables';
+export * from './quick-actions';
 export * from "./embeddings";
 export * from "./auth";
 export * from "./chat";
