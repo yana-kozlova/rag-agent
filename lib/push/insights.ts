@@ -1,5 +1,6 @@
 import { getLocalDateKey } from './timezone';
 import { isDeclined, type CalendarEvent } from './calendar-window';
+import { isTimeBlock } from '@/lib/utils/calendars';
 
 /**
  * Deterministic detection of things worth interrupting the user about.
@@ -117,7 +118,10 @@ export { isDeclined };
 /** Timed, accepted events sorted by start — the input every detector wants. */
 function schedulable(events: DayEvent[]): Array<DayEvent & { _span: { start: Date; end: Date } }> {
   return events
-    .filter((e) => !isDeclined(e))
+    // `fetchEventsBetween` already drops both, but `scanDay` takes its events
+    // as an argument and cannot assume where they came from — and a working
+    // hours block reaching a detector produces one overlap alert per meeting.
+    .filter((e) => !isDeclined(e) && !isTimeBlock(e))
     .flatMap((e) => {
       const s = span(e);
       return s ? [{ ...e, _span: s }] : [];

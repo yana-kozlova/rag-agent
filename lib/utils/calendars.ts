@@ -116,3 +116,24 @@ export function mergeCalendarState(
     return a.summary.localeCompare(b.summary);
   });
 }
+
+/**
+ * A block that marks out time without claiming any: working hours, a "Free"
+ * placeholder, a working-location marker.
+ *
+ * Google's answer to "does this hold the time" is `transparency`, and the
+ * writing path learned to read it before the notification path did — so a
+ * working-hours block from 08:30 to 18:00 was counted as a commitment, listed
+ * among the day's tasks, and reported as a clash against every meeting inside
+ * it, three times in one morning. It is a desired shape for the day, not an
+ * appointment, and nothing about it is evidence of being busy.
+ *
+ * Takes the two fields rather than an event so both the raw Google shape and
+ * the normalized one can pass, and lives here because this file imports nothing.
+ */
+export function isTimeBlock(event: {
+  transparency?: string | null;
+  eventType?: string | null;
+}): boolean {
+  return event.transparency === 'transparent' || event.eventType === 'workingLocation';
+}

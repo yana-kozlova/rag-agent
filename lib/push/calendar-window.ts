@@ -1,5 +1,6 @@
 import { GoogleCalendarService } from '@/lib/services/calendar';
 import { getCalendarIdsForUser } from '@/lib/utils/calendar-conflicts';
+import { isTimeBlock } from '@/lib/utils/calendars';
 import { addLocalDays, formatUtcOffset, getLocalDateKey } from './timezone';
 
 /**
@@ -30,6 +31,10 @@ export type CalendarEvent = {
   allDay: boolean;
   location?: string;
   attendees?: EventAttendee[];
+  /** Google's "Free"/"Busy" flag. `transparent` means the time is not held. */
+  transparency?: string | null;
+  /** `default` | `workingLocation` | `outOfOffice` | `focusTime`. */
+  eventType?: string | null;
 };
 
 /**
@@ -139,6 +144,10 @@ export async function fetchEventsBetween(
       // caller's business, and dropping them here is what previously made
       // "who am I meeting" impossible to answer downstream.
       attendees: (event.attendees as EventAttendee[] | undefined) ?? undefined,
+      // Without these two the notification path could not tell a commitment
+      // from a block marking out the shape of the day.
+      transparency: (event.transparency as string | undefined) ?? null,
+      eventType: (event.eventType as string | undefined) ?? null,
     }));
   });
 
@@ -156,8 +165,13 @@ export async function fetchEventsBetween(
   // the winner. Filtering here is what makes this true for every caller —
   // `scanDay` had its own guard and the briefing had none, which is the whole
   // bug: a rule that has to be remembered three times gets remembered twice.
+  // Time blocks go with them, and for the same reason. "Working hours
+  // 08:30-18:00" is a desired shape for the day, not a commitment: counted as
+  // one it was listed among the day's tasks and reported as a clash against
+  // every meeting inside it — three overlap alerts in a single morning, each
+  // one telling the user that working during working hours is a problem.
   return [...seen.values()]
-    .filter((e) => !isDeclined(e))
+    .filter((e) => !isDeclined(e) && !isTimeBlock(e))
     .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 }
 

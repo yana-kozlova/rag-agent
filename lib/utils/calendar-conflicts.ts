@@ -3,7 +3,7 @@ import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import type { calendar_v3 } from 'googleapis';
 import { GoogleCalendarService } from '@/lib/services/calendar';
-import { calendarIdsFor, type FollowedCalendar } from '@/lib/utils/calendars';
+import { calendarIdsFor, isTimeBlock, type FollowedCalendar } from '@/lib/utils/calendars';
 import { formatUtcOffset } from '@/lib/push/timezone';
 
 export type CalendarConflict = {
@@ -37,8 +37,10 @@ export type SuggestedSlot = {
 export function nonBlockingReason(e: calendar_v3.Schema$Event): OverlapReason | null {
   // All-day events carry `start.date`; a timed one carries `start.dateTime`.
   if (!e.start?.dateTime) return 'all-day';
-  if (e.transparency === 'transparent') return 'free';
-  if (e.eventType === 'workingLocation') return 'working-location';
+  // Shared with the notification path, which had to learn the same rule.
+  if (isTimeBlock(e)) {
+    return e.eventType === 'workingLocation' ? 'working-location' : 'free';
+  }
   if ((e.attendees ?? []).some((a) => a.self === true && a.responseStatus === 'declined')) {
     return 'declined';
   }
