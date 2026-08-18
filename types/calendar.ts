@@ -28,6 +28,8 @@ export type ToolCalendarEvent = {
   meetingLink?: string;
   description?: string;
   htmlLink?: string;
+  /** True when Google says the event does not hold the time ("Free"). */
+  timeBlock?: boolean;
 };
 
 

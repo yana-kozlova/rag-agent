@@ -6,6 +6,7 @@ import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import type { ToolCalendarEvent } from '@/types/calendar';
+import { isTimeBlock } from '@/lib/utils/calendars';
 import { eventsToModelOutput, type GetEventsOutput } from './get-events-format';
 
 export type { GetEventsOutput };
@@ -136,6 +137,7 @@ Use "range" for common presets OR "date" for a specific day.
           meetingLink: extractMeetingLink(item),
           description: item.description || undefined,
           htmlLink: item.htmlLink || undefined,
+          timeBlock: isTimeBlock(item) || undefined,
         };
       });
 
