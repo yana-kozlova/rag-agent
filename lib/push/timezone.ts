@@ -118,6 +118,38 @@ export function formatUtcOffset(date: Date, tz: string): string {
 }
 
 /**
+ * A local calendar day plus a wall-clock time, as an offset-bearing RFC-3339
+ * string: `('2026-08-18', '09:00', 'Europe/Kyiv')` → `2026-08-18T09:00:00+03:00`.
+ *
+ * This is what a caller holding only a date needs before it can write an event.
+ * Building the string by hand is the obvious approach and the wrong one:
+ * `new Date('2026-08-18T09:00')` — a date-time with no offset — is parsed in the
+ * *server's* zone, which on Vercel is UTC, so a Kyiv user's 09:00 is filed at
+ * 12:00 local. `dateToRfc3339` in the getEvents tool has exactly that bug; it
+ * survives there only because it is used for whole-day boundaries where the
+ * three-hour error usually falls inside the same day.
+ *
+ * The offset is resolved by fixpoint rather than by a single probe. A first
+ * guess taken at the same wall time in UTC is right on all but two days a year;
+ * on those two the instant it produces lands on the far side of a DST boundary
+ * and reports the neighbouring offset, so the answer is rebuilt once at the
+ * instant it actually names. One pass is enough — a second correction would
+ * mean two transitions within a day, which no real zone has.
+ *
+ * During a spring-forward gap the named local time does not exist. Every answer
+ * is then arbitrary; this returns the one an hour later rather than throwing,
+ * because refusing to schedule is worse than scheduling at 03:00.
+ */
+export function localDateTimeToIso(day: string, time: string, tz: string): string {
+  const hhmmss = time.length === 5 ? `${time}:00` : time;
+
+  const guess = formatUtcOffset(new Date(`${day}T${hhmmss}Z`), tz);
+  const settled = formatUtcOffset(new Date(`${day}T${hhmmss}${guess}`), tz);
+
+  return `${day}T${hhmmss}${settled}`;
+}
+
+/**
  * The next instant at which it is `hour`:00 local time in `tz`.
  *
  * Computed by probing forward hour by hour from `from` rather than by

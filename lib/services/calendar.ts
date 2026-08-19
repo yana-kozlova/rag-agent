@@ -4,6 +4,57 @@ import type { AccountCalendar } from '@/lib/utils/calendars';
 
 // Attendee interface no longer needed in live-only flow
 
+/**
+ * One boundary of an event: an instant, or a whole day.
+ *
+ * `{ date }` is how Google spells an all-day event, and it is the shape a
+ * scheduled task takes when the user committed to a day without naming an hour.
+ * Note that Google's `end.date` is **exclusive** — a single day on 2026-08-18
+ * ends on 2026-08-19 — which is the caller's business, not this module's.
+ */
+export type EventBoundary = string | Date | { date: string };
+
+/**
+ * Build Google's boundary shape, optionally clearing the variant not used.
+ *
+ * `clearOther` is what lets a patch convert an event between all-day and timed.
+ * Google keeps whatever field the stored event already carries unless it is
+ * explicitly overwritten, so patching a `dateTime` onto an all-day event leaves
+ * `date` standing beside it and the write is rejected as ambiguous. Sending the
+ * unused field as `null` is how the API is told "and not that one". On insert
+ * there is nothing to clear, and a null there would just be noise.
+ */
+function toEventBoundary(
+  value: EventBoundary,
+  clearOther: boolean
+): calendar_v3.Schema$EventDateTime {
+  if (typeof value === 'object' && 'date' in value) {
+    return clearOther ? { date: value.date, dateTime: null } : { date: value.date };
+  }
+
+  const dateTime = typeof value === 'string' ? value : value.toISOString();
+  return clearOther ? { dateTime, date: null } : { dateTime };
+}
+
+/**
+ * Whether a failed write means the event is not there — which, for a delete, is
+ * the outcome that was wanted.
+ *
+ * Google answers 410 for an event already deleted and 404 for one that never
+ * existed. Both used to throw out of `deleteEvent`, so a user who removed the
+ * event on Google's side could never unschedule the task pointing at it: every
+ * attempt failed and the row kept a dead id forever.
+ *
+ * The status arrives under a different key depending on which googleapis
+ * version built the error, and `code` is sometimes a string like 'ENOTFOUND' —
+ * comparing against numbers filters those out on its own.
+ */
+function isAlreadyGone(error: unknown): boolean {
+  const e = error as { status?: number; code?: number; response?: { status?: number } };
+  const status = e?.status ?? e?.code ?? e?.response?.status;
+  return status === 404 || status === 410;
+}
+
 export class GoogleCalendarService {
   private calendar: calendar_v3.Calendar;
   private oauth2Client: any;
@@ -54,9 +105,17 @@ export class GoogleCalendarService {
     title: string;
     description?: string;
     location?: string;
-    start: string | Date;
-    end: string | Date;
+    start: EventBoundary;
+    end: EventBoundary;
     attendees?: Array<{ email: string; name?: string }>;
+    /**
+     * Google's "Free" toggle. `transparent` is what a whole-day intention needs:
+     * it holds no hour, so it must not count as a conflict and must not appear
+     * in the briefing's schedule — `isTimeBlock` reads exactly this field.
+     * Omitted means Google's default, `opaque`, which is right for anything
+     * that really does take the time.
+     */
+    transparency?: 'transparent' | 'opaque';
   }) {
     try {
       const event = await this.calendar.events.insert({
@@ -65,12 +124,9 @@ export class GoogleCalendarService {
           summary: eventData.title,
           description: eventData.description,
           location: eventData.location,
-          start: {
-            dateTime: typeof eventData.start === 'string' ? eventData.start : eventData.start.toISOString(),
-          },
-          end: {
-            dateTime: typeof eventData.end === 'string' ? eventData.end : eventData.end.toISOString(),
-          },
+          start: toEventBoundary(eventData.start, false),
+          end: toEventBoundary(eventData.end, false),
+          transparency: eventData.transparency,
           attendees: eventData.attendees?.map(attendee => ({
             email: attendee.email,
             displayName: attendee.name,
@@ -93,20 +149,22 @@ export class GoogleCalendarService {
     title?: string;
     description?: string;
     location?: string;
-    start?: string | Date;
-    end?: string | Date;
+    start?: EventBoundary;
+    end?: EventBoundary;
+    transparency?: 'transparent' | 'opaque';
   }) {
     try {
       const requestBody: calendar_v3.Schema$Event = {
         summary: patch.title,
         description: patch.description,
         location: patch.location,
-        start: patch.start
-          ? { dateTime: typeof patch.start === 'string' ? patch.start : patch.start.toISOString() }
-          : undefined,
-        end: patch.end
-          ? { dateTime: typeof patch.end === 'string' ? patch.end : patch.end.toISOString() }
-          : undefined,
+        // `true` here is what makes moving a task between "some time on Tuesday"
+        // and "Tuesday at 09:00" a patch rather than a delete-and-recreate —
+        // which matters because recreating changes the event id, and the task
+        // row holds that id.
+        start: patch.start ? toEventBoundary(patch.start, true) : undefined,
+        end: patch.end ? toEventBoundary(patch.end, true) : undefined,
+        transparency: patch.transparency,
       };
 
       const res = await this.calendar.events.patch({
@@ -188,6 +246,13 @@ export class GoogleCalendarService {
 
   /**
    * Delete an event from a calendar.
+   *
+   * An event that is already gone counts as success, and says so via
+   * `alreadyGone`. A delete asks for a state, not for an action, and that state
+   * already holds — throwing instead is what left an unscheduled task unable to
+   * ever let go of its dead event id, and what made "delete this" report an
+   * opaque failure for an event the user had removed in Google themselves.
+   * Every other failure — no write access, network, quota — still throws.
    */
   async deleteEvent(calendarId: string, eventId: string) {
     try {
@@ -195,8 +260,11 @@ export class GoogleCalendarService {
         calendarId,
         eventId,
       } as any);
-      return { success: true as const };
+      return { success: true as const, alreadyGone: false };
     } catch (error) {
+      if (isAlreadyGone(error)) {
+        return { success: true as const, alreadyGone: true };
+      }
       console.error('Error deleting calendar event:', error);
       throw error;
     }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '../../auth/auth';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 import { extractMeetingLink, isBareUrl } from '@/lib/utils/meeting-link';
+import { isTimeBlock } from '@/lib/utils/calendars';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
@@ -54,6 +55,11 @@ export async function GET() {
 
     const events = merged
       .filter(({ event }) => event.id) // Filter out events without valid IDs first
+      // A block is not a commitment — the same rule `fetchEventsBetween` applies
+      // before the briefing. Standing working hours were being drawn on the
+      // dashboard as if they were meetings, and a task scheduled for a whole day
+      // would land here too, beside the same task in the tasks widget.
+      .filter(({ event }) => !isTimeBlock(event))
       .map(({ cid, event }) => {
         const start = event.start?.dateTime || event.start?.date || undefined;
         const end = event.end?.dateTime || event.end?.date || undefined;
