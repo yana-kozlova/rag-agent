@@ -10,7 +10,7 @@ import {
   usedToday,
   type QuickField,
 } from '@/lib/quick-actions/quick-actions';
-import { stripMarkdown } from '@/lib/telegram/api';
+import { flattenMarkdownLinks, stripMarkdown } from '@/lib/telegram/api';
 import { coerceValue } from '@/lib/utils/table-columns';
 import {
   encodeCallbackData,
@@ -282,6 +282,20 @@ describe('sanitizeLabel', () => {
     expect(sanitizeLabel('Арчі — ліки')).toBe('Арчі — ліки');
     expect(sanitizeLabel('Вага 💪')).toBe('Вага 💪');
   });
+
+  // Only what a stripper would actually change. The label is printed mid-line,
+  // so nothing line-anchored can reach it — taking these out cost real labels
+  // their punctuation for nothing.
+  it('keeps punctuation that survives the trip as itself', () => {
+    expect(sanitizeLabel('Арчі — ліки (вечір)')).toBe('Арчі — ліки (вечір)');
+    expect(sanitizeLabel('Вага #2')).toBe('Вага #2');
+    expect(sanitizeLabel('Тиск 120/80 > норма')).toBe('Тиск 120/80 > норма');
+  });
+
+  it('breaks the link form without touching the round brackets', () => {
+    // `flattenMarkdownLinks` needs `](` — losing the square half is enough.
+    expect(sanitizeLabel('Ліки [ранок](x)')).toBe('Ліки ранок(x)');
+  });
 });
 
 describe('labelFromPrompt', () => {
@@ -291,10 +305,20 @@ describe('labelFromPrompt', () => {
   });
 
   // The whole chain, as it actually runs: build the prompt, send it (which
-  // strips Markdown), read the label back. A sanitised label survives it.
-  it('survives the trip through sendMessage’s Markdown stripping', () => {
-    const label = sanitizeLabel('Арчі *ліки*');
-    const sent = stripMarkdown(buildPromptText(label, ['Доза']));
+  // strips Markdown and flattens links), read the label back. Every sanitised
+  // label survives it — that is the property the sanitiser exists for, so it
+  // is checked over the awkward ones rather than over one.
+  it.each([
+    'Арчі *ліки*',
+    'Арчі — ліки (вечір)',
+    'Ліки _ранок_',
+    'Вага #2',
+    'Ліки [ранок](https://x.test)',
+    'Тиск 120/80 > норма',
+    '`Цукор`',
+  ])('survives the trip through sendMessage’s stripping: %s', (raw) => {
+    const label = sanitizeLabel(raw);
+    const sent = stripMarkdown(flattenMarkdownLinks(buildPromptText(label, ['Доза'])));
     expect(labelFromPrompt(sent)).toBe(label);
   });
 

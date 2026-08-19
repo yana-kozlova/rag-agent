@@ -51,8 +51,8 @@ export const MAX_ASK_FIELDS = 3;
 export const MAX_ANSWER_LENGTH = 200;
 
 /**
- * A label is a button face, so the characters that mean something to a
- * Markdown renderer are taken out of it at the point it is saved.
+ * A label is a button face, so the characters that survive a Markdown stripper
+ * as something *other than themselves* are taken out of it when it is saved.
  *
  * Not cosmetics. `sendMessage` strips Markdown on the way to Telegram, and a
  * quick action that asks for a value is found again by the label quoted in the
@@ -61,10 +61,19 @@ export const MAX_ANSWER_LENGTH = 200;
  * makes that round-trip safe by construction; the alternative is every reader
  * remembering to normalise, which is how `isDeclined` ended up guarding one
  * caller out of three.
+ *
+ * Only what can actually fire, though. The label is printed mid-line — inside
+ * guillemets, after an emoji — so `stripMarkdown`'s line-anchored rules
+ * (headings, blockquotes, fences, rules) cannot reach it, and `#`, `>`, `|`
+ * and parentheses come through as themselves. Removing those too cost
+ * "Арчі — ліки (вечір)" its parentheses for no reason at all. What is left is
+ * the paired emphasis marks and the brackets, and the brackets only because
+ * `flattenMarkdownLinks` rewrites `[label](href)` — dropping `[` and `]` makes
+ * that pattern unformable without touching the round half of it.
  */
 export function sanitizeLabel(label: string): string {
   return label
-    .replace(/[*_`~#\[\]()<>|]/g, '')
+    .replace(/[*_`~[\]]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }

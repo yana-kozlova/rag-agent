@@ -69,6 +69,19 @@ export const quickActions = pgTable(
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
+    // ⚠️ `quick_actions_user_label_idx` — the unique index on
+    // `(user_id, lower(btrim(label)))` — is NOT declared here. It is an
+    // expression index Drizzle cannot express, so it lives only in migration
+    // 0026. `drizzle-kit push` compares this file against the database and
+    // drops what it does not find: pushing would silently remove it, and two
+    // things would break with nothing raising. The assistant could create a
+    // second "Арчі — ліки" indistinguishable from the first, and — worse,
+    // because it fails silently and far from here — `findQuickActionByLabel`
+    // would stop being a lookup and start being a coin toss, since a Telegram
+    // reply is matched back to its button by the label quoted in the prompt.
+    // Use `db:generate` + `db:migrate` on this table, never `db:push`.
+    // Same hazard, same wording as `timeline_events_identity_unique`.
+
     // The only read there is: every button for one user, in creation order.
     // Creation order rather than most-recently-used, deliberately: a button
     // pressed every morning should be in the same place every morning, and a

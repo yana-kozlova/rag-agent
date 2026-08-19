@@ -54,6 +54,13 @@ export default function QuickActionsBar({
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
+  /**
+   * The prompts the server refused the write over, by the same string the form
+   * labels them with. Marking the field beats a sentence naming it: with three
+   * inputs on screen, reading "не вистачає: доза" and then finding which box
+   * that is is work the red border does for free.
+   */
+  const [missing, setMissing] = useState<string[]>([]);
 
   const timeZone = useMemo(() => {
     try {
@@ -113,12 +120,21 @@ export default function QuickActionsBar({
       const data = await res.json();
 
       if (!data?.ok) {
-        setToast({ text: data?.error || 'Не вдалось записати', tone: 'error' });
+        const blanks: string[] = Array.isArray(data?.missing) ? data.missing : [];
+        setMissing(blanks);
+        // The server's own wording for this case is English — it is written for
+        // the model, which is the other caller of that layer. The form knows
+        // what it asked for, so it says it here instead.
+        setToast({
+          text: blanks.length > 0 ? `Не вистачає: ${blanks.join(', ')}` : data?.error || 'Не вдалось записати',
+          tone: 'error',
+        });
         return;
       }
 
       setOpenId(null);
       setAnswers({});
+      setMissing([]);
       // Reflect the press without a round-trip: the button's own "вже сьогодні"
       // is the thing the user is looking at when they press it.
       setActions((prev) =>
@@ -149,6 +165,7 @@ export default function QuickActionsBar({
       return;
     }
     setAnswers({});
+    setMissing([]);
     setOpenId((current) => (current === action.id ? null : action.id));
   };
 
@@ -268,22 +285,31 @@ export default function QuickActionsBar({
             >
               {asks.map((field) => {
                 const column = action.columns.find((c) => c.id === field.columnId);
+                const prompt = promptFor(field, action.columns);
+                const blank = missing.includes(prompt);
                 return (
                   <label key={field.columnId} className="flex flex-col gap-1">
-                    <span className="text-xs text-base-content/60">
-                      {promptFor(field, action.columns)}
+                    <span
+                      className={`text-xs ${blank ? 'text-error' : 'text-base-content/60'}`}
+                    >
+                      {prompt}
                     </span>
                     <input
-                      autoFocus={field === asks[0]}
-                      className="input input-bordered input-sm w-40"
+                      autoFocus={field === (asks.find((f) => missing.includes(promptFor(f, action.columns))) ?? asks[0])}
+                      aria-invalid={blank || undefined}
+                      className={`input input-bordered input-sm w-40 ${blank ? 'input-error' : ''}`}
                       type={column?.type === 'number' ? 'number' : column?.type === 'date' ? 'date' : 'text'}
                       inputMode={column?.type === 'number' ? 'decimal' : undefined}
                       step={column?.type === 'number' ? 'any' : undefined}
                       maxLength={MAX_ANSWER_LENGTH}
                       value={answers[field.columnId] ?? ''}
-                      onChange={(e) =>
-                        setAnswers((prev) => ({ ...prev, [field.columnId]: e.target.value }))
-                      }
+                      onChange={(e) => {
+                        setAnswers((prev) => ({ ...prev, [field.columnId]: e.target.value }));
+                        // Clear this field's mark as it is typed into, rather
+                        // than all of them: with two blanks, filling one must
+                        // not make the other look answered.
+                        if (blank) setMissing((prev) => prev.filter((p) => p !== prompt));
+                      }}
                     />
                   </label>
                 );

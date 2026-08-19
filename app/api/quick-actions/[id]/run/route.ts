@@ -12,9 +12,11 @@ export const runtime = 'nodejs';
  * agent, no tool loop, no completion — that is the token and the four seconds
  * the user asked to stop spending on a row that never varies.
  *
- * `missing` comes back as its own field rather than folded into the message so
- * the client can reopen the form on the fields that were left blank instead of
- * making the user re-read a sentence to find out which one it meant.
+ * `missing` comes back as its own field rather than folded into the message
+ * because both clients need it structured and neither needs the message: the
+ * web form marks exactly those inputs, and the bot re-asks for them by name.
+ * The message itself is written for the model, which is the other caller of
+ * that layer, and both surfaces phrase this one in Ukrainian themselves.
  */
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();

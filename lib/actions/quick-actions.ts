@@ -362,12 +362,6 @@ export async function undoQuickActionRun(
   return { ok: true };
 }
 
-/** The most recent presses, for the table page's "written by a button" hint. */
-export async function quickActionsForTable(tableId: string): Promise<QuickActionWithColumns[]> {
-  const all = await listQuickActions();
-  return all.filter((a) => a.tableId === tableId);
-}
-
 function toColumnLike(columns: unknown): ColumnLike[] {
   return ((columns as TableColumn[]) ?? []).map((c) => ({
     id: c.id,
