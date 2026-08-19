@@ -3,8 +3,13 @@ import { runWithUser } from '@/lib/auth/context';
 import { splitNotification } from '@/lib/push/deliver';
 import { enqueueNotification } from '@/lib/push/queue';
 import { answerCallbackQuery, clearReplyMarkup } from './api';
-import { parseCallbackData } from './callback-data';
+import {
+  parseCallbackData,
+  parseQuickActionCallback,
+  parseQuickUndoCallback,
+} from './callback-data';
 import { findUserByChatId } from './link';
+import { handleQuickActionPress, handleQuickUndo } from './quick-actions';
 
 /**
  * The buttons under a notification, pressed.
@@ -47,8 +52,14 @@ export async function handleCallbackQuery(query: TelegramCallbackQuery): Promise
 
   const chatId = String(rawChatId);
 
+  // Three namespaces, one parser each. A press belongs to exactly one of them,
+  // and anything else is a button from a version of this app that no longer
+  // exists.
+  const quickActionId = parseQuickActionCallback(query.data);
+  const quickUndo = parseQuickUndoCallback(query.data);
   const parsed = parseCallbackData(query.data);
-  if (!parsed) {
+
+  if (!parsed && !quickActionId && !quickUndo) {
     await answerCallbackQuery(queryId, 'Ця кнопка більше не працює.');
     return;
   }
@@ -58,6 +69,20 @@ export async function handleCallbackQuery(query: TelegramCallbackQuery): Promise
     await answerCallbackQuery(queryId, 'Цей чат не прив’язаний до акаунта.');
     return;
   }
+
+  // Quick actions push the user context themselves, per call, because a press
+  // can fan out into several writes and each needs its own scope.
+  if (quickActionId) {
+    await handleQuickActionPress(queryId, chatId, user.id, quickActionId);
+    return;
+  }
+
+  if (quickUndo) {
+    await handleQuickUndo(queryId, chatId, messageId, user.id, quickUndo.actionId, quickUndo.rowId);
+    return;
+  }
+
+  if (!parsed) return;
 
   if (parsed.action === 'dismiss') {
     await clearReplyMarkup(chatId, messageId);

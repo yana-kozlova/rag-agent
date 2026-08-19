@@ -18,6 +18,11 @@ import {
   type TelegramDocument,
   type TelegramPhotoSize,
 } from '@/lib/telegram/media';
+import {
+  handleQuickActionReply,
+  isQuickActionCommand,
+  sendQuickActionList,
+} from '@/lib/telegram/quick-actions';
 
 /**
  * One Telegram update, handled end to end.
@@ -36,6 +41,8 @@ type TelegramUpdate = {
     photo?: TelegramPhotoSize[];
     document?: TelegramDocument;
     caption?: string;
+    /** Set when the user answered a `force_reply` — how a quick action gets its value. */
+    reply_to_message?: { text?: string };
   };
   /** A button pressed under a notification this app sent. */
   callback_query?: TelegramCallbackQuery;
@@ -58,6 +65,8 @@ const HELP = [
   'Голосові розшифровуються автоматично.',
   'Фото й документи (PDF, DOCX, EPUB, TXT) потрапляють у базу знань — підпис до фото стає його назвою.',
   'Саме зображення лежить за невгадуваним, але публічним посиланням — не шли те, що не можна нікому показати.',
+  '',
+  '/q — швидкі записи: кнопки, що пишуть готовий рядок у таблицю без жодного запиту до моделі.',
   '/start <код> — прив’язати цей чат до акаунта',
   '/unlink — відв’язати цей чат (база знань лишається в акаунті)',
   '/help — це повідомлення',
@@ -129,6 +138,26 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
       'Цей чат ще не прив’язаний до акаунта. Відкрий налаштування у веб-застосунку, згенеруй код і надішли сюди «/start <код>».'
     );
     return;
+  }
+
+  // The button panel. A command rather than a persistent keyboard, because a
+  // reply keyboard would sit under every message in the chat — including the
+  // ones where you are asking a question — and these are for a specific moment.
+  if (text && isQuickActionCommand(text)) {
+    await sendQuickActionList(chatId, user.id);
+    return;
+  }
+
+  // A reply to a quick action's prompt is a value, not a question: "37.2" sent
+  // to the agent comes back as a polite enquiry about what that means.
+  if (text && message.reply_to_message?.text) {
+    const handled = await handleQuickActionReply(
+      chatId,
+      user.id,
+      message.reply_to_message.text,
+      text
+    );
+    if (handled) return;
   }
 
   // Photos and documents are saved rather than talked about. They arrive with

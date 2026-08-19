@@ -28,6 +28,10 @@ import { listTablesTool } from './tables/list-tables';
 import { addTableRowsTool } from './tables/add-table-rows';
 import { extractToTableTool } from './tables/extract-to-table';
 
+// Quick actions — buttons that write a preset row with no model in the loop
+import { createQuickActionTool } from './tables/create-quick-action';
+import { deleteQuickActionTool } from './tables/delete-quick-action';
+
 export const tools = {
   addResource: addResourceTool,
   getInformation: getInformationTool,
@@ -47,6 +51,8 @@ export const tools = {
   listTables: listTablesTool,
   addTableRows: addTableRowsTool,
   extractToTable: extractToTableTool,
+  createQuickAction: createQuickActionTool,
+  deleteQuickAction: deleteQuickActionTool,
 } as const;
 
 export type { ToolDefinition } from './types';

@@ -23,6 +23,13 @@ const DashboardHeader = dynamic(() => import('@/app/components/dashboard/Dashboa
   ),
 });
 
+// Above the grid, full width: these are pressed, not read, and a row of
+// buttons you have to scroll to is a row of buttons you stop using.
+const QuickActions = dynamic(
+  () => import('@/app/components/quick-actions/QuickActionsBar').then((m) => m.QuickActionsPanel),
+  { ssr: false, loading: () => panelSkeleton }
+);
+
 const CalendarSummary = dynamic(() => import('@/app/components/widgets/calendar-summary'), {
   ssr: false,
   loading: () => panelSkeleton,
@@ -56,6 +63,10 @@ export default function DashboardPage() {
   return (
     <div className="pt-1">
       <DashboardHeader />
+
+      <div className="mb-4">
+        <Panel><QuickActions /></Panel>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Panel><CalendarSummary /></Panel>

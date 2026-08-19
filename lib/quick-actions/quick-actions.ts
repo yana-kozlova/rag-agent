@@ -51,6 +51,25 @@ export const MAX_ASK_FIELDS = 3;
 export const MAX_ANSWER_LENGTH = 200;
 
 /**
+ * A label is a button face, so the characters that mean something to a
+ * Markdown renderer are taken out of it at the point it is saved.
+ *
+ * Not cosmetics. `sendMessage` strips Markdown on the way to Telegram, and a
+ * quick action that asks for a value is found again by the label quoted in the
+ * prompt it sent — so a label written "Арчі *ліки*" would go out as "Арчі
+ * ліки" and match nothing on the way back. Sanitising once, on write, is what
+ * makes that round-trip safe by construction; the alternative is every reader
+ * remembering to normalise, which is how `isDeclined` ended up guarding one
+ * caller out of three.
+ */
+export function sanitizeLabel(label: string): string {
+  return label
+    .replace(/[*_`~#\[\]()<>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * What one column of the template is.
  *
  * - `fixed` — the same value every time. "Арчі", "ліки", "так".

@@ -16,6 +16,7 @@ import {
   askFields,
   describeRow,
   resolveQuickActionRow,
+  sanitizeLabel,
   type QuickAction,
   type QuickField,
 } from '@/lib/quick-actions/quick-actions';
@@ -89,7 +90,12 @@ export async function createQuickAction(input: CreateQuickActionInput): Promise<
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid quick action.' };
   }
-  const { tableId, label, icon, fields } = parsed.data;
+  const { tableId, icon, fields } = parsed.data;
+
+  const label = sanitizeLabel(parsed.data.label);
+  if (!label) {
+    return { ok: false, error: 'A quick action needs a label with something readable in it.' };
+  }
 
   const [table] = await db
     .select({ id: userTables.id, title: userTables.title, columns: userTables.columns })

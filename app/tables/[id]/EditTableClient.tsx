@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { updateUserTable } from '@/lib/actions/user-tables';
 import Link from 'next/link';
+import QuickActionsBar from '@/app/components/quick-actions/QuickActionsBar';
 import type { TableColumn, TableRow } from '@/lib/db/schema/user-tables';
 
 type TableRowWithId = TableRow & { _id?: string };
@@ -244,6 +245,11 @@ export default function EditTableClient({
           </Link>
         </div>
       </div>
+
+      {/* Manageable here and nowhere else: this is the page you come to when a
+          button is wrong, and a delete control beside one you press daily on
+          the dashboard is a mis-tap waiting to happen. */}
+      <QuickActionsBar tableId={tableId} manage onWrote={loadTable} emptyHint={false} />
 
       <div className="overflow-x-auto">
         <table className="table table-zebra w-full">
