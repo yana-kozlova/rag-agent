@@ -30,6 +30,7 @@ flowchart TB
             CAL["/api/calendars<br/>/api/calendar/live-events"]
             ENT["/api/entities"]
             TL["/api/timeline"]
+            TASKS["/api/tasks"]
             WB["/api/wellbeing"]
             DIR["/api/directives/*"]
             PUSH["/api/push/*"]
@@ -171,6 +172,7 @@ sequenceDiagram
 | **Information** | `addResource`, `getInformation` (RAG), `forgetInformation`, `analyzeFile` |
 | **Calendar** | `getEvents`, `scheduleEvent`, `deleteEvent`, `optimizeSchedule` |
 | **Timeline** | `rememberDate`, `getTimeline` |
+| **Tasks** | `addTask`, `getTasks`, `completeTask`, `scheduleTask` |
 | **Wellbeing** | `logWellbeing`, `getWellbeing` |
 | **Preferences** | `rememberPreference`, `forgetPreference` |
 | **Tables** | `createTable`, `addTableRows`, `extractToTable`, `listTables` |

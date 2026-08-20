@@ -10,13 +10,17 @@ import {
   fetchTodayEvents,
   type BriefingDate,
   type BriefingEvent,
+  type BriefingTask,
 } from '@/lib/push/briefing';
 import { upcomingTimeline } from '@/lib/actions/timeline';
+import { briefingTasks } from '@/lib/actions/tasks';
 import { BRIEFING_HORIZON_DAYS } from '@/lib/timeline/timeline';
+import { BRIEFING_HORIZON_DAYS as TASK_HORIZON_DAYS, daysLate } from '@/lib/tasks/tasks';
 import { fetchDayNotes } from '@/lib/push/day-notes';
 import { scanDay } from '@/lib/push/insight-scan';
 import { enqueueNotification } from '@/lib/push/queue';
 import { GoogleCalendarService } from '@/lib/services/calendar';
+import { askAboutOverdue } from '@/lib/telegram/tasks';
 
 /**
  * The week's saved dates, or none.
@@ -36,6 +40,41 @@ async function upcomingDatesForBriefing(userId: string): Promise<BriefingDate[]>
     }));
   } catch (error) {
     console.error('[push/briefing] Reading the timeline failed (non-fatal):', error);
+    return [];
+  }
+}
+
+/**
+ * What is outstanding this morning, or none.
+ *
+ * Same contract as `upcomingDatesForBriefing` and for the same reason: a failure
+ * reading tasks costs the tasks block, never the briefing.
+ *
+ * Only overdue tasks and deadlines landing inside the horizon are carried.
+ * Anything already committed to today has a calendar event and is therefore
+ * already in the schedule above — listing it here as well would print one
+ * commitment twice under two headings.
+ */
+async function outstandingTasksForBriefing(userId: string): Promise<BriefingTask[]> {
+  try {
+    const { today, overdue, due } = await briefingTasks(userId, TASK_HORIZON_DAYS);
+
+    return [
+      ...overdue.map((task) => ({
+        id: task.id,
+        title: task.title,
+        daysLate: daysLate(task.dueOn, today),
+        due: null,
+      })),
+      ...due.map((task) => ({
+        id: task.id,
+        title: task.title,
+        daysLate: 0,
+        due: (task.dueOn === today ? 'today' : 'tomorrow') as 'today' | 'tomorrow',
+      })),
+    ];
+  } catch (error) {
+    console.error('[push/briefing] Reading tasks failed (non-fatal):', error);
     return [];
   }
 }
@@ -65,6 +104,10 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
       quietHoursStart: users.quietHoursStart,
       quietHoursEnd: users.quietHoursEnd,
       locale: users.locale,
+      // Where the overdue-task questions go. `deliverToUser` resolves this
+      // itself for the briefing; these messages are sent directly, so they need
+      // it here.
+      telegramChatId: users.telegramChatId,
     })
     .from(users)
     .where(eq(users.id, userId))
@@ -116,7 +159,19 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
   // calendar event for is exactly the thing this is meant to catch.
   const dates = await upcomingDatesForBriefing(userId);
 
-  const briefing = await generateBriefing(events, tz, notes, u.locale, dates, now);
+  // Outstanding work, from our own table rather than Google — so a broken
+  // calendar costs the schedule and never the deadline that passed yesterday.
+  const outstanding = await outstandingTasksForBriefing(userId);
+
+  const briefing = await generateBriefing(
+    events,
+    tz,
+    notes,
+    u.locale,
+    dates,
+    outstanding,
+    now
+  );
 
   const delivered = await deliverToUser(
     userId,
@@ -129,6 +184,18 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
     },
     'push/briefing-user'
   );
+
+  // Overdue tasks are asked about after the briefing, one short message each so
+  // that answering one leaves the others live — see `askAboutOverdue`. Only when
+  // the briefing itself arrived: questions about yesterday's deadlines with no
+  // briefing above them are a bot talking to itself.
+  if (delivered === 'sent' && u.telegramChatId) {
+    try {
+      await askAboutOverdue(u.telegramChatId, outstanding, u.locale);
+    } catch (error) {
+      console.error('[push/briefing] Asking about overdue tasks failed (non-fatal):', error);
+    }
+  }
 
   // Proactive insights ride the same events and notes, so the scan costs no
   // further calls. Each is queued for its own moment rather than sent now — a

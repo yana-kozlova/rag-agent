@@ -25,6 +25,16 @@ export type BriefingDate = {
   years: number | null;
 };
 
+/** An outstanding task worth a line this morning, as `briefingTasks` groups them. */
+export type BriefingTask = {
+  id: string;
+  title: string;
+  /** Whole days past the deadline. Zero for one that has not passed. */
+  daysLate: number;
+  /** Whether the deadline is today or tomorrow, when it has not passed yet. */
+  due: 'today' | 'tomorrow' | null;
+};
+
 export type Briefing = {
   title: string;
   body: string;
@@ -136,6 +146,47 @@ function dateLines(dates: BriefingDate[], copy: NotificationCopy): string {
   return `${copy.dates.header}:\n${lines.join('\n')}`;
 }
 
+/**
+ * How many tasks get a line before the rest collapse into a count. Lower than
+ * the schedule's cap: a morning message listing ten outstanding things is a
+ * morning message nobody finishes reading.
+ */
+const MAX_TASK_LINES = 5;
+
+/**
+ * What is outstanding, built the same way the schedule and the dates are.
+ *
+ * The lateness is computed by the application and printed, never handed to the
+ * model to phrase — the rule this file already follows twice, and it matters
+ * more here than anywhere: a briefing that says a deadline passed two days ago
+ * when it passed five is worse than one that says nothing.
+ *
+ * A task already committed to today is deliberately absent. It has a calendar
+ * event, so it is already in the schedule above, and printing it again would
+ * make the same commitment appear twice under two different headings.
+ */
+function taskLines(tasks: BriefingTask[], copy: NotificationCopy): string {
+  if (tasks.length === 0) return '';
+
+  const lines = tasks.slice(0, MAX_TASK_LINES).map((task) => {
+    const when =
+      task.daysLate > 0
+        ? copy.tasks.late(task.daysLate)
+        : task.due === 'today'
+          ? copy.tasks.dueToday
+          : task.due === 'tomorrow'
+            ? copy.tasks.dueTomorrow
+            : null;
+
+    return `• ${truncate(task.title)}${when ? ` — ${when}` : ''}`;
+  });
+
+  const hidden = tasks.length - Math.min(tasks.length, MAX_TASK_LINES);
+  if (hidden > 0) lines.push(copy.briefing.more(hidden));
+
+  return `${copy.tasks.header}:\n${lines.join('\n')}`;
+}
+
 function truncate(title: string): string {
   const trimmed = title.trim();
   return trimmed.length > MAX_TITLE
@@ -187,6 +238,8 @@ export async function generateBriefing(
   locale?: string | null,
   /** Saved dates falling within the week. Empty on all but a few mornings a year. */
   dates: BriefingDate[] = [],
+  /** Overdue tasks and deadlines landing today or tomorrow. */
+  taskList: BriefingTask[] = [],
   /**
    * The instant the briefing is being built for. Only the model path uses it,
    * to date the day and the notes against each other — see `notes` below.
@@ -195,15 +248,20 @@ export async function generateBriefing(
 ): Promise<Briefing> {
   const copy = copyFor(locale);
   const datesBlock = dateLines(dates, copy);
+  const tasksBlock = taskLines(taskList, copy);
+
+  /** Blank-line-separated, skipping the blocks that had nothing to say. */
+  const join = (...blocks: string[]) => blocks.filter(Boolean).join('\n\n');
 
   // Saved dates still go out: they come from the timeline, not from Google, and
   // a birthday is the one thing a broken calendar must not be allowed to eat.
+  // Tasks go out under it for the same reason: they come from our own table,
+  // not from Google, and a deadline that passed yesterday is precisely what a
+  // broken calendar must not be allowed to swallow.
   if (events === null) {
     return {
       title: copy.briefing.morningTitle,
-      body: datesBlock
-        ? `${copy.briefing.calendarUnreadable}\n\n${datesBlock}`
-        : copy.briefing.calendarUnreadable,
+      body: join(copy.briefing.calendarUnreadable, datesBlock, tasksBlock),
       eventCount: 0,
     };
   }
@@ -215,16 +273,12 @@ export async function generateBriefing(
   if (eventCount === 0) {
     return {
       title: copy.briefing.morningTitle,
-      body: datesBlock
-        ? `${copy.briefing.nothingScheduled}\n\n${datesBlock}`
-        : copy.briefing.nothingScheduled,
+      body: join(copy.briefing.nothingScheduled, datesBlock, tasksBlock),
       eventCount: 0,
     };
   }
 
-  const schedule = datesBlock
-    ? `${scheduleLines(events, tz, copy)}\n\n${datesBlock}`
-    : scheduleLines(events, tz, copy);
+  const schedule = join(scheduleLines(events, tz, copy), datesBlock, tasksBlock);
 
   const scheduleText = events
     .map(
@@ -258,7 +312,7 @@ export async function generateBriefing(
       model: openai(modelName),
       system: [
         'You write the opening line of a morning briefing.',
-        'The schedule and the dates are listed underneath your text by the application, so never list, enumerate or restate them — one all-day event needs no summary, because the line below already says it.',
+        'The schedule, the dates and the outstanding tasks are all listed underneath your text by the application, so never list, enumerate or restate them — one all-day event needs no summary, because the line below already says it.',
         // The old prompt asked for "two or three sentences" and named four
         // things to lead with, all of which presuppose a busy day. On a day
         // holding one entry the model had to invent a clash to have something
@@ -282,6 +336,17 @@ export async function generateBriefing(
         dates.length > 0
           ? `\nSaved dates this week:\n${dates
               .map((d) => `- ${d.title} (${d.daysAway === 0 ? 'today' : `in ${d.daysAway} days`})`)
+              .join('\n')}`
+          : '',
+        // Context, listed by the application: the same division as the schedule.
+        // The sentence may lead with a clash between a deadline and a full day;
+        // the lines under it are not the model's to repeat.
+        taskList.length > 0
+          ? `\nOutstanding tasks:\n${taskList
+              .map(
+                (t) =>
+                  `- ${t.title} (${t.daysLate > 0 ? `${t.daysLate} days late` : `due ${t.due ?? 'soon'}`})`
+              )
               .join('\n')}`
           : '',
         notes

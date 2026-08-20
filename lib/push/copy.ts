@@ -69,6 +69,22 @@ export type NotificationCopy = {
     /** "виповнюється 7" — only ever said when the original year is known. */
     turning: (years: number) => string;
   };
+  /** Outstanding tasks: what is late, and what is due within the horizon. */
+  tasks: {
+    header: string;
+    /** "на 3 дні пізніше" — the lateness is computed, never left to the model. */
+    late: (days: number) => string;
+    dueToday: string;
+    dueTomorrow: string;
+    /** Asked when a deadline has passed and nothing has moved it. */
+    overdueQuestion: string;
+    done: string;
+    tomorrow: string;
+    /** Answers to a pressed button, shown as the toast Telegram pops. */
+    markedDone: string;
+    movedToTomorrow: string;
+    alreadyHandled: string;
+  };
   retro: {
     weekTitle: string;
     weekInReview: (hours: number) => string;
@@ -107,6 +123,18 @@ const UK: NotificationCopy = {
     tomorrow: 'завтра',
     inDays: (d) => `через ${d} ${pluralUk(d, 'день', 'дні', 'днів')}`,
     turning: (y) => `виповнюється ${y}`,
+  },
+  tasks: {
+    header: 'Треба зробити',
+    late: (d) => `на ${d} ${pluralUk(d, 'день', 'дні', 'днів')} пізніше`,
+    dueToday: 'сьогодні останній день',
+    dueTomorrow: 'завтра останній день',
+    overdueQuestion: 'Що з простроченим?',
+    done: '✓ Зроблено',
+    tomorrow: '→ Завтра',
+    markedDone: 'Позначено як зроблене',
+    movedToTomorrow: 'Перенесено на завтра',
+    alreadyHandled: 'Уже опрацьовано',
   },
   retro: {
     weekTitle: '🗓️ Твій тиждень',
@@ -152,6 +180,18 @@ const EN: NotificationCopy = {
     tomorrow: 'tomorrow',
     inDays: (d) => `in ${d} days`,
     turning: (y) => `turns ${y}`,
+  },
+  tasks: {
+    header: 'To do',
+    late: (d) => `${d} ${d === 1 ? 'day' : 'days'} late`,
+    dueToday: 'due today',
+    dueTomorrow: 'due tomorrow',
+    overdueQuestion: 'What about the overdue ones?',
+    done: '✓ Done',
+    tomorrow: '→ Tomorrow',
+    markedDone: 'Marked done',
+    movedToTomorrow: 'Moved to tomorrow',
+    alreadyHandled: 'Already handled',
   },
   retro: {
     weekTitle: '🗓️ Your week',

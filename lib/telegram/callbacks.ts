@@ -7,9 +7,12 @@ import {
   parseCallbackData,
   parseQuickActionCallback,
   parseQuickUndoCallback,
+  parseTaskCallback,
 } from './callback-data';
 import { findUserByChatId } from './link';
 import { handleQuickActionPress, handleQuickUndo } from './quick-actions';
+import { handleTaskPress } from './tasks';
+import { getGoogleAccessToken } from '@/lib/auth/google-token';
 
 /**
  * The buttons under a notification, pressed.
@@ -52,14 +55,15 @@ export async function handleCallbackQuery(query: TelegramCallbackQuery): Promise
 
   const chatId = String(rawChatId);
 
-  // Three namespaces, one parser each. A press belongs to exactly one of them,
+  // Four namespaces, one parser each. A press belongs to exactly one of them,
   // and anything else is a button from a version of this app that no longer
   // exists.
   const quickActionId = parseQuickActionCallback(query.data);
   const quickUndo = parseQuickUndoCallback(query.data);
+  const taskPress = parseTaskCallback(query.data);
   const parsed = parseCallbackData(query.data);
 
-  if (!parsed && !quickActionId && !quickUndo) {
+  if (!parsed && !quickActionId && !quickUndo && !taskPress) {
     await answerCallbackQuery(queryId, 'Ця кнопка більше не працює.');
     return;
   }
@@ -79,6 +83,31 @@ export async function handleCallbackQuery(query: TelegramCallbackQuery): Promise
 
   if (quickUndo) {
     await handleQuickUndo(queryId, chatId, messageId, user.id, quickUndo.actionId, quickUndo.rowId);
+    return;
+  }
+
+  // Closing a task can reach Google — a scheduled one has an event to remove —
+  // so this needs the token that `runWithUser` below was never given. See the
+  // note on `resolveAccessToken` there.
+  if (taskPress) {
+    await runWithUser(
+      {
+        id: user.id,
+        name: user.name,
+        surface: 'telegram',
+        resolveAccessToken: () => getGoogleAccessToken(user.id),
+      },
+      () =>
+        handleTaskPress(
+          queryId,
+          chatId,
+          messageId,
+          user.id,
+          taskPress.action,
+          taskPress.taskId,
+          user.locale
+        )
+    );
     return;
   }
 
@@ -103,14 +132,27 @@ export async function handleCallbackQuery(query: TelegramCallbackQuery): Promise
   // context for the same reason `processUpdate` does: a button press carries no
   // cookie, and anything that resolves its owner by falling back to the session
   // — `createResource` does — would otherwise find nobody and refuse the write.
-  await runWithUser({ id: user.id, name: user.name, surface: 'telegram' }, async () => {
-    if (parsed.action === 'snooze') {
-      await snooze(user.id, text, parsed.minutes, queryId, chatId, messageId);
-      return;
-    }
+  // `resolveAccessToken` is supplied here for the same reason `processUpdate`
+  // supplies it: without it `getCalendarUserOrThrow` finds no Google token and
+  // throws, so anything a button does that touches the calendar fails outright.
+  // Neither action below needs it today; omitting it is what makes the next one
+  // that does fail in a way nobody connects back to this line.
+  await runWithUser(
+    {
+      id: user.id,
+      name: user.name,
+      surface: 'telegram',
+      resolveAccessToken: () => getGoogleAccessToken(user.id),
+    },
+    async () => {
+      if (parsed.action === 'snooze') {
+        await snooze(user.id, text, parsed.minutes, queryId, chatId, messageId);
+        return;
+      }
 
-    await save(text, queryId, chatId, messageId);
-  });
+      await save(text, queryId, chatId, messageId);
+    }
+  );
 }
 
 /**

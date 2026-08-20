@@ -56,6 +56,36 @@ export function parseQuickUndoCallback(
   return { actionId, rowId };
 }
 
+/**
+ * Overdue tasks took the fourth slot. `t:d:<id>` closes one, `t:s:<id>` moves it
+ * to tomorrow — 25 bytes with a 21-character nanoid, well inside the 64-byte
+ * `callback_data` budget.
+ *
+ * The task id rides in the data rather than being read back off the message
+ * text, unlike the notification actions above. That is what lets each overdue
+ * task go out as its own message with its own keyboard: a press identifies its
+ * task outright, so clearing that message's markup retires exactly one button
+ * pair and leaves the others live. Reconstructing from text could not do that
+ * without parsing a list back out of prose.
+ */
+const TASK_PREFIX = 't';
+
+export type TaskCallback = { action: 'done' | 'tomorrow'; taskId: string };
+
+export function encodeTaskCallback(action: 'done' | 'tomorrow', taskId: string): string {
+  return `${TASK_PREFIX}:${action === 'done' ? 'd' : 's'}:${taskId}`;
+}
+
+export function parseTaskCallback(data: string | undefined | null): TaskCallback | null {
+  if (!data) return null;
+
+  const [prefix, verb, taskId] = data.split(':');
+  if (prefix !== TASK_PREFIX || !taskId) return null;
+  if (verb !== 'd' && verb !== 's') return null;
+
+  return { action: verb === 'd' ? 'done' : 'tomorrow', taskId };
+}
+
 /** A day. Past that, "later" is not a snooze, it is a different notification. */
 export const MAX_SNOOZE_MINUTES = 24 * 60;
 

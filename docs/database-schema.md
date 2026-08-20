@@ -26,6 +26,7 @@ erDiagram
     user ||--|| conversations : "owns"
     user ||--o{ user_tables : "owns"
     user ||--o{ timeline_events : "owns"
+    user ||--o{ tasks : "owns"
     user ||--o{ wellbeing_entries : "owns"
     user ||--o{ assistant_directives : "owns"
     user ||--o{ notification_queue : "owns"
@@ -36,6 +37,9 @@ erDiagram
     entities  ||--o{ entity_aliases : "answers to"
     resources ||--o{ timeline_events : "evidences"
     entities  ||--o{ timeline_events : "is about"
+    resources ||--o{ tasks : "evidences"
+    resources ||--o{ task_suggestions : "proposes from needs"
+    tasks     ||--o{ task_completions : "closed on"
     resources ||--o{ wellbeing_entries : "searchable copy of"
 
     conversations ||--o{ messages : "contains"
@@ -166,6 +170,48 @@ erDiagram
         jsonb metadata
         timestamp created_at
         timestamp updated_at
+    }
+
+    tasks {
+        varchar id PK
+        uuid user_id FK
+        text title
+        text note
+        text status "open|done|dropped"
+        date due_on "the deadline, never sent to Google"
+        date scheduled_for "the day of work, which IS the event"
+        text scheduled_start "offset-bearing ISO, or null for all-day"
+        text scheduled_end
+        text google_event_id
+        text google_calendar_id
+        text priority "high|medium|low"
+        text area
+        text recurrence "none|daily|weekly|monthly|annual"
+        integer recurrence_interval
+        timestamp completed_at
+        varchar resource_id FK
+        text source "user|extraction|telegram"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    task_completions {
+        varchar id PK
+        uuid user_id FK
+        varchar task_id FK
+        date completed_on
+        date due_on "which occurrence this closed"
+        timestamp created_at
+    }
+
+    task_suggestions {
+        varchar id PK
+        uuid user_id FK
+        varchar resource_id FK
+        text need_key
+        text reason "accepted|dismissed"
+        varchar task_id FK
+        timestamp created_at
     }
 
     notification_queue {
@@ -352,7 +398,57 @@ happens in the knowledge base can touch it. Identity is
 conservative, since a visible duplicate can be deleted and a silently swallowed
 second event on the same day cannot be recovered.
 
-### 8. Wellbeing — `wellbeing_entries`
+### 8. Tasks — `tasks`, `task_completions`, `task_suggestions`
+
+The things that have to be done. `metadata.needs` had been extracting exactly
+this shape from every note for months with no reader, while
+`DATE_EXTRACTION_RULES` refused deadlines from the timeline on the grounds that
+they belonged to a tasks layer that did not exist — so a deadline landed nowhere
+at all.
+
+Two columns that look alike and are not:
+
+- **`due_on`** is the last acceptable day. It never leaves this app: a deadline
+  is not an appointment, and writing it to a calendar claims a day the user never
+  agreed to spend.
+- **`scheduled_for`** is the day they committed to *doing* it, which may be any
+  day at or before the deadline. This one **is** the calendar event, tracked by
+  `google_event_id`. Without an hour it is written all-day and
+  `transparency: 'transparent'`, so it holds no time and neither blocks a meeting
+  nor appears in the briefing schedule beside its own line in the tasks block;
+  with an hour it is an ordinary opaque event.
+
+Keeping only one of them is wrong in one of two ways — only the deadline and a
+task is silent for the fortnight it could have been done in, only the working day
+and nothing knows Friday is the last chance. A task with neither is the ordinary
+"sometime" item.
+
+Identity is `(user_id, lower(btrim(title)), coalesce(due_on, DATE '1970-01-01'))`
+**`WHERE status = 'open'`** — partial *and* expression, so drizzle can express
+neither and it lives only in migration 0027. **Never `db:push` this table**, same
+hazard as `timeline_events`. Partial because a task done in March and raised
+again in August is a new one; `coalesce` because Postgres treats NULLs as
+distinct and two undated tasks with one title would otherwise both insert. It
+catches case and outer whitespace and deliberately not internal whitespace or
+word order — a visible duplicate can be deleted, a silently swallowed task cannot
+be recovered.
+
+`task_completions` is one row per closing, which is the only past a recurring
+task has: a single row that rolls its due date forward knows when it is next due
+and nothing about last week. `UNIQUE (task_id, completed_on)` is load-bearing
+rather than tidy — Telegram's `clearReplyMarkup` is best-effort, so the same
+button can fire twice and rolling twice would silently skip an occurrence.
+
+`task_suggestions` records decisions only, accept and dismiss alike. The
+suggestions themselves have no rows: they are computed from every note's
+`metadata.needs` minus this table, the mirror of `entity_exclusions`, because a
+suggestion is a *reading* of a note and materialising readings means keeping them
+in step with notes that get edited, merged and compacted.
+
+`resource_id` **cascades** on both `tasks` and `task_suggestions` (the note is
+the evidence); a task the user typed has none.
+
+### 9. Wellbeing — `wellbeing_entries`
 
 Mood, energy, sleep and symptoms, logged conversationally. State is stored twice
 for the same reason dates are: the scales go here where a chart can read them,
@@ -371,7 +467,7 @@ INSERT and must not be lost to a failing embedding call.
 - The 1–5 scale is enforced in zod **and** as a SQL CHECK: a 7 on a 1–5 axis is
   not a bad reading, it is a broken chart.
 
-### 9. Response preferences — `assistant_directives`
+### 10. Response preferences — `assistant_directives`
 
 Standing instructions about how the assistant should answer — language, length,
 format, what to skip. These are **prepended to every system prompt, not

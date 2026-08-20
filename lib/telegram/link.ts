@@ -99,12 +99,18 @@ export async function getLinkedChatId(userId: string): Promise<string | null> {
   return rows[0]?.chatId ?? null;
 }
 
-/** Who this chat speaks for, or null when it was never linked. */
+/**
+ * Who this chat speaks for, or null when it was never linked.
+ *
+ * `locale` comes along because a button pressed in a chat has to answer in the
+ * language the bot speaks there, and a callback has nowhere else to learn it —
+ * the press carries a chat id and nothing more.
+ */
 export async function findUserByChatId(
   chatId: string
-): Promise<{ id: string; name: string | null } | null> {
+): Promise<{ id: string; name: string | null; locale: string | null } | null> {
   const rows = await db
-    .select({ id: users.id, name: users.name })
+    .select({ id: users.id, name: users.name, locale: users.locale })
     .from(users)
     .where(eq(users.telegramChatId, chatId))
     .limit(1);

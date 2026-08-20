@@ -32,6 +32,12 @@ import { extractToTableTool } from './tables/extract-to-table';
 import { createQuickActionTool } from './tables/create-quick-action';
 import { deleteQuickActionTool } from './tables/delete-quick-action';
 
+// Tasks — the things that have to be done, with a deadline or without one
+import { addTaskTool } from './tasks/add-task';
+import { getTasksTool } from './tasks/get-tasks';
+import { completeTaskTool } from './tasks/complete-task';
+import { scheduleTaskTool } from './tasks/schedule-task';
+
 export const tools = {
   addResource: addResourceTool,
   getInformation: getInformationTool,
@@ -53,6 +59,10 @@ export const tools = {
   extractToTable: extractToTableTool,
   createQuickAction: createQuickActionTool,
   deleteQuickAction: deleteQuickActionTool,
+  addTask: addTaskTool,
+  getTasks: getTasksTool,
+  completeTask: completeTaskTool,
+  scheduleTask: scheduleTaskTool,
 } as const;
 
 export type { ToolDefinition } from './types';
