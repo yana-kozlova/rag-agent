@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import { useSidebar } from './SidebarContext';
+import { SidebarFlyout } from './SidebarFlyout';
 import { ThemeSwitcher } from '../theme/ThemeSwitcher';
 import { getUserInitials } from '@/lib/utils';
 import {
@@ -97,18 +98,16 @@ export function AppSidebar() {
         <ThemeSwitcher compact={collapsed} />
 
         {session ? (
-          <div className={`flex items-center gap-2 ${collapsed ? 'justify-center' : ''}`}>
-            <div className="dropdown dropdown-top w-full">
-              <div
-                tabIndex={0}
-                role="button"
-                className={`btn btn-ghost w-full ${collapsed ? 'btn-square' : 'justify-start'}`}
-              >
+          <SidebarFlyout
+            label={session.user?.name ?? 'Account'}
+            buttonClassName={`btn btn-ghost w-full ${collapsed ? 'btn-square' : 'justify-start'}`}
+            button={
+              <>
                 {session.user?.image ? (
                   <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
                     <Image
                       src={session.user.image}
-                      alt={session.user?.name ?? 'User'}
+                      alt=""
                       referrerPolicy="no-referrer"
                       width={32}
                       height={32}
@@ -126,23 +125,30 @@ export function AppSidebar() {
                 {!collapsed && (
                   <span className="truncate text-sm">{session.user?.name ?? 'User'}</span>
                 )}
-              </div>
-              <ul
-                tabIndex={0}
-                className="menu menu-sm dropdown-content mb-2 z-50 p-2 shadow bg-base-100 rounded-box w-48 border border-base-300"
-              >
+              </>
+            }
+          >
+            {(close) => (
+              <ul className="menu menu-sm w-full p-2">
                 <li>
-                  <Link href="/settings">Profile & Settings</Link>
+                  <Link href="/settings" onClick={close}>
+                    Profile &amp; Settings
+                  </Link>
                 </li>
                 <li>
-                  <button onClick={handleLogout}>
+                  <button
+                    onClick={() => {
+                      close();
+                      handleLogout();
+                    }}
+                  >
                     <LogOut className="h-4 w-4" />
                     Sign out
                   </button>
                 </li>
               </ul>
-            </div>
-          </div>
+            )}
+          </SidebarFlyout>
         ) : (
           <Link
             href="/signin"
