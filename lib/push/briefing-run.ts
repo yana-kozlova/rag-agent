@@ -2,7 +2,8 @@ import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema/auth';
 import { eq } from 'drizzle-orm';
 import { deliverToUser } from '@/lib/push/deliver';
-import { getAccessTokenForUser, resolveUserTimezone } from '@/lib/push/google-token';
+import { getAccessTokenResult, resolveUserTimezone } from '@/lib/push/google-token';
+import { needsReconnect } from '@/lib/auth/google-access';
 import { getLocalHour, getLocalDateKey } from '@/lib/push/timezone';
 import { claimNotification } from '@/lib/push/dedupe';
 import {
@@ -11,6 +12,7 @@ import {
   type BriefingDate,
   type BriefingEvent,
   type BriefingTask,
+  type CalendarProblem,
 } from '@/lib/push/briefing';
 import { upcomingTimeline } from '@/lib/actions/timeline';
 import { briefingTasks } from '@/lib/actions/tasks';
@@ -115,7 +117,8 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
 
   if (!u || !u.briefingEnabled) return { status: 'skipped', reason: 'disabled' };
 
-  const accessToken = await getAccessTokenForUser(userId);
+  const token = await getAccessTokenResult(userId);
+  const accessToken = token.ok ? token.token : null;
   // Resolves (and caches) the zone if the dispatcher deferred an unknown one.
   const tz = await resolveUserTimezone(userId, accessToken, u.timezone);
 
@@ -135,8 +138,18 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
   // null from `getAccessTokenForUser` — and a read that Google refused.
   let events: BriefingEvent[] | null = null;
 
+  // And of the two ways, which one — because only one of them is the user's to
+  // fix, and a morning that tells them to reconnect Google when Google was
+  // merely down is a morning that teaches them to skip the line.
+  let problem: CalendarProblem = 'unreadable';
+
   if (!accessToken) {
-    console.error(`[push/briefing] No usable Google token for ${userId}; calendar unreadable`);
+    if (!token.ok && needsReconnect(token.reason)) problem = 'google-access';
+    console.error(
+      `[push/briefing] No usable Google token for ${userId} (${
+        token.ok ? 'unknown' : token.reason
+      }); calendar unreadable`
+    );
   } else {
     try {
       events = await fetchTodayEvents(
@@ -164,7 +177,7 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
   // calendar costs the schedule and never the deadline that passed yesterday.
   const outstanding = await outstandingTasksForBriefing(userId);
 
-  const briefing = await generateBriefing(events, tz, u.locale, dates, outstanding);
+  const briefing = await generateBriefing(events, tz, u.locale, dates, outstanding, problem);
 
   const delivered = await deliverToUser(
     userId,

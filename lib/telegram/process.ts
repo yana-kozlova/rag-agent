@@ -1,6 +1,7 @@
 import { runAgent } from '@/lib/ai/agent';
 import { runWithUser } from '@/lib/auth/context';
-import { getGoogleAccessToken } from '@/lib/auth/google-token';
+import { checkGoogleAccess, getGoogleAccessToken } from '@/lib/auth/google-token';
+import { GoogleAccessError, needsReconnect, reconnectUrl } from '@/lib/auth/google-access';
 import { sendMessage, sendTyping } from '@/lib/telegram/api';
 import { findUserByChatId, redeemLinkCode, unlinkChat } from '@/lib/telegram/link';
 import { handleCallbackQuery, type TelegramCallbackQuery } from '@/lib/telegram/callbacks';
@@ -67,6 +68,7 @@ const HELP = [
   'Саме зображення лежить за невгадуваним, але публічним посиланням — не шли те, що не можна нікому показати.',
   '',
   '/q — швидкі записи: кнопки, що пишуть готовий рядок у таблицю без жодного запиту до моделі.',
+  '/google — перевірити доступ до Google і оновити його, якщо календар перестав відкриватись',
   '/start <код> — прив’язати цей чат до акаунта',
   '/unlink — відв’язати цей чат (база знань лишається в акаунті)',
   '/help — це повідомлення',
@@ -137,6 +139,15 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
       chatId,
       'Цей чат ще не прив’язаний до акаунта. Відкрий налаштування у веб-застосунку, згенеруй код і надішли сюди «/start <код>».'
     );
+    return;
+  }
+
+  // Google access, checked and repaired from the phone. This has to be a
+  // command rather than something the agent handles, for the same reason
+  // `/unlink` is: it is asked precisely when the assistant is half-broken, and
+  // an answer that depends on the model working is an answer that may not come.
+  if (text.startsWith('/google') || text.startsWith('/login')) {
+    await handleGoogle(chatId, user.id);
     return;
   }
 
@@ -214,6 +225,16 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
     await persistTurn(conversationId, prompt, answer);
   } catch (error) {
     console.error('[telegram] agent run failed:', error);
+
+    // A backstop rather than the main path: the AI SDK usually hands a failed
+    // tool call back to the model, which relays what `GoogleAccessError` says.
+    // When it does throw instead, "спробуй ще раз" is the worst possible
+    // advice — trying again is exactly what cannot work here.
+    if (error instanceof GoogleAccessError) {
+      await sendMessage(chatId, googleExpiredMessage());
+      return;
+    }
+
     await sendMessage(chatId, 'Щось пішло не так на моєму боці 😔 Спробуй ще раз.');
   }
 }
@@ -241,6 +262,73 @@ async function handleStart(chatId: string, text: string): Promise<void> {
   }
 
   await sendMessage(chatId, `Готово, чат прив’язано${user.name ? `, ${user.name}` : ''}. ${HELP}`);
+}
+
+/**
+ * How to grant Google access again, spelled out.
+ *
+ * Written once and said in three places — the `/google` command, a calendar
+ * tool that failed for this reason, and (as `/google`) the morning briefing —
+ * because the whole failure mode here is a user who knows something is broken
+ * and not what to do about it.
+ *
+ * "Nothing is lost" is not reassurance for its own sake: the permission ending
+ * looks exactly like the assistant losing its memory, and someone who thinks
+ * that is what happened does not go looking for a settings page.
+ */
+function reconnectInstructions(): string {
+  const url = reconnectUrl();
+
+  return [
+    'Як оновити (хвилина):',
+    url ? `1. Відкрий ${url}` : '1. Відкрий налаштування веб-застосунку, розділ Google',
+    '2. Натисни «Reconnect Google» і вибери свій акаунт',
+    '3. Повертайся сюди — календар запрацює одразу.',
+    '',
+    'Нічого не втрачено: нотатки, дати й задачі на місці. Google просто видає цей дозвіл на певний час, і його треба поновлювати.',
+  ].join('\n');
+}
+
+/** What the bot says when a calendar tool failed for want of that permission. */
+export function googleExpiredMessage(): string {
+  return [
+    '🔑 Доступ до Google скінчився — календар, планування зустрічей і нагадування про події зараз не працюють.',
+    '',
+    reconnectInstructions(),
+  ].join('\n');
+}
+
+/**
+ * `/google` — is the permission alive, and if not, how to fix it.
+ *
+ * Checked live rather than reported from a stored expiry, and the three answers
+ * are deliberately different: "expired" sends the user to the consent screen,
+ * "Google is not answering" sends them to wait. Collapsing those two is how a
+ * message that means "act now" becomes one that gets skipped.
+ */
+async function handleGoogle(chatId: string, userId: string): Promise<void> {
+  await sendTyping(chatId);
+
+  const status = await checkGoogleAccess(userId);
+  const url = reconnectUrl();
+  const reissue = url
+    ? `\n\nЯкщо все одно щось не так, доступ можна перевидати: ${url}`
+    : '\n\nЯкщо все одно щось не так, доступ можна перевидати в налаштуваннях веб-застосунку, розділ Google.';
+
+  if (status === 'ok') {
+    await sendMessage(chatId, `✅ Доступ до Google живий — календар я бачу.${reissue}`);
+    return;
+  }
+
+  if (needsReconnect(status)) {
+    await sendMessage(chatId, googleExpiredMessage());
+    return;
+  }
+
+  await sendMessage(
+    chatId,
+    `🤔 Google зараз не відповідає — на скінчений доступ це не схоже. Почекай кілька хвилин і спитай ще раз.${reissue}`
+  );
 }
 
 async function handleUnlink(chatId: string): Promise<void> {

@@ -5,6 +5,7 @@ const authMock = vi.fn();
 vi.mock('@/app/api/auth/auth', () => ({ auth: () => authMock() }));
 
 import { getCalendarUserOrThrow, getUser, runWithUser } from '@/lib/auth/context';
+import { GoogleAccessError } from '@/lib/auth/google-access';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -74,9 +75,16 @@ describe('request context', () => {
     expect(resolveAccessToken).toHaveBeenCalledTimes(1);
   });
 
-  it('throws for calendar work when no token can be produced', async () => {
-    await expect(
-      runWithUser({ id: 'telegram-user' }, () => getCalendarUserOrThrow())
-    ).rejects.toThrow(/access token/i);
+  /**
+   * Typed rather than a bare Error, because both surfaces read it back: the
+   * Telegram handler answers it with the repair instructions instead of "щось
+   * пішло не так", and the model relays the message when the SDK feeds the
+   * failed tool call into the conversation.
+   */
+  it('throws a recognisable Google-access error when no token can be produced', async () => {
+    const failing = runWithUser({ id: 'telegram-user' }, () => getCalendarUserOrThrow());
+
+    await expect(failing).rejects.toBeInstanceOf(GoogleAccessError);
+    await expect(failing).rejects.toThrow(/reconnect Google/i);
   });
 });

@@ -17,6 +17,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'notifications', label: 'Notifications' },
   { id: 'responses', label: 'Responses' },
   { id: 'telegram', label: 'Telegram' },
+  { id: 'google', label: 'Google' },
   { id: 'calendars', label: 'Calendars' },
   { id: 'data', label: 'Data' },
 ] as const;

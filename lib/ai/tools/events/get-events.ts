@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { getSessionOrThrow } from '@/lib/utils/auth';
+import { GoogleAccessError } from '@/lib/auth/google-access';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 import { extractMeetingLink } from '@/lib/utils/meeting-link';
 import type { ToolCalendarEvent } from '@/types/calendar';
@@ -198,6 +199,9 @@ Use "range" for common presets OR "date" for a specific day.
       // generic message is how an unreadable calendar became indistinguishable
       // from an empty one in the first place.
       if (error instanceof CalendarUnreadableError) throw error;
+      // Same reasoning one step earlier: "your Google access has ended" is a
+      // fact the user can act on, and the generic message is where it died.
+      if (error instanceof GoogleAccessError) throw error;
       throw new Error('Failed to fetch or process calendar events');
     }
   },

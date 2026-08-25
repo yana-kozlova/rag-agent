@@ -35,9 +35,12 @@ describe('getSessionOrThrow', () => {
     expect(session.user.accessToken).toBe('tok');
   });
 
-  it('throws when session missing id or access token', async () => {
+  // A signed-in user with no Google token is not an unauthorised caller — it is
+  // a permission Google has ended, which the user can repair once something
+  // tells them so.
+  it('throws the Google-access error when the session carries no token', async () => {
     (auth as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: 'u1' } });
-    await expect(getSessionOrThrow()).rejects.toThrowError(/Unauthorized/i);
+    await expect(getSessionOrThrow()).rejects.toThrowError(/reconnect Google/i);
   });
 });
 

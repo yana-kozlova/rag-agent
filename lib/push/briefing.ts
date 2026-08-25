@@ -35,6 +35,18 @@ export type Briefing = {
   eventCount: number;
 };
 
+/**
+ * Why there is no schedule to print, when there is none.
+ *
+ * Only two answers, because only two of them change what the user should do.
+ * `google-access` is the one they can repair, and the briefing is where they
+ * will find out: it arrives every morning whether or not anyone opens the app,
+ * which is precisely how a dead permission went unnoticed for five days. Every
+ * other failure is `unreadable` — Google not answering is not something to send
+ * someone through a consent screen over.
+ */
+export type CalendarProblem = 'unreadable' | 'google-access';
+
 /** Everything on the user's calendars for their local today. */
 export async function fetchTodayEvents(
   calendarService: GoogleCalendarService,
@@ -208,7 +220,9 @@ export async function generateBriefing(
   /** Saved dates falling within the week. Empty on all but a few mornings a year. */
   dates: BriefingDate[] = [],
   /** Overdue tasks and deadlines landing today or tomorrow. */
-  taskList: BriefingTask[] = []
+  taskList: BriefingTask[] = [],
+  /** Only consulted when `events` is null — why it is. */
+  problem: CalendarProblem = 'unreadable'
 ): Promise<Briefing> {
   const copy = copyFor(locale);
   const datesBlock = dateLines(dates, copy);
@@ -223,9 +237,16 @@ export async function generateBriefing(
   // not from Google, and a deadline that passed yesterday is precisely what a
   // broken calendar must not be allowed to swallow.
   if (events === null) {
+    // The repairable failure says how to repair it and nothing else — printing
+    // both lines would spend two sentences of a morning message on one fact.
+    const why =
+      problem === 'google-access'
+        ? copy.briefing.googleAccessExpired
+        : copy.briefing.calendarUnreadable;
+
     return {
       title: copy.briefing.morningTitle,
-      body: join(copy.briefing.calendarUnreadable, datesBlock, tasksBlock),
+      body: join(why, datesBlock, tasksBlock),
       eventCount: 0,
     };
   }

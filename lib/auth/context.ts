@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { auth } from '@/app/api/auth/auth';
+import { GoogleAccessError } from '@/lib/auth/google-access';
 
 /**
  * Who a tool is acting for.
@@ -83,8 +84,12 @@ export async function getCalendarUserOrThrow(): Promise<UserContext & { accessTo
     user.accessToken = await user.resolveAccessToken();
   }
 
+  // Typed, and worded for the model that will read it back: a token that could
+  // not be minted is almost always a permission Google has ended, which the
+  // user can repair in a minute — but only if something says so. Left as a bare
+  // "Unauthorized" it reached them as "щось пішло не так на моєму боці".
   if (!user.accessToken) {
-    throw new Error('Unauthorized: no Google access token for this user');
+    throw new GoogleAccessError();
   }
 
   return user as UserContext & { accessToken: string };

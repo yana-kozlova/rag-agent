@@ -3,15 +3,22 @@ import { accounts, users } from '@/lib/db/schema/auth';
 import { eq, and } from 'drizzle-orm';
 import { OAuth2Client } from 'google-auth-library';
 import { GoogleCalendarService } from '@/lib/services/calendar';
+import { classifyGoogleTokenFailure, type GoogleTokenResult } from '@/lib/auth/google-access';
 import { DEFAULT_TIMEZONE, isValidTimezone } from './timezone';
 
 /**
- * Get a usable Google access token for a user in a background job.
+ * Get a usable Google access token for a user in a background job, or say why
+ * there is none.
  *
  * Cron runs with no session, so the NextAuth JWT refresh path doesn't apply —
  * this refreshes straight off the stored refresh_token instead.
+ *
+ * The reason matters to exactly one caller, the morning briefing: a calendar it
+ * could not read is worth one line, and a Google permission that has ended is
+ * worth telling the user how to repair. Everything else asks
+ * `getAccessTokenForUser` below and gets the token or nothing.
  */
-export async function getAccessTokenForUser(userId: string): Promise<string | null> {
+export async function getAccessTokenResult(userId: string): Promise<GoogleTokenResult> {
   try {
     const accountRows = await db
       .select()
@@ -20,12 +27,12 @@ export async function getAccessTokenForUser(userId: string): Promise<string | nu
       .limit(1);
 
     const account = accountRows[0];
-    if (!account?.refresh_token) return null;
+    if (!account?.refresh_token) return { ok: false, reason: 'missing' };
 
     // Reuse the stored token while it has more than 5 minutes left.
     const now = Math.floor(Date.now() / 1000);
     if (account.access_token && account.expires_at && account.expires_at > now + 300) {
-      return account.access_token;
+      return { ok: true, token: account.access_token };
     }
 
     const oauth2Client = new OAuth2Client(
@@ -36,7 +43,7 @@ export async function getAccessTokenForUser(userId: string): Promise<string | nu
     oauth2Client.setCredentials({ refresh_token: account.refresh_token });
 
     const tokenResponse = await oauth2Client.getAccessToken();
-    if (!tokenResponse.token) return null;
+    if (!tokenResponse.token) return { ok: false, reason: 'unavailable' };
 
     const expiresAt = tokenResponse.res?.data?.expires_in
       ? now + tokenResponse.res.data.expires_in
@@ -47,11 +54,16 @@ export async function getAccessTokenForUser(userId: string): Promise<string | nu
       .set({ access_token: tokenResponse.token, expires_at: expiresAt })
       .where(and(eq(accounts.userId, userId), eq(accounts.provider, 'google')));
 
-    return tokenResponse.token;
+    return { ok: true, token: tokenResponse.token };
   } catch (error) {
     console.error(`[push/google-token] Error for user ${userId}:`, error);
-    return null;
+    return { ok: false, reason: classifyGoogleTokenFailure(error) };
   }
+}
+
+export async function getAccessTokenForUser(userId: string): Promise<string | null> {
+  const result = await getAccessTokenResult(userId);
+  return result.ok ? result.token : null;
 }
 
 /**

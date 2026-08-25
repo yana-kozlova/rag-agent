@@ -3,6 +3,11 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { accounts } from '@/lib/db/schema';
 import { env } from '@/lib/env.mjs';
+import {
+  classifyGoogleTokenFailure,
+  type GoogleAccessStatus,
+  type GoogleTokenResult,
+} from '@/lib/auth/google-access';
 
 /**
  * Mint a Google access token for a user without a session.
@@ -74,10 +79,17 @@ const cache = new Map<string, CachedToken>();
 /** Refresh a minute early so a token can't expire mid-request. */
 const EXPIRY_MARGIN_MS = 60_000;
 
-export async function getGoogleAccessToken(userId: string): Promise<string | null> {
+/**
+ * Mint a token, or say why not.
+ *
+ * The reason is the whole difference between a user who has to do something and
+ * a user who has to wait — see `lib/auth/google-access.ts`. `getGoogleAccessToken`
+ * below keeps the older shape for the callers that only ever wanted a token.
+ */
+export async function mintGoogleAccessToken(userId: string): Promise<GoogleTokenResult> {
   const cached = cache.get(userId);
   if (cached && Date.now() < cached.expiresAt - EXPIRY_MARGIN_MS) {
-    return cached.token;
+    return { ok: true, token: cached.token };
   }
 
   const rows = await db
@@ -91,7 +103,7 @@ export async function getGoogleAccessToken(userId: string): Promise<string | nul
     // Signed up before `access_type: offline` was set, or revoked access.
     // Re-consenting on the web writes a new account row and fixes it.
     console.warn(`[google-token] no refresh token stored for user ${userId}`);
-    return null;
+    return { ok: false, reason: 'missing' };
   }
 
   try {
@@ -104,7 +116,9 @@ export async function getGoogleAccessToken(userId: string): Promise<string | nul
 
     const response = await client.getAccessToken();
     const token = response.token;
-    if (!token) return null;
+    // Google answered without refusing and without a token: not the user's
+    // permission, so not something they can repair by re-consenting.
+    if (!token) return { ok: false, reason: 'unavailable' };
 
     const expiresIn = response.res?.data?.expires_in;
     cache.set(userId, {
@@ -112,10 +126,31 @@ export async function getGoogleAccessToken(userId: string): Promise<string | nul
       expiresAt: Date.now() + (typeof expiresIn === 'number' ? expiresIn * 1000 : 3600_000),
     });
 
-    return token;
+    return { ok: true, token };
   } catch (error) {
     console.error('[google-token] refresh failed:', error);
     cache.delete(userId);
-    return null;
+    return { ok: false, reason: classifyGoogleTokenFailure(error) };
   }
+}
+
+export async function getGoogleAccessToken(userId: string): Promise<string | null> {
+  const result = await mintGoogleAccessToken(userId);
+  return result.ok ? result.token : null;
+}
+
+/**
+ * Can this account still reach Google?
+ *
+ * Answered by actually minting a token rather than by reading a stored expiry:
+ * `accounts.access_token` is only as fresh as the last background job that
+ * happened to refresh it, and a status panel that can be confidently wrong is
+ * worse than no status panel. Costs one Google round-trip on a cold cache,
+ * which is the right price for the two places that ask — a settings screen and
+ * a `/google` in the bot, both of them opened by someone who suspects
+ * something is broken.
+ */
+export async function checkGoogleAccess(userId: string): Promise<GoogleAccessStatus> {
+  const result = await mintGoogleAccessToken(userId);
+  return result.ok ? 'ok' : result.reason;
 }

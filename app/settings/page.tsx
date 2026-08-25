@@ -6,6 +6,7 @@ import { CalendarsPanel } from './CalendarsPanel';
 import { NotificationPreferences } from './NotificationPreferences';
 import ClearDataPanel from './ClearDataPanel';
 import { TelegramPanel } from './TelegramPanel';
+import { GoogleAccessPanel } from './GoogleAccessPanel';
 import { ResponsePreferences } from './ResponsePreferences';
 import { SettingsNav } from './SettingsNav';
 import { SettingsSection } from './ui';
@@ -85,6 +86,7 @@ export default async function SettingsPage() {
           <NotificationPreferences />
           <ResponsePreferences />
           <TelegramPanel />
+          <GoogleAccessPanel />
           <CalendarsPanel />
           <ClearDataPanel />
         </div>

@@ -44,8 +44,17 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
     };
   } catch (error) {
     console.error('Error refreshing access token:', error);
+    // Drop the token rather than carrying it forward. Spreading `...token` kept
+    // the old access token on the session, and everything downstream reads
+    // "there is a token" — so a dead refresh token reached the calendar tools as
+    // a 401 from Google, i.e. "could not read your calendar", instead of as the
+    // one thing that is true and repairable: Google access has ended. Nothing is
+    // lost by dropping it; this branch is only reached once the token has
+    // already expired.
     return {
       ...token,
+      accessToken: undefined,
+      accessTokenExpires: 0,
       error: 'RefreshAccessTokenError',
     };
   }

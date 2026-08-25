@@ -77,6 +77,40 @@ describe('a calendar that could not be read', () => {
     expect(unreadable.body).not.toBe(empty.body);
     expect(empty.body).toContain('нічого не заплановано');
   });
+
+  /**
+   * The repair is only worth naming when there is one. Google refusing the
+   * stored permission is the user's to fix; Google not answering is not, and a
+   * morning that tells them to reconnect over an outage is a morning that
+   * teaches them to skip the line.
+   */
+  it('names the repair only when the permission is what ended', async () => {
+    const expired = await generateBriefing(null, TZ, 'uk', [], [], 'google-access');
+    const offline = await generateBriefing(null, TZ, 'uk', [], [], 'unreadable');
+
+    expect(expired.body).toContain('/google');
+    expect(expired.body).toContain('Доступ до Google скінчився');
+    expect(offline.body).not.toContain('/google');
+
+    const en = await generateBriefing(null, TZ, 'en', [], [], 'google-access');
+    expect(en.body).toContain('/google');
+    expect(en.body).not.toContain('Could not read your calendar');
+  });
+
+  it('still delivers dates and tasks under an expired permission', async () => {
+    const briefing = await generateBriefing(
+      null,
+      TZ,
+      'uk',
+      [{ title: 'Андрій', kind: 'birth', daysAway: 1, years: null }],
+      [{ id: 't1', title: 'Подати заяву', daysLate: 2, due: null }],
+      'google-access'
+    );
+
+    expect(briefing.body).toContain('/google');
+    expect(briefing.body).toContain('🎂 Андрій — завтра');
+    expect(briefing.body).toContain('Подати заяву — на 2 дні пізніше');
+  });
 });
 
 describe('the schedule', () => {
