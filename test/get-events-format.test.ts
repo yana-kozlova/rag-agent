@@ -38,16 +38,16 @@ describe('getEvents model-output contract', () => {
   });
 
   /*
-   * The event lines still come first and unchanged; what follows them is the
-   * day's free windows, which the model used to work out by subtracting these
-   * same times in the answer.
+   * The event lines and nothing else. Free windows used to be appended here,
+   * and were volunteered under every schedule question; the total was also
+   * wrong, because the exemption for a block marked Free read fields that
+   * `ToolCalendarEvent` does not carry.
    */
-  it('hands the model the event lines, then the free windows', () => {
+  it('hands the model the event lines and nothing derived from them', () => {
     const out = eventsToModelOutput({ events: [timed], count: 1 });
     expect(out.type).toBe('json');
-    expect(out.value[0]).toBe(toLlmLine(timed));
-    expect(out.value[1]).toContain('[Free] 2026-07-22');
-    expect(out.value[1]).toContain('Total free:');
+    expect(out.value).toEqual([toLlmLine(timed)]);
+    expect(out.value.join('\n')).not.toContain('[Free]');
   });
 
   it('yields an empty array for no events, matching the old empty return', () => {

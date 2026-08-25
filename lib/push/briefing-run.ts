@@ -150,8 +150,9 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
     }
   }
 
-  // One retrieval, two consumers: the briefing works it into its sentence, the
-  // scan matches it against who the user is meeting.
+  // Retrieved for the proactive scan, which matches notes against who the user
+  // is meeting. The briefing itself no longer reads them: it had one consumer
+  // for them, the generated opening sentence, and that is gone.
   const notes = await fetchDayNotes(userId, events ?? []);
 
   // Saved dates falling within the week. Read from the timeline rather than the
@@ -163,15 +164,7 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
   // calendar costs the schedule and never the deadline that passed yesterday.
   const outstanding = await outstandingTasksForBriefing(userId);
 
-  const briefing = await generateBriefing(
-    events,
-    tz,
-    notes,
-    u.locale,
-    dates,
-    outstanding,
-    now
-  );
+  const briefing = await generateBriefing(events, tz, u.locale, dates, outstanding);
 
   const delivered = await deliverToUser(
     userId,

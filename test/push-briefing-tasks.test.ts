@@ -30,7 +30,7 @@ const task = (over: Partial<BriefingTask> = {}): BriefingTask => ({
 
 describe('the tasks block', () => {
   it('is absent entirely when nothing is outstanding', async () => {
-    const briefing = await generateBriefing([ev('Standup', '09:00')], TZ, [], 'uk', [], []);
+    const briefing = await generateBriefing([ev('Standup', '09:00')], TZ, 'uk', [], []);
     expect(briefing.body).toBe('09:00 Standup');
   });
 
@@ -38,7 +38,6 @@ describe('the tasks block', () => {
     const briefing = await generateBriefing(
       [ev('Standup', '09:00')],
       TZ,
-      [],
       'uk',
       [],
       [task({ daysLate: 3 })]
@@ -49,7 +48,7 @@ describe('the tasks block', () => {
 
   it('prints the lateness the application computed, in the right plural form', async () => {
     const body = async (daysLate: number) =>
-      (await generateBriefing([], TZ, [], 'uk', [], [task({ daysLate })])).body;
+      (await generateBriefing([], TZ, 'uk', [], [task({ daysLate })])).body;
 
     expect(await body(1)).toContain('на 1 день пізніше');
     expect(await body(3)).toContain('на 3 дні пізніше');
@@ -57,15 +56,15 @@ describe('the tasks block', () => {
   });
 
   it('says when a deadline lands today or tomorrow instead of a lateness', async () => {
-    const today = await generateBriefing([], TZ, [], 'uk', [], [task({ due: 'today' })]);
-    const tomorrow = await generateBriefing([], TZ, [], 'uk', [], [task({ due: 'tomorrow' })]);
+    const today = await generateBriefing([], TZ, 'uk', [], [task({ due: 'today' })]);
+    const tomorrow = await generateBriefing([], TZ, 'uk', [], [task({ due: 'tomorrow' })]);
 
     expect(today.body).toContain('сьогодні останній день');
     expect(tomorrow.body).toContain('завтра останній день');
   });
 
   it('leaves a task with neither lateness nor a near deadline bare', async () => {
-    const briefing = await generateBriefing([], TZ, [], 'uk', [], [task()]);
+    const briefing = await generateBriefing([], TZ, 'uk', [], [task()]);
     const line = briefing.body.split('\n').find((l) => l.startsWith('• '));
 
     expect(line).toBe('• Купити форму');
@@ -73,14 +72,14 @@ describe('the tasks block', () => {
 
   // The reason this block exists at all: our own table, not Google's.
   it('survives a calendar that could not be read', async () => {
-    const briefing = await generateBriefing(null, TZ, [], 'uk', [], [task({ daysLate: 2 })]);
+    const briefing = await generateBriefing(null, TZ, 'uk', [], [task({ daysLate: 2 })]);
 
     expect(briefing.body).toContain('Не вдалося прочитати календар');
     expect(briefing.body).toContain('Купити форму — на 2 дні пізніше');
   });
 
   it('goes out on a day with nothing scheduled', async () => {
-    const briefing = await generateBriefing([], TZ, [], 'uk', [], [task({ due: 'today' })]);
+    const briefing = await generateBriefing([], TZ, 'uk', [], [task({ due: 'today' })]);
 
     expect(briefing.body).toContain('нічого не заплановано');
     expect(briefing.body).toContain('Треба зробити:');
@@ -90,7 +89,6 @@ describe('the tasks block', () => {
     const briefing = await generateBriefing(
       [],
       TZ,
-      [],
       'uk',
       [{ title: 'День народження', kind: 'birth', daysAway: 1, years: null }],
       [task({ daysLate: 1 })]
@@ -101,7 +99,7 @@ describe('the tasks block', () => {
 
   it('collapses the tail past five into a count', async () => {
     const many = Array.from({ length: 8 }, (_, i) => task({ id: `t${i}`, title: `Завдання ${i}` }));
-    const briefing = await generateBriefing([], TZ, [], 'uk', [], many);
+    const briefing = await generateBriefing([], TZ, 'uk', [], many);
 
     expect(briefing.body).toContain('Завдання 4');
     expect(briefing.body).not.toContain('Завдання 5');
@@ -112,7 +110,6 @@ describe('the tasks block', () => {
     const briefing = await generateBriefing(
       [],
       TZ,
-      [],
       'uk',
       [],
       [task({ title: 'я'.repeat(500) })]
@@ -124,7 +121,7 @@ describe('the tasks block', () => {
   });
 
   it('writes the block in English for an English locale', async () => {
-    const briefing = await generateBriefing([], TZ, [], 'en', [], [task({ daysLate: 1 })]);
+    const briefing = await generateBriefing([], TZ, 'en', [], [task({ daysLate: 1 })]);
 
     expect(briefing.body).toContain('To do:');
     expect(briefing.body).toContain('1 day late');

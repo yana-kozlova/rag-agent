@@ -1,5 +1,4 @@
 import type { ToolCalendarEvent } from '@/types/calendar';
-import { freeTimeByDay, formatDuration } from '@/lib/utils/free-time';
 
 export type GetEventsOutput = { events: ToolCalendarEvent[]; count: number };
 
@@ -73,27 +72,24 @@ export function toLlmLine(e: ToolCalendarEvent): string {
 /**
  * What the LLM receives: the legacy JSON array of text lines, byte-identical to
  * the pre-refactor string[] return. The rich `events` payload is UI-only.
+ *
+ * The day's free windows used to be appended here as `[Free]` lines. They are
+ * gone, and deliberately not replaced by anything the model derives instead:
+ * the point was never that the arithmetic was hard, it was that nobody asked
+ * for it. A schedule listing volunteered a free-time total under every "що в
+ * мене сьогодні", which is commentary on the user's day rather than an answer
+ * to the question. The system prompt now says not to compute one, because
+ * removing the tool line without saying so is an invitation to subtract the
+ * events in the reply — and that answer has no test behind it at all.
+ *
+ * The exemptions that computation needed are the reason it was wrong anyway:
+ * `occupies` asked `isTimeBlock` for `transparency`/`eventType`, which
+ * `ToolCalendarEvent` never carried, so a working-hours block marked Free was
+ * counted as busy and ate ten hours off the total.
  */
-/**
- * One line per day saying what is still open, so "скільки в мене вільного часу"
- * is read off rather than worked out. Days with nothing free are skipped: the
- * absence of a line is not a claim, while "0 хв" printed under a full day reads
- * as one the model then has to explain.
- */
-export function freeTimeLines(events: ToolCalendarEvent[]): string[] {
-  return freeTimeByDay(events)
-    .filter((day) => day.windows.length > 0)
-    .map((day) => {
-      const windows = day.windows
-        .map((w) => `${w.from}-${w.to} (${formatDuration(w.minutes)})`)
-        .join(', ');
-      return `[Free] ${day.date} ${weekdayOf(day.date) ?? ''}: ${windows}. Total free: ${formatDuration(day.totalMinutes)}`;
-    });
-}
-
 export function eventsToModelOutput(output: GetEventsOutput) {
   return {
     type: 'json' as const,
-    value: [...output.events.map(toLlmLine), ...freeTimeLines(output.events)],
+    value: output.events.map(toLlmLine),
   };
 }

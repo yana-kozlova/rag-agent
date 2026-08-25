@@ -2,14 +2,22 @@ import { z } from 'zod';
 import { getSessionOrThrow } from '@/lib/utils/auth';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 import { extractMeetingLink } from '@/lib/utils/meeting-link';
-import { db } from '@/lib/db';
-import { users } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
 import type { ToolCalendarEvent } from '@/types/calendar';
-import { isTimeBlock } from '@/lib/utils/calendars';
+import { isTimeBlock, isDeclined } from '@/lib/utils/calendars';
+import { getCalendarIdsForUser } from '@/lib/utils/calendar-conflicts';
 import { eventsToModelOutput, type GetEventsOutput } from './get-events-format';
 
 export type { GetEventsOutput };
+
+/**
+ * Google would not answer for any of the user's calendars.
+ *
+ * Distinct from the generic tool failure so the model can say "I could not read
+ * your calendar" rather than reporting nothing, which is the whole point: to
+ * everything downstream "Google refused" and "your day is free" look identical
+ * and mean opposite things.
+ */
+export class CalendarUnreadableError extends Error {}
 
 /**
  * Compute UTC offset for a timezone at a given moment (handles DST).
@@ -101,9 +109,10 @@ Use "range" for common presets OR "date" for a specific day.
         timeMax = result.timeMax;
       }
 
-      const rows = await db.select().from(users).where(eq(users.id, session.user.id as string)).limit(1);
-      const followed = Array.isArray(rows[0]?.followedCalendars) ? rows[0]!.followedCalendars as any[] : [];
-      const calendarIds = ['primary', ...followed.map((c) => c.calendarId).filter(Boolean)];
+      // The shared list rather than a hand-built one: it puts `primary` first,
+      // drops a followed calendar that is the user's own address (Google answers
+      // for it twice, once under each name) and de-duplicates the ids.
+      const calendarIds = await getCalendarIdsForUser(session.user.id as string);
 
       const results = await Promise.allSettled(
         calendarIds.map((cid) =>
@@ -112,6 +121,29 @@ Use "range" for common presets OR "date" for a specific day.
           })
         )
       );
+
+      // A calendar Google refused to answer for used to contribute nothing and
+      // say so nowhere — no log, and no error even when every calendar failed,
+      // so a dead refresh token reached the user as "you have nothing on". The
+      // same fix `fetchEventsBetween` already carries: log each failure, and
+      // throw only when there is no answer at all. One unreadable shared
+      // calendar costs that calendar, not the question.
+      const failed = results.flatMap((res, i) =>
+        res.status === 'rejected' ? [{ calendarId: calendarIds[i]!, reason: res.reason }] : []
+      );
+
+      for (const f of failed) {
+        console.error(`[getEvents] Could not read calendar ${f.calendarId}:`, f.reason);
+      }
+
+      if (failed.length > 0 && failed.length === results.length) {
+        throw new CalendarUnreadableError(
+          `Could not read any of the user's ${results.length} calendar(s): ${
+            (failed[0].reason as any)?.message ?? failed[0].reason
+          }`
+        );
+      }
+
       // Tag each merged event with the calendar it came from (results align
       // positionally with calendarIds), so the card can label followed calendars.
       const merged = results.flatMap((r: any, i: number) =>
@@ -120,26 +152,41 @@ Use "range" for common presets OR "date" for a specific day.
           : []
       );
 
-      const events: ToolCalendarEvent[] = merged.map(({ item, calendarId }) => {
-        const start = (item.start?.dateTime ?? item.start?.date) as string | undefined;
-        const end = (item.end?.dateTime ?? item.end?.date) as string | undefined;
-        const allDay = !!item.start?.date && !item.start?.dateTime;
-        return {
-          id: (item.id as string) ?? '',
-          calendarId,
-          title: item.summary || 'No Title',
-          start,
-          end,
-          allDay,
-          // Kept raw so the model line is unchanged; the card decides how to
-          // show a URL vs a physical place.
-          location: item.location || undefined,
-          meetingLink: extractMeetingLink(item),
-          description: item.description || undefined,
-          htmlLink: item.htmlLink || undefined,
-          timeBlock: isTimeBlock(item) || undefined,
-        };
-      });
+      // One event shared between two followed calendars came back twice and was
+      // listed twice. `calendarIds` leads with `primary`, so the surviving copy
+      // is the user's own — the only one carrying their `responseStatus`, which
+      // is what makes the next step correct.
+      const seen = new Map<string, { item: any; calendarId: string }>();
+      for (const entry of merged) {
+        const id = entry.item?.id as string | undefined;
+        if (id && !seen.has(id)) seen.set(id, entry);
+      }
+
+      // Declined after the de-duplication, never before: filtering per calendar
+      // would drop the user's own copy — the one that knows they said no — and
+      // let a shared calendar's status-free copy survive as the winner.
+      const events: ToolCalendarEvent[] = [...seen.values()]
+        .filter(({ item }) => !isDeclined(item))
+        .map(({ item, calendarId }) => {
+          const start = (item.start?.dateTime ?? item.start?.date) as string | undefined;
+          const end = (item.end?.dateTime ?? item.end?.date) as string | undefined;
+          const allDay = !!item.start?.date && !item.start?.dateTime;
+          return {
+            id: (item.id as string) ?? '',
+            calendarId,
+            title: item.summary || 'No Title',
+            start,
+            end,
+            allDay,
+            // Kept raw so the model line is unchanged; the card decides how to
+            // show a URL vs a physical place.
+            location: item.location || undefined,
+            meetingLink: extractMeetingLink(item),
+            description: item.description || undefined,
+            htmlLink: item.htmlLink || undefined,
+            timeBlock: isTimeBlock(item) || undefined,
+          };
+        });
 
       // Stable chronological order for display.
       events.sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
@@ -147,6 +194,10 @@ Use "range" for common presets OR "date" for a specific day.
       return { events, count: events.length };
     } catch (error) {
       console.error('Error in getEventsTool:', error);
+      // "Google would not answer" survives as itself. Collapsing it into the
+      // generic message is how an unreadable calendar became indistinguishable
+      // from an empty one in the first place.
+      if (error instanceof CalendarUnreadableError) throw error;
       throw new Error('Failed to fetch or process calendar events');
     }
   },

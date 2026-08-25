@@ -1,7 +1,12 @@
 import { GoogleCalendarService } from '@/lib/services/calendar';
 import { getCalendarIdsForUser } from '@/lib/utils/calendar-conflicts';
-import { isTimeBlock } from '@/lib/utils/calendars';
+import { isTimeBlock, isDeclined, type EventAttendee } from '@/lib/utils/calendars';
 import { addLocalDays, formatUtcOffset, getLocalDateKey } from './timezone';
+
+// Both moved to `lib/utils/calendars.ts` once `getEvents` turned out to be a
+// third caller that had never applied the rule. Re-exported so the existing
+// importers here and in `insights.ts` keep their address.
+export { isDeclined, type EventAttendee };
 
 /**
  * Calendar reads shared by the scheduled-notification jobs.
@@ -10,16 +15,6 @@ import { addLocalDays, formatUtcOffset, getLocalDateKey } from './timezone';
  * the user's calendars between two local dates", differing only in the width of
  * the window — so the fan-out, de-duplication and ordering live here once.
  */
-
-export type EventAttendee = {
-  email?: string | null;
-  displayName?: string | null;
-  /** True on the entry representing the calendar's owner. */
-  self?: boolean | null;
-  organizer?: boolean | null;
-  /** accepted | declined | tentative | needsAction */
-  responseStatus?: string | null;
-};
 
 export type CalendarEvent = {
   id: string;
@@ -61,21 +56,6 @@ export function localDayBounds(
     startDay,
     endDay,
   };
-}
-
-/**
- * An event the user said no to.
- *
- * Their own copy of a declined invitation stays on the calendar and Google
- * keeps returning it — `responseStatus` is the only thing that says they are
- * not going. The detectors in `insights.ts` have always known this; the
- * briefing did not, and printed a week of meetings the user had cancelled out
- * of as if they were the day's commitments.
- */
-export function isDeclined(event: Pick<CalendarEvent, 'attendees'>): boolean {
-  return (event.attendees ?? []).some(
-    (a) => a.self === true && a.responseStatus === 'declined'
-  );
 }
 
 /**

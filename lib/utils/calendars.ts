@@ -137,3 +137,39 @@ export function isTimeBlock(event: {
 }): boolean {
   return event.transparency === 'transparent' || event.eventType === 'workingLocation';
 }
+
+/** One attendee on an event, as Google's events.list returns them. */
+export type EventAttendee = {
+  email?: string | null;
+  displayName?: string | null;
+  /** True on the entry representing the calendar's owner. */
+  self?: boolean | null;
+  organizer?: boolean | null;
+  /** accepted | declined | tentative | needsAction */
+  responseStatus?: string | null;
+};
+
+/**
+ * An event the user said no to.
+ *
+ * Their own copy of a declined invitation stays on the calendar and Google
+ * keeps returning it — `responseStatus` is the only thing that says they are
+ * not going.
+ *
+ * This lives here rather than beside one of its callers because it has now been
+ * forgotten three times. It started in `insights.ts` guarding only the proactive
+ * scan, so the briefing printed a week of meetings the user had cancelled out
+ * of; it moved to `calendar-window.ts` to be applied by `fetchEventsBetween`
+ * itself, on the reasoning that a rule remembered by three callers gets
+ * remembered by two — and `getEvents`, the third caller, was the one that did
+ * not remember. It is dependency-free next to `isTimeBlock` for the same reason
+ * that one is: every path that reads a calendar can reach it, and the raw
+ * Google shape and the normalized one both pass.
+ */
+export function isDeclined(event: {
+  attendees?: EventAttendee[] | null;
+}): boolean {
+  return (event.attendees ?? []).some(
+    (a) => a.self === true && a.responseStatus === 'declined'
+  );
+}
