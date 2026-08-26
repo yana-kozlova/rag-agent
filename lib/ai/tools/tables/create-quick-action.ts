@@ -20,7 +20,7 @@ import { getSessionOrNull } from '@/lib/utils/auth';
 export const createQuickActionTool = {
   description: `Create a one-tap button that writes a preset row into one of the user's tables, with no model call at all.
 
-    Use it when a record repeats: "Арчі щодня приймає ліки — зроби кнопку", "хочу швидко відмічати температуру дитині", "додай швидкий запис для цього". Also offer it unprompted when you notice you have written near-identical rows into the same table more than twice.
+    Use it when a record repeats: "Арчі щодня приймає ліки — зроби кнопку", "хочу швидко відмічати температуру дитині", "додай швидкий запис для цього". addTableRows reports any routine it finds in the table itself (NOTICED: ...) — when it does, offer that and pass its fields through unchanged rather than working them out again.
 
     THE BUTTON REMEMBERS THE ROW — IT DOES NOT ASK FOR IT. Aim for zero questions: one tap, row written, no typing. Take the values from what the user just said, or from the row you have just written into this table — that row IS the template. If you are missing a value, ask for it in the conversation NOW and store the answer as "fixed". A question baked into the button is one the user answers again every single day.
 

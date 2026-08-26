@@ -1,8 +1,11 @@
 import { z } from 'zod';
 import { getSessionOrNull } from '@/lib/utils/auth';
+import { detectRepeatingRow, signatureOf } from '@/lib/quick-actions/detect';
+import { quickActions } from '@/lib/db/schema';
+import type { QuickField } from '@/lib/quick-actions/quick-actions';
 import { db } from '@/lib/db';
-import { userTables, type TableColumn } from '@/lib/db/schema';
-import { eq, and, ilike } from 'drizzle-orm';
+import { userTables, userTablesData, type TableColumn } from '@/lib/db/schema';
+import { eq, and, desc, ilike } from 'drizzle-orm';
 import { createTableRowsBulk } from '@/lib/actions/user-tables';
 
 function coerceValue(value: any, type: TableColumn['type']): any {
@@ -159,13 +162,65 @@ export const addTableRowsTool = {
       return { success: false, message: result.message };
     }
 
+    // Having written the row, look at whether it is the same row as last time,
+    // and the time before. The repetition is in the table — this is the moment
+    // it is worth acting on, because the user is here and has just done the
+    // thing by hand again.
+    const routine = await detectRoutine(table.id, columns);
+
     return {
       success: true,
-      message: `Added ${result.count} row(s) to "${table.title}".`,
+      message: routine
+        ? `Added ${result.count} row(s) to "${table.title}". NOTICED: this same row has been written ${routine.occurrences} times on ${routine.days} different days (${routine.values.join(' · ')}). Offer the user a one-tap button for it — say what it would write, and on a yes call createQuickAction with label "${routine.label}" and exactly these fields: ${JSON.stringify(routine.fields)}. Do not re-derive them and do not add questions.`
+        : `Added ${result.count} row(s) to "${table.title}".`,
       tableId: table.id,
       tableTitle: table.title,
       addedCount: result.count,
       skipped: rows.length - nonEmptyRows.length,
+      ...(routine ? { routine } : {}),
     };
   },
 } as const;
+
+/**
+ * The routine this table is already recording, if it has one and no button
+ * covers it yet.
+ *
+ * Two queries on a path that has just written rows, and both are bounded and
+ * indexed. Never fatal: the row is saved either way, and a failure here costs
+ * an offer rather than the user's data.
+ */
+async function detectRoutine(tableId: string, columns: TableColumn[]) {
+  try {
+    const recent = await db
+      .select({ rowData: userTablesData.rowData, createdAt: userTablesData.createdAt })
+      .from(userTablesData)
+      .where(eq(userTablesData.userTableId, tableId))
+      .orderBy(desc(userTablesData.createdAt))
+      .limit(60);
+
+    const found = detectRepeatingRow(
+      columns,
+      recent.map((r) => ({
+        rowData: (r.rowData ?? {}) as Record<string, unknown>,
+        createdAt: r.createdAt ?? new Date(),
+      }))
+    );
+    if (!found) return null;
+
+    // Already offered and accepted: the button exists, so this is not news.
+    const existing = await db
+      .select({ fields: quickActions.fields })
+      .from(quickActions)
+      .where(eq(quickActions.tableId, tableId));
+
+    const taken = new Set(
+      existing.map((row) => signatureOf((row.fields ?? []) as QuickField[]))
+    );
+
+    return taken.has(found.signature) ? null : found;
+  } catch (error) {
+    console.error('[addTableRows] routine detection failed (non-fatal):', error);
+    return null;
+  }
+}

@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { updateUserTable } from '@/lib/actions/user-tables';
 import Link from 'next/link';
 import QuickActionsBar from '@/app/components/quick-actions/QuickActionsBar';
+import { RoutineOffer } from '@/app/components/quick-actions/RoutineOffer';
+import type { RepeatingRow } from '@/lib/quick-actions/detect';
 import type { TableColumn, TableRow } from '@/lib/db/schema/user-tables';
 
 type TableRowWithId = TableRow & { _id?: string };
@@ -21,9 +23,12 @@ export type UserTable = {
 export default function EditTableClient({
   tableId,
   initialTable,
+  routine = null,
 }: {
   tableId: string;
   initialTable: UserTable;
+  /** A repeating row this table shows, when no button covers it yet. */
+  routine?: RepeatingRow | null;
 }) {
   const router = useRouter();
   const [table, setTable] = useState<UserTable | null>(initialTable);
@@ -249,6 +254,17 @@ export default function EditTableClient({
       {/* Manageable here and nowhere else: this is the page you come to when a
           button is wrong, and a delete control beside one you press daily on
           the dashboard is a mis-tap waiting to happen. */}
+      {routine && (
+        <RoutineOffer
+          tableId={tableId}
+          label={routine.label}
+          values={routine.values}
+          occurrences={routine.occurrences}
+          days={routine.days}
+          fields={routine.fields}
+        />
+      )}
+
       <QuickActionsBar tableId={tableId} manage onWrote={loadTable} emptyHint={false} />
 
       <div className="overflow-x-auto">
