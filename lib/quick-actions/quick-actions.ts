@@ -122,6 +122,34 @@ export function askFields(fields: QuickField[]): QuickField[] {
   return fields.filter((f) => f.kind === 'ask');
 }
 
+/**
+ * Whether this button would ask for more of the row than it already knows.
+ *
+ * The point of a quick action is a template the app *remembers*: "Арчі прийняв
+ * ліки" is the same six characters every day, and the whole value is that one
+ * tap ends it. A button that asks which medicine, what dose and whether there
+ * is a note has not saved the user anything — it is the table's own add-row
+ * form with an extra tap in front, and it costs the round-trip it was created
+ * to avoid. That is what this refuses.
+ *
+ * The test is a ratio rather than a count, because "how many questions is too
+ * many" depends on how much of the row is settled: one question on a two-column
+ * table is a reading with its date stamped, while three questions on a
+ * five-column table is a form. `MAX_ASK_FIELDS` still caps the absolute number
+ * for the Telegram flow, which asks for all of them in one reply.
+ *
+ * A value the model does not know yet is not a reason to make the button ask
+ * forever — it is a reason to ask the user once, now, and store the answer as a
+ * literal.
+ */
+export function asksMoreThanItKnows(fields: QuickField[]): boolean {
+  const asks = askFields(fields).length;
+  if (asks === 0) return false;
+  // Columns left out of `fields` entirely stay empty on every press, so they
+  // are neither known nor asked and do not count on either side.
+  return asks > fields.length - asks;
+}
+
 /** What to call an `ask` field when prompting for it. */
 export function promptFor(field: QuickField, columns: ColumnLike[]): string {
   const trimmed = field.prompt?.trim();

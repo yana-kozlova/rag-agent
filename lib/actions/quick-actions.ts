@@ -14,6 +14,7 @@ import {
   MAX_ASK_FIELDS,
   MAX_QUICK_ACTIONS,
   askFields,
+  asksMoreThanItKnows,
   describeRow,
   resolveQuickActionRow,
   sanitizeLabel,
@@ -131,7 +132,20 @@ export async function createQuickAction(input: CreateQuickActionInput): Promise<
   if (asks.length > MAX_ASK_FIELDS) {
     return {
       ok: false,
-      error: `A quick action may ask for at most ${MAX_ASK_FIELDS} value(s); this one asks for ${asks.length}. Fix the rest as literals, or let the user add the row from the table page.`,
+      error: `A quick action may ask for at most ${MAX_ASK_FIELDS} value(s); this one asks for ${asks.length}. Store the rest as literals (kind "fixed"), or let the user add the row from the table page.`,
+    };
+  }
+
+  if (asksMoreThanItKnows(fields)) {
+    return {
+      ok: false,
+      error:
+        `This button asks for ${asks.length} of the ${fields.length} column(s) it fills, which is not a quick ` +
+        `action — it is the table's add-row form with an extra tap. A quick action is the row the user writes ` +
+        `over and over, remembered: put what never changes in as kind "fixed" (the medicine, the dose, whose it ` +
+        `is), stamp the date with "today" or "now", and ask only for what genuinely differs each press, like a ` +
+        `reading. If you do not know a value, ask the user for it in the conversation now and save their answer ` +
+        `as a literal — never turn a question you could ask once into one the button asks forever.`,
     };
   }
 

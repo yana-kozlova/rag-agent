@@ -22,13 +22,14 @@ export const createQuickActionTool = {
 
     Use it when a record repeats: "Арчі щодня приймає ліки — зроби кнопку", "хочу швидко відмічати температуру дитині", "додай швидкий запис для цього". Also offer it unprompted when you notice you have written near-identical rows into the same table more than twice.
 
+    THE BUTTON REMEMBERS THE ROW — IT DOES NOT ASK FOR IT. Aim for zero questions: one tap, row written, no typing. Take the values from what the user just said, or from the row you have just written into this table — that row IS the template. If you are missing a value, ask for it in the conversation NOW and store the answer as "fixed". A question baked into the button is one the user answers again every single day.
+
     Each field maps ONE column and is one of:
-    - fixed — the same value every press ("Арчі", "ліки"). Give "value".
+    - fixed — the same value every press ("Арчі", "ліки", "10 мг"). Give "value". This is the default; most columns are this.
     - today — the local calendar date at press time (YYYY-MM-DD). For daily logs.
     - now   — local date and time at press time (YYYY-MM-DD HH:MM). For readings where the hour matters.
-    - ask   — the user is prompted for it at press time. Give "prompt" (a short noun phrase, in the user's language). Use for anything that genuinely varies: a temperature, a dose, a note. At most ${MAX_ASK_FIELDS}.
+    - ask   — prompted at press time. Give "prompt" (a short noun phrase, in the user's language). ONLY for a value that genuinely differs press to press: a temperature, a weight, today's note. Never for something you could find out now. At most ${MAX_ASK_FIELDS}, and never more asks than the button already knows — a button that asks for most of the row is the table's add-row form with an extra tap.
 
-    A button with no "ask" field is one tap; with them it opens a tiny form. Prefer fixed and today — every "ask" is a thing the user has to type.
     Do NOT create a table just to hang a button on it if a suitable one exists; call listTables first, which also shows the quick actions each table already has.`,
   inputSchema: z.object({
     tableId: z.string().optional().describe('Target table ID (preferred if known)'),
@@ -42,7 +43,11 @@ export const createQuickActionTool = {
       .array(
         z.object({
           column: z.string().min(1).describe('Column name or ID in the target table'),
-          kind: z.enum(['fixed', 'today', 'now', 'ask']).describe('How this column is filled'),
+          kind: z
+            .enum(['fixed', 'today', 'now', 'ask'])
+            .describe(
+              'How this column is filled. "fixed" is the default — use "ask" only for a value that changes every press'
+            ),
           value: z
             .union([z.string(), z.number(), z.boolean()])
             .optional()

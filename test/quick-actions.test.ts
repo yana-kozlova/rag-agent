@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   MAX_ANSWER_LENGTH,
   askFields,
+  asksMoreThanItKnows,
   describeRow,
   promptFor,
   resolveQuickActionRow,
@@ -175,6 +176,51 @@ describe('askFields / promptFor', () => {
       { columnId: 'what', kind: 'ask' },
     ];
     expect(askFields(fields).map((f) => f.columnId)).toEqual(['temp', 'what']);
+  });
+});
+
+/**
+ * The failure this exists for: asked to make a button for "Арчі щодня приймає
+ * ліки", the model filled the date and then asked which medicine, what dose and
+ * whether there was a note — three questions to record six characters that never
+ * change. That is the add-row form with an extra tap, and it costs the model
+ * round-trip the button was created to avoid.
+ */
+describe('asksMoreThanItKnows', () => {
+  const ask = (columnId: string): QuickField => ({ columnId, kind: 'ask', prompt: columnId });
+  const fixed = (columnId: string): QuickField => ({ columnId, kind: 'fixed', value: 'x' });
+
+  it('passes a button that knows the whole row', () => {
+    expect(asksMoreThanItKnows([fixed('pet'), fixed('what'), { columnId: 'day', kind: 'today' }])).toBe(
+      false
+    );
+  });
+
+  it('passes a reading: one question, with its moment stamped', () => {
+    expect(asksMoreThanItKnows([{ columnId: 'day', kind: 'now' }, ask('temp')])).toBe(false);
+  });
+
+  it('refuses the medication button that asks for the medication', () => {
+    expect(
+      asksMoreThanItKnows([
+        { columnId: 'day', kind: 'today' },
+        fixed('pet'),
+        ask('what'),
+        ask('temp'),
+        ask('done'),
+      ])
+    ).toBe(true);
+  });
+
+  // One column, asked for, is the add-row form exactly — there is nothing the
+  // button remembers.
+  it('refuses a button that knows nothing at all', () => {
+    expect(asksMoreThanItKnows([ask('what')])).toBe(true);
+  });
+
+  it('has nothing to say about a button that asks for nothing', () => {
+    expect(asksMoreThanItKnows([fixed('pet')])).toBe(false);
+    expect(asksMoreThanItKnows([])).toBe(false);
   });
 });
 
