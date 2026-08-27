@@ -23,7 +23,7 @@ export default async function EditTablePage({
 
   // Fetch table metadata and rows in parallel, directly from the DB —
   // no API roundtrips, no client-side waterfall.
-  const [tableRows, dataRows] = await Promise.all([
+  const [tableRows, dataRows, buttons] = await Promise.all([
     db
       .select()
       .from(userTables)
@@ -39,6 +39,10 @@ export default async function EditTablePage({
       .where(eq(userTablesData.userTableId, tableId))
       .orderBy(desc(userTablesData.createdAt))
       .limit(500),
+    db
+      .select({ fields: quickActions.fields })
+      .from(quickActions)
+      .where(eq(quickActions.tableId, tableId)),
   ]);
 
   const table = tableRows[0];
@@ -62,33 +66,20 @@ export default async function EditTablePage({
     data,
   };
 
-  // What this table is already recording, day after day. The rows are in hand,
-  // so the only cost is one query for the buttons that exist — a routine that
-  // already has one is not news.
+  // What this table is already recording, day after day — minus what already
+  // has a button, which is not news. The buttons are handed to the detector
+  // rather than used to filter its answer, so a table with two routines offers
+  // the second one once the first is accepted.
   const routine = detectRepeatingRow(
     initialTable.columns,
     dataRows.map((r) => ({
       rowData: (r.rowData ?? {}) as Record<string, unknown>,
       createdAt: r.createdAt ?? new Date(),
-    }))
-  );
-
-  const existing = routine
-    ? await db
-        .select({ fields: quickActions.fields })
-        .from(quickActions)
-        .where(eq(quickActions.tableId, tableId))
-    : [];
-
-  const covered = existing.some(
-    (row) => signatureOf((row.fields ?? []) as QuickField[]) === routine?.signature
+    })),
+    buttons.map((row) => signatureOf((row.fields ?? []) as QuickField[]))
   );
 
   return (
-    <EditTableClient
-      tableId={tableId}
-      initialTable={initialTable}
-      routine={routine && !covered ? routine : null}
-    />
+    <EditTableClient tableId={tableId} initialTable={initialTable} routine={routine} />
   );
 }

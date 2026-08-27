@@ -13,8 +13,21 @@ const TOOL_LABELS: Record<string, string> = {
   analyzeFile: 'Analysed a file',
   createTable: 'Created a table',
   listTables: 'Listed tables',
+  getTableRows: 'Read a table',
   addTableRows: 'Added table rows',
   extractToTable: 'Extracted to a table',
+  createQuickAction: 'Created a button',
+  deleteQuickAction: 'Removed a button',
+  addTask: 'Saved a task',
+  getTasks: 'Checked the task list',
+  completeTask: 'Closed a task',
+  scheduleTask: 'Scheduled a task',
+  logWellbeing: 'Logged how you feel',
+  getWellbeing: 'Read the wellbeing tracker',
+  rememberDate: 'Saved a date',
+  getTimeline: 'Read the timeline',
+  rememberPreference: 'Saved a preference',
+  forgetPreference: 'Removed a preference',
 };
 
 function labelFor(toolName: string) {

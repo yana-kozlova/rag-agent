@@ -142,14 +142,6 @@ function datesTheSameDay(stored: unknown, createdAt: Date | string): boolean {
 }
 
 /**
- * The identity of a template: which columns it fills, how, and with what.
- *
- * Shared with the callers so "this routine already has a button" is decided by
- * the same string on both sides. Comparing labels would not do it — the user
- * renames a button — and comparing field arrays by hand is how two callers end
- * up disagreeing about whether a `null` value equals a missing one.
- */
-/**
  * Whether a date column records *when this happened* rather than holding data.
  *
  * Two ways to earn it, because there are two ways the same routine gets
@@ -171,6 +163,14 @@ function isDayStamp(columnId: string, group: ScannedRow[]): boolean {
   return distinct.size >= group.length * STAMP_RATIO;
 }
 
+/**
+ * The identity of a template: which columns it fills, how, and with what.
+ *
+ * Shared with the callers so "this routine already has a button" is decided by
+ * the same string on both sides. Comparing labels would not do it — the user
+ * renames a button — and comparing field arrays by hand is how two callers end
+ * up disagreeing about whether a `null` value equals a missing one.
+ */
 export function signatureOf(fields: QuickField[]): string {
   return JSON.stringify(
     [...fields]
@@ -179,9 +179,23 @@ export function signatureOf(fields: QuickField[]): string {
   );
 }
 
+/**
+ * The routine a table is recording that has no button yet.
+ *
+ * `taken` is the signature of every quick action already on this table, and it
+ * is passed *in* rather than used to filter the answer afterwards, because the
+ * two are not the same thing. A table records more than one routine — the
+ * morning dose and the evening one, the dog's medicine and the user's vitamins
+ * — and the busiest group is the busiest group every day from now on. Answering
+ * with it and letting the caller discard it as covered meant accepting one
+ * offer silenced the page for good, with the second routine sitting there in
+ * the rows being written by hand. So the groups are walked in size order and
+ * the first uncovered one is the answer.
+ */
 export function detectRepeatingRow(
   columns: ColumnLike[],
-  rows: ScannedRow[]
+  rows: ScannedRow[],
+  taken: Iterable<string> = []
 ): RepeatingRow | null {
   const scanned = [...rows]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -189,8 +203,8 @@ export function detectRepeatingRow(
 
   if (scanned.length < MIN_OCCURRENCES) return null;
 
-  const dateColumns = columns.filter((c) => c.type === 'date');
-  const rest = columns.filter((c) => c.type !== 'date');
+  const dateIds = new Set(columns.filter((c) => c.type === 'date').map((c) => c.id));
+  const rest = columns.filter((c) => !dateIds.has(c.id));
 
   // A column with a value for nearly every row is data; one that keeps saying
   // the same thing is identity. The split decides what the rows are grouped on.
@@ -213,25 +227,36 @@ export function detectRepeatingRow(
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
 
-  // Largest wins. Two routines in one table (the dog's medicine and the user's
-  // vitamins) are two groups, and the one written most often is the one worth
-  // a button first — the other is still there to be offered next time.
-  const [winner] = [...groups.values()].sort((a, b) => b.length - a.length);
-  if (!winner || winner.length < MIN_OCCURRENCES) return null;
+  const covered = new Set(taken);
 
+  for (const group of [...groups.values()].sort((a, b) => b.length - a.length)) {
+    if (group.length < MIN_OCCURRENCES) continue;
+    const template = templateFor(columns, dateIds, varying, group);
+    if (template && !covered.has(template.signature)) return template;
+  }
 
-  const sample = winner[0].rowData;
+  return null;
+}
+
+/** One group of identical rows, as a template — or null if it is not a routine. */
+function templateFor(
+  columns: ColumnLike[],
+  dateIds: Set<string>,
+  varying: Set<string>,
+  group: ScannedRow[]
+): RepeatingRow | null {
+  const sample = group[0].rowData;
   const fields: QuickField[] = [];
   const values: string[] = [];
   /** Days named by a stamp column, which outrank the days rows were written. */
   let statedDays: Set<string> | null = null;
 
   for (const column of columns) {
-    if (dateColumns.includes(column)) {
-      if (!isDayStamp(column.id, winner)) continue;
+    if (dateIds.has(column.id)) {
+      if (!isDayStamp(column.id, group)) continue;
       fields.push({ columnId: column.id, kind: 'today' });
       statedDays ??= new Set(
-        winner
+        group
           .map((row) => asText(row.rowData[column.id]).slice(0, 10))
           .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
       );
@@ -239,8 +264,8 @@ export function detectRepeatingRow(
     }
 
     if (varying.has(column.id)) {
-      const filled = winner.filter((row) => !isEmpty(row.rowData[column.id])).length;
-      if (filled >= winner.length * FILLED_RATIO) {
+      const filled = group.filter((row) => !isEmpty(row.rowData[column.id])).length;
+      if (filled >= group.length * FILLED_RATIO) {
         fields.push({ columnId: column.id, kind: 'ask', prompt: column.name });
       }
       continue;
@@ -253,18 +278,18 @@ export function detectRepeatingRow(
     values.push(asText(value));
   }
 
-  // Nothing repeated is nothing to remember: a template of a date stamp and two
-  // questions is the add-row form, which is what `asksMoreThanItKnows` says in
-  // the general case and what this says about the specific one.
   // How many days this happened on. The row's own date column is the better
   // witness where there is one: filling a fortnight's log in one sitting writes
   // every row today, and counting `created_at` would read a fortnight of
   // medicine as a single afternoon and decline to notice it.
   const days = statedDays?.size
     ? statedDays
-    : new Set(winner.map((row) => dayOf(row.createdAt)).filter(Boolean));
+    : new Set(group.map((row) => dayOf(row.createdAt)).filter(Boolean));
   if (days.size < MIN_DISTINCT_DAYS) return null;
 
+  // Nothing repeated is nothing to remember: a template of a date stamp and two
+  // questions is the add-row form, which is what `asksMoreThanItKnows` says in
+  // the general case and what this says about the specific one.
   const asks = fields.filter((f) => f.kind === 'ask');
   if (values.length === 0) return null;
   if (asks.length > MAX_SUGGESTED_ASKS || asks.length > values.length) return null;
@@ -276,7 +301,7 @@ export function detectRepeatingRow(
     fields,
     label,
     values,
-    occurrences: winner.length,
+    occurrences: group.length,
     days: days.size,
     signature: signatureOf(fields),
   };

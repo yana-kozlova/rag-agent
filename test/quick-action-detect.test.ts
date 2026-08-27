@@ -140,19 +140,41 @@ describe('a column that genuinely differs each time', () => {
 });
 
 describe('two routines in one table', () => {
-  it('offers the one written most often, leaving the other for next time', () => {
-    const rows = [
-      dose(0),
-      dose(1),
-      dose(2),
-      dose(3, { pet: 'Яна', what: 'вітаміни', dose: '1 таб' }),
-      dose(4, { pet: 'Яна', what: 'вітаміни', dose: '1 таб' }),
-    ];
+  const vitamins = { pet: 'Яна', what: 'вітаміни', dose: '1 таб' };
+  const rows = [
+    dose(0),
+    dose(1),
+    dose(2),
+    dose(3, vitamins),
+    dose(4, vitamins),
+    dose(5, vitamins),
+  ];
 
+  it('offers the one written most often first', () => {
     const detected = detectRepeatingRow(columns, rows);
 
     expect(detected!.values).toEqual(['Арчі', 'ліки', '10 мг']);
     expect(detected!.occurrences).toBe(3);
+  });
+
+  /**
+   * The busiest group is the busiest group tomorrow too, so answering with it
+   * and letting the caller discard it as already-covered was one button per
+   * table forever — the second routine went on being written by hand with
+   * nothing ever offering it a button.
+   */
+  it('moves on to the second once the first has a button', () => {
+    const first = detectRepeatingRow(columns, rows)!;
+    const second = detectRepeatingRow(columns, rows, [first.signature]);
+
+    expect(second!.values).toEqual(['Яна', 'вітаміни', '1 таб']);
+  });
+
+  it('goes quiet when both have buttons', () => {
+    const first = detectRepeatingRow(columns, rows)!;
+    const second = detectRepeatingRow(columns, rows, [first.signature])!;
+
+    expect(detectRepeatingRow(columns, rows, [first.signature, second.signature])).toBeNull();
   });
 });
 

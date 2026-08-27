@@ -89,10 +89,26 @@ function Citation({ result }: { result: Result }) {
   );
 }
 
+/**
+ * The results, whichever shape they arrive in.
+ *
+ * `getInformation` now answers with an envelope — the results plus what they
+ * are — because a bare array told the model nothing about being capped. Tool
+ * output from a turn already on screen is still the old array, so both are read
+ * here rather than leaving old messages rendering as "nothing found".
+ */
+function resultsOf(output: unknown): Result[] {
+  if (Array.isArray(output)) return output as Result[];
+  if (output && typeof output === 'object' && Array.isArray((output as any).results)) {
+    return (output as { results: Result[] }).results;
+  }
+  return [];
+}
+
 export function KnowledgeResults({ output }: { output: unknown }) {
-  const results = Array.isArray(output) ? (output as Result[]) : [];
+  const capped = Boolean(output && typeof output === 'object' && (output as any).capped);
   // Guard: getInformation returns objects; a string[] here isn't ours to render.
-  const usable = results.filter((r) => r && typeof r === 'object' && 'content' in r);
+  const usable = resultsOf(output).filter((r) => r && typeof r === 'object' && 'content' in r);
 
   if (usable.length === 0) {
     return (
@@ -108,6 +124,7 @@ export function KnowledgeResults({ output }: { output: unknown }) {
       <div className="flex items-center gap-1.5 text-[11px] uppercase font-semibold opacity-50 tracking-wide">
         <Search className="h-3 w-3" />
         {usable.length} {usable.length === 1 ? 'source' : 'sources'}
+        {capped && <span className="normal-case opacity-70">· top matches only</span>}
       </div>
       {usable.map((r, i) => (
         <Citation key={i} result={r} />

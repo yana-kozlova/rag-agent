@@ -8,19 +8,27 @@ import { MAX_ASK_FIELDS, type QuickField } from '@/lib/quick-actions/quick-actio
 import { getSessionOrNull } from '@/lib/utils/auth';
 
 /**
- * Turn a described routine into a button.
+ * Turn a routine the user has agreed to into a button.
  *
  * This is the one tool in the tables group whose purpose is to stop being
  * called: everything it saves is a row the model would otherwise be asked to
- * write again tomorrow, and the day after. So it is worth being generous about
- * recognising the ask ("додай кнопку", "я щодня це роблю", "хочу швидко
- * записувати") and strict about what it stores — a wrong literal is a wrong
- * value in every row from now on, silently.
+ * write again tomorrow, and the day after. Which is exactly why it is not the
+ * model's call *when* to save one. Told a repeating record was reason enough,
+ * it created "Арчі — таблетки" off one conversation — a button asking for the
+ * date, on a table that turned out to be recording a different dose twice a day
+ * — and the table page then offered the routine actually in the rows. Two
+ * standing objects arrived where the user had asked for none, and the one they
+ * had not asked for was the worse of the two.
+ *
+ * So the trigger is the user's word or `detectRepeatingRow`'s reading of their
+ * own data, never the model's reading of the conversation; what remains here is
+ * to be strict about what it stores, since a wrong literal is a wrong value in
+ * every row from now on, silently.
  */
 export const createQuickActionTool = {
   description: `Create a one-tap button that writes a preset row into one of the user's tables, with no model call at all.
 
-    Use it when a record repeats: "Арчі щодня приймає ліки — зроби кнопку", "хочу швидко відмічати температуру дитині", "додай швидкий запис для цього". addTableRows reports any routine it finds in the table itself (NOTICED: ...) — when it does, offer that and pass its fields through unchanged rather than working them out again.
+    ONLY on the user's word. Two cases and no others: they ask for a button in so many words ("зроби кнопку", "хочу швидко відмічати температуру дитині", "додай швидкий запис для цього"), or addTableRows reported a routine it found in the rows themselves (NOTICED: ...), you offered it, and they said yes — then pass its fields through unchanged rather than working them out again. Never create one because the conversation looked repetitive to you: the table page offers its own routines, and a button nobody asked for is a standing object on their screen beside the one they did ask for.
 
     THE BUTTON REMEMBERS THE ROW — IT DOES NOT ASK FOR IT. Aim for zero questions: one tap, row written, no typing. Take the values from what the user just said, or from the row you have just written into this table — that row IS the template. If you are missing a value, ask for it in the conversation NOW and store the answer as "fixed". A question baked into the button is one the user answers again every single day.
 
@@ -28,7 +36,7 @@ export const createQuickActionTool = {
     - fixed — the same value every press ("Арчі", "ліки", "10 мг"). Give "value". This is the default; most columns are this.
     - today — the local calendar date at press time (YYYY-MM-DD). For daily logs.
     - now   — local date and time at press time (YYYY-MM-DD HH:MM). For readings where the hour matters.
-    - ask   — prompted at press time. Give "prompt" (a short noun phrase, in the user's language). ONLY for a value that genuinely differs press to press: a temperature, a weight, today's note. Never for something you could find out now. At most ${MAX_ASK_FIELDS}, and never more asks than the button already knows — a button that asks for most of the row is the table's add-row form with an extra tap.
+    - ask   — prompted at press time. Give "prompt" (a short noun phrase, in the user's language). ONLY for a value that genuinely differs press to press: a temperature, a weight, today's note. Never for something you could find out now, and never for the day the thing happened — that is what "today" and "now" are for. At most ${MAX_ASK_FIELDS}, and never more asks than the button already knows — a button that asks for most of the row is the table's add-row form with an extra tap.
 
     Do NOT create a table just to hang a button on it if a suitable one exists; call listTables first, which also shows the quick actions each table already has.`,
   inputSchema: z.object({

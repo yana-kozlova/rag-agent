@@ -29,6 +29,79 @@ function isRelevant(result: any): boolean {
 const MAX_PER_SOURCE = 2;
 
 /**
+ * The results, plus what they are.
+ *
+ * This tool used to return a bare array of at most `MAX_RESULTS`, and nothing
+ * in it said so. A model handed five rows cannot tell "five matched" from "five
+ * is all you get", and it duly answered "скільки разів Арчі прийняв апоквель"
+ * with "5" over a table holding twenty-one of them — the number was the cap.
+ * The same silence read an empty array as an empty table and told the user a
+ * table of twenty-three rows had no records in it.
+ *
+ * Neither is a retrieval bug: top-k is what retrieval is for. The bug was
+ * returning a sample in the shape of a complete answer, so the envelope now
+ * says which it is, and where to go for the other one. Same rule as the
+ * briefing's assembled lines — anything to be concluded from the numbers is
+ * stated by the application, not left for the model to infer.
+ */
+type SearchAnswer = {
+  results: unknown[];
+  returned: number;
+  /** Hit the cap, so there is very probably more than this. */
+  capped: boolean;
+  message: string;
+};
+
+/**
+ * The search did not run, which is not the same as finding nothing.
+ *
+ * `fetchEventsBetween` returning `[]` for both "nothing scheduled" and "Google
+ * refused to answer" cost this user five mornings of "календар вільний". The
+ * same two states meet here, and collapsing them would have the assistant
+ * report an empty knowledge base because an embedding call timed out.
+ */
+function searchFailed(reason: string): SearchAnswer {
+  return {
+    results: [],
+    returned: 0,
+    capped: false,
+    message:
+      `The search did not run: ${reason}. This is NOT an empty result — nothing was looked at. ` +
+      `Say the search failed; never tell the user they have nothing saved.`,
+  };
+}
+
+function answer(results: unknown[], question: string): SearchAnswer {
+  const returned = results.length;
+  const capped = returned >= MAX_RESULTS;
+
+  if (returned === 0) {
+    return {
+      results,
+      returned,
+      capped: false,
+      message:
+        `Nothing in the knowledge base matched "${question}". That is a SEARCH result, not a census: ` +
+        `it means nothing matched, never that the user has no such data. Do not tell them a table, a ` +
+        `list or a topic is empty on this evidence — read the thing itself (getTableRows, getTasks, ` +
+        `getTimeline, getWellbeing) before saying anything is empty.`,
+    };
+  }
+
+  return {
+    results,
+    returned,
+    capped,
+    message:
+      `${returned} passage(s), ranked by relevance` +
+      (capped ? `, and this is the cap of ${MAX_RESULTS} — there are very likely more.` : '.') +
+      ` A SAMPLE of what is stored, never the complete set: do not count from it, do not present it ` +
+      `as all of anything, and do not call it a table's contents. For an exact count or a full list ` +
+      `use getTableRows (a table), getTasks, getTimeline or getWellbeing.`,
+  };
+}
+
+/**
  * Spread the answer over the notes it came from.
  *
  * Ranking alone is blind to where a chunk lives, and a long document is many
@@ -170,7 +243,15 @@ function aggregateResults(allResults: any[][]): any[] {
 }
 
 /** Internals the ranking tests reach for; not part of the tool's contract. */
-export const __test = { aggregateResults, diversifyBySource, isRelevant, deduplicateResults };
+export const __test = {
+  aggregateResults,
+  diversifyBySource,
+  isRelevant,
+  deduplicateResults,
+  answer,
+  searchFailed,
+  MAX_RESULTS,
+};
 
 export const getInformationTool = {
   description: `Search the user's comprehensive knowledge base (RAG) to find relevant information for answering their questions.
@@ -200,8 +281,14 @@ IMPORTANT: After getting results from this tool, adapt your response based on wh
 - "relevance" (0-1) is semantic closeness ALONE. A low number is not a bad result: a chunk kept because it matches the exact wording — a name, an invoice number, a version — scores low by construction, since the rest of it is about something else. That is often the result you want
 - Judge each result on whether it answers the question, not on its relevance number, and ignore the ones that do not
 
-The tool searches semantically and by exact wording at once, over several phrasings of the question, and returns the most relevant content (max 5 results). For resources: returns relevant chunks. For tables: returns full row data as text.
+The tool searches semantically and by exact wording at once, over several phrasings of the question, and returns the most relevant content (max ${MAX_RESULTS} results). For resources: returns relevant chunks. For tables: returns full row data as text.
 Only use results that are actually relevant to the user's question - don't include unrelated information.
+
+THIS IS A SAMPLE, NEVER A SET. The result is the top few matches out of everything stored, capped at ${MAX_RESULTS}. So:
+- NEVER count from it. "Скільки разів...", "how many..." cannot be answered here — the number you would report is the cap, not the data.
+- NEVER present it as all of something, and never as a table's contents.
+- An empty result means nothing MATCHED. It never means the user has nothing: do not tell them a table, a list or a topic is empty on this evidence.
+- For an exact count or a complete list, use the tool that reads the whole thing: getTableRows for a table, getTasks for tasks, getTimeline for dates, getWellbeing for check-ins.
 
 Each result carries a "title" (what the note or table is called — use it when referring to the source) and a "url" — the page that item can be opened on. To point the user at something they saved, write a Markdown link whose target is exactly that value: [Title](/resources/abc123). Never build a link out of an id, and never link a result whose url is null.`,
   inputSchema: z.object({
@@ -224,7 +311,7 @@ Each result carries a "title" (what the note or table is called — use it when 
       const userId = session?.user?.id;
       if (!userId) {
         console.log('[getInformation] No userId found');
-        return [];
+        return searchFailed('no signed-in user');
       }
       
       logContext.userId = userId;
@@ -239,7 +326,9 @@ Each result carries a "title" (what the note or table is called — use it when 
       const cached = embeddingCache.get(userId, question, 'answer');
       if (cached) {
         console.log(`[getInformation] Cache hit in ${Date.now() - startTime}ms for "${question}"`);
-        return cached;
+        // The cache holds the results, not the envelope: what they are is a
+        // property of the results and is cheaper to restate than to store.
+        return answer(cached, question);
       }
 
       // Rewrite the question into the queries actually worth searching.
@@ -283,7 +372,7 @@ Each result carries a "title" (what the note or table is called — use it when 
         // the same searches to establish as an answer does, and the agent asks
         // twice within a turn more often than it finds something on the retry.
         embeddingCache.set(userId, question, [], 'answer');
-        return [];
+        return answer([], question);
       }
       
       // Filter by relevance: cosine for a semantic hit, admission for a lexical one
@@ -370,13 +459,13 @@ Each result carries a "title" (what the note or table is called — use it when 
         console.log(`[getInformation] No relevant results found in ${executionTime}ms. Query: "${question}"`);
       }
       
-      return formattedResults;
+      return answer(formattedResults, question);
     } catch (error) {
       const executionTime = Date.now() - startTime;
       logContext.executionTime = executionTime;
       logContext.error = error instanceof Error ? error.message : 'Unknown error';
       console.error('[getInformation] Error:', error, logContext);
-      return [];
+      return searchFailed(error instanceof Error ? error.message : 'unknown error');
     }
   },
 } as const;

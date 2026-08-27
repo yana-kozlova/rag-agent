@@ -25,6 +25,7 @@ import { forgetPreferenceTool } from './directives/forget-preference';
 // Table tools
 import { createTableTool } from './tables/create-table';
 import { listTablesTool } from './tables/list-tables';
+import { getTableRowsTool } from './tables/get-table-rows';
 import { addTableRowsTool } from './tables/add-table-rows';
 import { extractToTableTool } from './tables/extract-to-table';
 
@@ -55,6 +56,7 @@ export const tools = {
   forgetPreference: forgetPreferenceTool,
   createTable: createTableTool,
   listTables: listTablesTool,
+  getTableRows: getTableRowsTool,
   addTableRows: addTableRowsTool,
   extractToTable: extractToTableTool,
   createQuickAction: createQuickActionTool,
