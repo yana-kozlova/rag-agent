@@ -68,3 +68,106 @@ export function coerceValue(value: unknown, type: TableColumnType): unknown {
       return String(value);
   }
 }
+
+/**
+ * A stored date value, read back into the input that can edit it losslessly.
+ *
+ * A date column holds three different shapes, all of them written on purpose:
+ * a bare `YYYY-MM-DD` (what `today` stamps and what `coerceValue` preserves),
+ * a wall-clock stamp `YYYY-MM-DD HH:MM` (what `now` stamps — deliberately not
+ * an instant, so a Kyiv user reading back when they took a pill is not shown
+ * three hours of confusion), and a genuine zoned ISO instant.
+ *
+ * Editing all three through one `<input type="date">` is the quiet way to lose
+ * data: the hour on a medication stamp disappears on the first cell edit and
+ * nothing anywhere says it was there. So the shape decides the input, and
+ * `fromDateInput` writes back into the same shape it read.
+ *
+ * A value that is not a date at all falls through to `text` rather than to an
+ * empty date picker, because an empty picker beside a non-empty cell is one
+ * committed keystroke away from erasing whatever was actually written there.
+ */
+export type DateInputShape = {
+  type: 'date' | 'datetime-local' | 'text';
+  value: string;
+  /** The stored value carried a zone, so it must be written back as an instant. */
+  zoned?: boolean;
+};
+
+const BARE_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const WALL_CLOCK = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/;
+const ZONED = /(?:Z|[+-]\d{2}:?\d{2})$/;
+
+function pad(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+/** `YYYY-MM-DDTHH:MM` as the browser's own clock reads the instant. */
+function localInputValue(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function toDateInput(value: unknown): DateInputShape {
+  if (value === null || value === undefined) return { type: 'date', value: '' };
+
+  const raw = value instanceof Date ? value.toISOString() : String(value).trim();
+  if (raw === '') return { type: 'date', value: '' };
+  if (BARE_DATE.test(raw)) return { type: 'date', value: raw };
+
+  if (ZONED.test(raw)) {
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) return { type: 'datetime-local', value: localInputValue(d), zoned: true };
+  }
+
+  const wall = WALL_CLOCK.exec(raw);
+  if (wall) return { type: 'datetime-local', value: `${wall[1]}T${wall[2]}` };
+
+  return { type: 'text', value: raw };
+}
+
+/**
+ * What the date input holds, written back in the shape the cell came in.
+ *
+ * The `T` becomes a space again for a wall-clock stamp so the value keeps
+ * matching what `resolveQuickActionRow` writes: one column, one shape, however
+ * the row was made.
+ */
+export function fromDateInput(shape: DateInputShape['type'], written: string, zoned = false): unknown {
+  const raw = written.trim();
+  if (raw === '') return null;
+
+  if (shape === 'date') return BARE_DATE.test(raw) ? raw : coerceValue(raw, 'date');
+
+  if (shape === 'datetime-local') {
+    if (!zoned) return raw.replace('T', ' ');
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? raw : d.toISOString();
+  }
+
+  return coerceValue(raw, 'date');
+}
+
+/**
+ * What a cell shows when it is not being edited.
+ *
+ * An empty string means the cell is empty and the caller renders its own
+ * placeholder — the distinction matters, because a cell holding nothing still
+ * has to be a click target the same size as one holding a word.
+ */
+export function formatCellValue(value: unknown, type: TableColumnType): string {
+  if (value === null || value === undefined || value === '') return '';
+
+  if (type === 'boolean') {
+    const read = coerceValue(value, 'boolean');
+    return read === null ? String(value) : read ? 'Yes' : 'No';
+  }
+
+  if (type === 'date') {
+    const shape = toDateInput(value);
+    if (shape.type === 'datetime-local') return shape.value.replace('T', ' ');
+    if (shape.type === 'date') return shape.value;
+    return shape.value;
+  }
+
+  return String(value);
+}
