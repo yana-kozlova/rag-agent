@@ -99,6 +99,25 @@ export const timelineEvents = pgTable(
      */
     source: text('source').notNull().default('extraction'),
 
+    /**
+     * When the user last corrected this row by hand, and null until they have.
+     *
+     * Two jobs, which is why it is a timestamp on the row rather than a badge in
+     * the UI. It is what the chip on the axis reads — a date somebody has since
+     * fixed is not the model's reading any more, and `source` cannot say so
+     * because it records where the date *came from*, which has not changed.
+     *
+     * And it is what makes the correction survive. An `extraction` row is a
+     * projection of the note's `metadata.dates`, replaced wholesale by
+     * `syncTimelineForResource` every time the note is re-saved; without this
+     * column the sync deletes the corrected row and writes the model's original
+     * back, so a fixed date silently reverts the next time the user folds a fact
+     * into that note. Exactly `entities.relationship_source`, one step smaller:
+     * there the sync updates a surviving row, here it deletes and rebuilds, so
+     * what the flag has to buy is exemption from the delete.
+     */
+    editedAt: timestamp('edited_at'),
+
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },

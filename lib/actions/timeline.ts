@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 import { entities, entityAliases } from '@/lib/db/schema/entities';
@@ -12,9 +12,10 @@ import {
 import { getLocalDateKey } from '@/lib/push/timezone';
 import {
   UPCOMING_HORIZON_DAYS,
-  canRecurAnnually,
+  formatDateSpec,
   isSameStoredDate,
   parseDateSpec,
+  resolveRecurrence,
   subjectKey as toSubjectKey,
   toTimelineCandidates,
   upcomingOccurrences,
@@ -135,7 +136,13 @@ export async function syncTimelineForResource(params: {
         and(
           eq(timelineEvents.userId, params.userId),
           eq(timelineEvents.resourceId, params.resourceId),
-          eq(timelineEvents.source, 'extraction')
+          eq(timelineEvents.source, 'extraction'),
+          // A row the user has corrected by hand is no longer this note's to
+          // replace. Without this the whole of `updateTimelineEvent` is undone
+          // the next time anything folds a fact into that note: the corrected
+          // row is deleted and the model's original written back in its place,
+          // silently, with the edit having looked like it worked for days.
+          isNull(timelineEvents.editedAt)
         )
       );
   }
@@ -199,12 +206,7 @@ export async function recordTimelineEvent(params: {
     // has a month and a day to come round on. A model asked to record "ми
     // одружились у 2015" will happily set recurring — and a year stored as
     // 1 January would then be announced as an anniversary on New Year's Day.
-    recurrence:
-      spec.precision === 'day-month'
-        ? 'annual'
-        : canRecurAnnually(spec.precision) && input.recurrence === 'annual'
-          ? 'annual'
-          : ('none' as Recurrence),
+    recurrence: resolveRecurrence(spec.precision, input.recurrence === 'annual'),
     title: input.title,
     kind: input.kind?.toLowerCase() || 'other',
     note: input.note || null,
@@ -385,6 +387,127 @@ export async function getTimelineView(
   return { today, timezone, events, upcoming, sources };
 }
 
+export type UpdateResult =
+  | { success: true; event: TimelineEvent }
+  | { success: false; message: string };
+
+/** Postgres' unique violation, which here is only ever the identity index. */
+function isUniqueViolation(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === '23505';
+}
+
+/**
+ * Correct a date that is already on the axis.
+ *
+ * The gap this fills is narrow and was awkward: until now the only repair for a
+ * wrong date was to delete the row and type it again, which throws away the link
+ * back to the note that is the evidence for it — so the honest correction cost
+ * the provenance, and keeping the provenance meant living with the wrong day.
+ * Most rows here were written by a model reading prose, so they are wrong in the
+ * ordinary way models are wrong: the right day off by one, the subject's name
+ * left in the title, a birthday filed under the day the note was written.
+ *
+ * Two things make the correction stick, and neither is enough alone. The row is
+ * stamped `editedAt`, which is what exempts it from the wholesale replace in
+ * `syncTimelineForResource`. And the note's own `metadata.dates` is restated to
+ * match, because that list is what the sync rebuilds *from*: leave it saying
+ * 31 August and the next re-save inserts the model's original as a second row
+ * beside the corrected one, the identity index having no reason to call them the
+ * same event.
+ *
+ * Not a tool, on the same reasoning that keeps deletion out of the model's hands
+ * — quietly rewriting the day something happened is a change nobody reviews.
+ */
+export async function updateTimelineEvent(params: {
+  userId: string;
+  eventId: string;
+  input: TimelineEventInput;
+}): Promise<UpdateResult> {
+  const parsed = timelineEventInputSchema.safeParse(params.input);
+  if (!parsed.success) {
+    return { success: false, message: parsed.error.issues[0]?.message ?? 'Invalid date.' };
+  }
+  const input = parsed.data;
+
+  const spec = parseDateSpec(input.date);
+  if (!spec) {
+    return {
+      success: false,
+      message: `Unrecognised date "${input.date}". Use YYYY-MM-DD, YYYY-MM, YYYY, or --MM-DD for a day and month with no year.`,
+    };
+  }
+
+  // Read first: the previous date and title are how the matching entry is found
+  // in the note, and after the update they are gone.
+  const [existing] = await db
+    .select()
+    .from(timelineEvents)
+    .where(and(eq(timelineEvents.id, params.eventId), eq(timelineEvents.userId, params.userId)))
+    .limit(1);
+
+  if (!existing) return { success: false, message: 'That date is not here any more.' };
+
+  const subject = input.subject?.trim() || null;
+  const now = new Date();
+
+  let updated: TimelineEvent | undefined;
+  try {
+    [updated] = await db
+      .update(timelineEvents)
+      .set({
+        occurredOn: spec.occurredOn,
+        precision: spec.precision,
+        recurrence: resolveRecurrence(spec.precision, input.recurrence === 'annual'),
+        title: input.title,
+        kind: input.kind?.toLowerCase() || 'other',
+        // Absent means cleared, not unchanged: the form shows every field, so
+        // an empty one is the user saying to empty it.
+        note: input.note || null,
+        subject,
+        subjectKey: toSubjectKey(subject),
+        // Re-resolved rather than kept, because the subject may be the thing
+        // being corrected — a date filed against the wrong person is exactly
+        // the mistake this exists for.
+        entityId: await resolveEntity(params.userId, subject),
+        editedAt: now,
+        updatedAt: now,
+      })
+      .where(and(eq(timelineEvents.id, params.eventId), eq(timelineEvents.userId, params.userId)))
+      .returning();
+  } catch (error) {
+    // Edited onto the same day, kind, subject and wording as another row. The
+    // insert path can answer this with `onConflictDoNothing` and hand back the
+    // row that was already there; an update cannot, because the user is looking
+    // at a row that must either change or say why it did not.
+    if (isUniqueViolation(error)) {
+      return {
+        success: false,
+        message: 'That is already on the timeline as another date. Delete one of the two instead.',
+      };
+    }
+    throw error;
+  }
+
+  if (!updated) return { success: false, message: 'That date is not here any more.' };
+
+  if (updated.resourceId) {
+    try {
+      await rewriteDateOnResource(params.userId, updated.resourceId, existing, {
+        date: formatDateSpec(updated.occurredOn, spec.precision),
+        title: updated.title,
+        kind: updated.kind,
+        subject: updated.subject,
+        note: updated.note,
+        recurring: updated.recurrence === 'annual',
+      });
+    } catch (error) {
+      console.error('[timeline] Restating the date in its note failed (non-fatal):', error);
+    }
+  }
+
+  return { success: true, event: updated };
+}
+
 /** Removes a date. Scoped by user id, so an id alone is not authority to delete. */
 export async function deleteTimelineEvent(userId: string, eventId: string): Promise<boolean> {
   const [deleted] = await db
@@ -403,7 +526,7 @@ export async function deleteTimelineEvent(userId: string, eventId: string): Prom
   // button not working.
   if (deleted.resourceId) {
     try {
-      await forgetDateOnResource(userId, deleted.resourceId, deleted);
+      await rewriteDateOnResource(userId, deleted.resourceId, deleted, null);
     } catch (error) {
       console.error('[timeline] Removing the date from its note failed (non-fatal):', error);
     }
@@ -413,16 +536,29 @@ export async function deleteTimelineEvent(userId: string, eventId: string): Prom
 }
 
 /**
- * Drops one date from a note's own record of them.
+ * Restates or drops one date in a note's own record of them.
+ *
+ * One function for both because deleting a row and correcting one are the same
+ * operation against `metadata.dates` — find the entry this row came from, then
+ * either replace it or leave it out. Two functions would be two answers to
+ * "which entry is this row", and the interesting half is the matching.
  *
  * Matched by re-parsing each stored spec rather than by string equality: the
  * note may hold `1985` where the row holds `1985-01-01`, and the two are the
  * same date said at different precisions.
+ *
+ * Nothing is written when no entry matches, `next` or not. The list has already
+ * drifted from the row at that point, and appending a date the note's own prose
+ * may not support to fix a projection would be editing the evidence to match the
+ * conclusion. The corrected row survives on its `editedAt` regardless; the worst
+ * case is the stale date reappearing as a visible second row, which is the
+ * direction this codebase fails in everywhere else.
  */
-async function forgetDateOnResource(
+async function rewriteDateOnResource(
   userId: string,
   resourceId: string,
-  removed: TimelineEvent
+  previous: { occurredOn: string; title: string },
+  next: ExtractedDate | null
 ): Promise<void> {
   const [note] = await db
     .select({ metadata: resources.metadata })
@@ -433,15 +569,22 @@ async function forgetDateOnResource(
   const meta = (note?.metadata ?? null) as Record<string, unknown> | null;
   if (!meta || !Array.isArray(meta.dates)) return;
 
-  const kept = (meta.dates as ExtractedDate[]).filter(
-    (entry) =>
-      !isSameStoredDate(entry, { occurredOn: removed.occurredOn, title: removed.title })
-  );
+  let matched = false;
+  const dates: ExtractedDate[] = [];
 
-  if (kept.length === (meta.dates as unknown[]).length) return;
+  for (const entry of meta.dates as ExtractedDate[]) {
+    if (!isSameStoredDate(entry, previous)) {
+      dates.push(entry);
+      continue;
+    }
+    matched = true;
+    if (next) dates.push(next);
+  }
+
+  if (!matched) return;
 
   await db
     .update(resources)
-    .set({ metadata: { ...meta, dates: kept } as any })
+    .set({ metadata: { ...meta, dates } as any })
     .where(eq(resources.id, resourceId));
 }

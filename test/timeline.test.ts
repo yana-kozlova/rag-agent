@@ -9,9 +9,13 @@ import {
   isSameStoredDate,
   nextAnnualOccurrence,
   parseDateSpec,
+  resolveRecurrence,
+  splitDateSpec,
   timelineKindIcon,
+  toDateSpec,
   toTimelineCandidates,
   upcomingOccurrences,
+  type DatePrecision,
 } from '@/lib/timeline/timeline';
 
 /**
@@ -327,5 +331,115 @@ describe('matching a deleted row back to the note that produced it', () => {
   /** It was never on the axis, so deleting a row cannot be a reason to edit it out. */
   it('keeps an entry whose date never parsed', () => {
     expect(isSameStoredDate({ date: 'колись', title: 'Андрій народився' }, target)).toBe(false);
+  });
+});
+
+/**
+ * The three fields a person types, and the row they open again as.
+ *
+ * These exist because there are now two forms — adding a date and correcting
+ * one — and the second is the dangerous one: it starts from a row where the
+ * unreal components have already been padded in, so an inverse that reads the
+ * stored date instead of `precision` hands the user a 1 January nobody said and
+ * then saves it back as though they had.
+ */
+describe('typing a date into three fields', () => {
+  it('takes all three as a day', () => {
+    expect(toDateSpec('2019', '3', '12')).toBe('2019-03-12');
+  });
+
+  it('pads what the form left unpadded', () => {
+    // The month arrives as the `<select>` option value, which is a bare number.
+    expect(toDateSpec('2019', '3', '5')).toBe('2019-03-05');
+  });
+
+  it('takes a year and a month without inventing a day', () => {
+    expect(toDateSpec('2022', '6', '')).toBe('2022-06');
+  });
+
+  it('takes a year alone', () => {
+    expect(toDateSpec('1985', '', '')).toBe('1985');
+  });
+
+  it('reads a day and month with no year as a birthday', () => {
+    expect(toDateSpec('', '3', '14')).toBe('--03-14');
+  });
+
+  it('refuses a day with no month, which means nothing', () => {
+    expect(toDateSpec('', '', '14')).toBeNull();
+  });
+
+  it('refuses a month with no year and no day', () => {
+    expect(toDateSpec('', '3', '')).toBeNull();
+  });
+
+  it('refuses an empty form', () => {
+    expect(toDateSpec('', '', '')).toBeNull();
+  });
+});
+
+describe('opening a stored row back up as fields', () => {
+  it('leaves the padding out of a year-only date', () => {
+    // The row holds 1985-01-01. Handing "1" and "1" back to the form is how
+    // saving an untouched year silently promotes it to New Year's Day.
+    expect(splitDateSpec('1985-01-01', 'year')).toEqual({ year: '1985', month: '', day: '' });
+  });
+
+  it('leaves the padding out of a month date', () => {
+    expect(splitDateSpec('2022-06-01', 'month')).toEqual({ year: '2022', month: '6', day: '' });
+  });
+
+  it('leaves the placeholder year out of a yearless birthday', () => {
+    expect(splitDateSpec(`${PLACEHOLDER_YEAR}-03-14`, 'day-month')).toEqual({
+      year: '',
+      month: '3',
+      day: '14',
+    });
+  });
+
+  it('gives every component of a full date', () => {
+    expect(splitDateSpec('2019-03-12', 'day')).toEqual({ year: '2019', month: '3', day: '12' });
+  });
+
+  it('round-trips every precision back to the row it came from', () => {
+    const rows: Array<{ occurredOn: string; precision: DatePrecision }> = [
+      { occurredOn: '2019-03-12', precision: 'day' },
+      { occurredOn: '2022-06-01', precision: 'month' },
+      { occurredOn: '1985-01-01', precision: 'year' },
+      { occurredOn: `${PLACEHOLDER_YEAR}-03-14`, precision: 'day-month' },
+    ];
+
+    for (const row of rows) {
+      const { year, month, day } = splitDateSpec(row.occurredOn, row.precision);
+      const spec = toDateSpec(year, month, day);
+      expect(spec).not.toBeNull();
+      // Opening the edit form and saving without touching anything must leave
+      // the row exactly as it was — the date and how much of it is real.
+      expect(parseDateSpec(spec as string)).toEqual(row);
+    }
+  });
+});
+
+describe('one rule for what may recur', () => {
+  it('honours a request on a full date', () => {
+    expect(resolveRecurrence('day', true)).toBe('annual');
+  });
+
+  it('leaves a full date alone when nothing was asked for', () => {
+    expect(resolveRecurrence('day', false)).toBe('none');
+  });
+
+  it('forces a yearless date to recur, since it can mean nothing else', () => {
+    expect(resolveRecurrence('day-month', false)).toBe('annual');
+  });
+
+  it('refuses a year-only date, which has no day to come round on', () => {
+    // Honoured, this is an anniversary announced every New Year's Day, and the
+    // database check constraint would not even catch it.
+    expect(resolveRecurrence('year', true)).toBe('none');
+  });
+
+  it('refuses a month-precision date for the same reason', () => {
+    expect(resolveRecurrence('month', true)).toBe('none');
   });
 });

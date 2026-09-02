@@ -5,6 +5,7 @@ import {
   deleteTimelineEvent,
   getTimelineView,
   recordTimelineEvent,
+  updateTimelineEvent,
   upcomingTimeline,
 } from '@/lib/actions/timeline';
 import { timelineEventInputSchema } from '@/lib/db/schema/timeline';
@@ -65,6 +66,48 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ success: true, event: result.event, duplicate: result.duplicate });
+}
+
+/**
+ * Correcting a date already on the axis.
+ *
+ * The body is the same shape POST takes, and it replaces the row rather than
+ * patching parts of it: the form behind this shows every field at once, so an
+ * absent `note` or `subject` is the user having cleared it and not the caller
+ * having said nothing about it. A route rather than a tool for the reason DELETE
+ * is one — rewriting the day something happened is a change nobody reviews.
+ */
+export async function PATCH(req: Request) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const id = new URL(req.url).searchParams.get('id');
+  if (!id) {
+    return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+  }
+
+  const body = await req.json().catch(() => null);
+  const input = timelineEventInputSchema.safeParse(body);
+  if (!input.success) {
+    return NextResponse.json(
+      { error: input.error.issues[0]?.message ?? 'Invalid date' },
+      { status: 400 }
+    );
+  }
+
+  const result = await updateTimelineEvent({
+    userId: session.user.id,
+    eventId: id,
+    input: input.data,
+  });
+
+  if (!result.success) {
+    return NextResponse.json({ error: result.message }, { status: 400 });
+  }
+
+  return NextResponse.json({ success: true, event: result.event });
 }
 
 /**

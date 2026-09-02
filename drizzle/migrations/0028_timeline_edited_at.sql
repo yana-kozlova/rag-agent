@@ -1,0 +1,23 @@
+-- Whose word a date on the axis is.
+--
+-- Every other row on the timeline could be deleted and re-stated; none could be
+-- corrected. A date read out of a note is wrong in the ordinary way models are
+-- wrong — the right day off by one, a name in the title, "31 Aug 2023" for a
+-- birthday that is not in August — and the only repair on offer was to delete
+-- the row and type it again, which loses the link back to the note that is the
+-- evidence for it.
+--
+-- An edit alone would not have survived. An `extraction` row is a projection of
+-- the note's `metadata.dates`, and `syncTimelineForResource` replaces all of a
+-- note's rows wholesale whenever it is re-saved — so a corrected date would hold
+-- until the next time the user folded a fact into that note and then revert,
+-- with nothing raising and nobody watching. Same failure `relationship_source`
+-- was added for, one step smaller: there the sync updates a row that survives,
+-- here it deletes and rebuilds, so the flag has to buy exemption from the
+-- delete rather than from an overwrite.
+--
+-- Nullable with no default, because "never corrected" is the truth about every
+-- row that already exists and a timestamp is the one shape that can say both
+-- that and when.
+ALTER TABLE "timeline_events"
+  ADD COLUMN IF NOT EXISTS "edited_at" timestamp;

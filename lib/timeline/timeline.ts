@@ -135,6 +135,22 @@ export function canRecurAnnually(precision: DatePrecision): boolean {
   return precision === 'day' || precision === 'day-month';
 }
 
+/**
+ * What `recurrence` a date actually gets, whatever it was asked for.
+ *
+ * Three callers write rows — extraction through `toTimelineCandidates`, the tool
+ * and the form through `recordTimelineEvent`, a correction through
+ * `updateTimelineEvent` — and each had, or would have had, its own spelling of
+ * the same two rules: a yearless date can only mean one that comes round, and a
+ * date with no real day has nothing to come round on. Three spellings of one
+ * rule is how the fourth caller gets it wrong; the database's
+ * `timeline_events_day_month_recurs` check would then reject the row outright.
+ */
+export function resolveRecurrence(precision: DatePrecision, requested: boolean): Recurrence {
+  if (!canRecurAnnually(precision)) return 'none';
+  return precision === 'day-month' || requested ? 'annual' : 'none';
+}
+
 /** The parts of a stored row this module needs to do anything. */
 export type DatedEvent = {
   occurredOn: string;
@@ -234,6 +250,62 @@ export function formatDateSpec(occurredOn: string, precision: DatePrecision): st
       return `${y}-${m}`;
     default:
       return occurredOn;
+  }
+}
+
+/**
+ * Three fields a person typed, turned into the notation `parseDateSpec` reads.
+ *
+ * A single date picker cannot express this data: "ми переїхали у 2022" has no
+ * month, a birthday often has no year, and a control that demands all three
+ * silently invents the missing parts — which is the precise failure `precision`
+ * exists to prevent, reintroduced at the one place a human is typing. Leaving a
+ * field empty is how you say you do not know it.
+ *
+ * Lives here rather than in the form because there are now two forms — adding a
+ * date and correcting one — and a second copy of these rules is a second answer
+ * to "what does a year with no month mean".
+ */
+export function toDateSpec(year: string, month: string, day: string): string | null {
+  const y = year.trim();
+  const mm = month.trim() ? month.trim().padStart(2, '0') : '';
+  const dd = day.trim() ? day.trim().padStart(2, '0') : '';
+
+  if (y && mm && dd) return `${y}-${mm}-${dd}`;
+  if (y && mm) return `${y}-${mm}`;
+  if (y) return y;
+  // No year: only a day and a month together mean anything — that is a birthday.
+  if (mm && dd) return `--${mm}-${dd}`;
+  return null;
+}
+
+/**
+ * A stored row taken back apart into the three fields it was typed as.
+ *
+ * The inverse of `toDateSpec`, and the reason an edit form can be seeded at all.
+ * It reads `precision` rather than the date, so the components `occurredOn` is
+ * padded with come back empty: a year-only row must open the form with its month
+ * and day blank, or saving it unchanged would promote 1 January to a day someone
+ * named. Numbers come back unpadded, because that is what the month `<select>`
+ * carries as its option values.
+ */
+export function splitDateSpec(
+  occurredOn: string,
+  precision: DatePrecision
+): { year: string; month: string; day: string } {
+  const [y, m, d] = occurredOn.split('-');
+  const month = String(Number(m));
+  const day = String(Number(d));
+
+  switch (precision) {
+    case 'year':
+      return { year: y, month: '', day: '' };
+    case 'month':
+      return { year: y, month, day: '' };
+    case 'day-month':
+      return { year: '', month, day };
+    default:
+      return { year: y, month, day };
   }
 }
 
@@ -467,14 +539,7 @@ export function toTimelineCandidates(dates: ExtractedDate[]): TimelineCandidate[
     const candidate: TimelineCandidate = {
       occurredOn: spec.occurredOn,
       precision: spec.precision,
-      // `day-month` is forced annual (it can mean nothing else); anything the
-      // model marked recurring is honoured only when the date has a month and a
-      // day to recur on — see `canRecurAnnually`.
-      recurrence:
-        canRecurAnnually(spec.precision) &&
-        (spec.precision === 'day-month' || raw.recurring === true)
-          ? 'annual'
-          : 'none',
+      recurrence: resolveRecurrence(spec.precision, raw.recurring === true),
       title,
       kind,
       note,

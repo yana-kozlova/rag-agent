@@ -129,6 +129,11 @@ export default async function TimelinePage() {
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((item) => ({ ...item, when: dayLabel(item.date, today) }));
 
+  // An instant rather than a calendar date, so it is rendered in the user's own
+  // zone — "edited 3 Sep" for something they corrected at half past midnight in
+  // Kyiv must not come back as the 2nd.
+  const editedOn = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeZone: timezone });
+
   const groups: AxisGroup[] = groupByYear(
     view.events.map((event) => ({ ...event, precision: event.precision as DatePrecision }))
   ).map((group) => ({
@@ -137,6 +142,11 @@ export default async function TimelinePage() {
       id: event.id,
       date: formatTimelineDate(event.occurredOn, event.precision as DatePrecision),
       sortKey: event.occurredOn,
+      // Passed raw beside the formatted string because the edit form has to open
+      // on what was actually stored: the printed "31 Aug 2023" has already had
+      // the unreal components taken out of it and cannot be read back.
+      occurredOn: event.occurredOn,
+      precision: event.precision as DatePrecision,
       title: event.title,
       subject: event.subject,
       note: event.note,
@@ -144,6 +154,7 @@ export default async function TimelinePage() {
       icon: timelineKindIcon(event.kind),
       recurring: event.recurrence === 'annual',
       source: event.source,
+      edited: event.editedAt ? editedOn.format(event.editedAt) : null,
       entityId: event.entityId,
       resource: event.resourceId ? (view.sources[event.resourceId] ?? null) : null,
     })),
