@@ -11,9 +11,20 @@ import {
  * A charting library would be the larger dependency in this project's client
  * bundle, for two charts of at most a year of single-value points. Colours are
  * DaisyUI channel variables rather than literals, so the same markup follows
- * silk, bumblebee and autumn instead of pinning one palette into the theme
- * switcher — which is also why the fills are gradients over those same
- * variables and never a second, hand-picked colour.
+ * silk and dark instead of pinning one palette into the theme switcher — which
+ * is also why the fills are gradients over those same variables and never a
+ * second, hand-picked colour.
+ *
+ * The wrapper around those variables must be `oklch()`. DaisyUI 4 emits them as
+ * OKLCH components (`--p: 49.12% 0.3096 275.75`), so `hsl(var(--p))` is not a
+ * near-miss that shifts the hue — it is an invalid colour, and every one of
+ * these attributes then falls back to its SVG initial value rather than to
+ * anything the theme chose. That failure is silent and reads as a design
+ * problem: `fill` initial is black, so lines, dots and axis labels all came out
+ * pure black; `stroke` initial is `none`, so the gridlines were not drawn at
+ * all; and the gradients, being black at 0.32 opacity, washed the plot grey.
+ * `app/globals.css` had the form right, which is why the rest of the app looked
+ * themed while these two charts did not.
  *
  * SVG ids live in the document, not the element, so every gradient here is
  * prefixed: the widget's sparkline and the page's charts can be on screen at
@@ -61,8 +72,8 @@ function axisTicks(days: DayPoint[]): number[] {
 type Series = { key: 'mood' | 'energy'; label: string; icon: string; color: string };
 
 const SERIES: Series[] = [
-  { key: 'mood', label: 'Mood', icon: '🙂', color: 'hsl(var(--p))' },
-  { key: 'energy', label: 'Energy', icon: '⚡', color: 'hsl(var(--s))' },
+  { key: 'mood', label: 'Mood', icon: '🙂', color: 'oklch(var(--p))' },
+  { key: 'energy', label: 'Energy', icon: '⚡', color: 'oklch(var(--s))' },
 ];
 
 /**
@@ -152,7 +163,7 @@ export function TrendChart({ days }: { days: DayPoint[] }) {
                 x2={VIEW_W - PAD.right}
                 y1={y}
                 y2={y}
-                stroke="hsl(var(--bc) / 0.12)"
+                stroke="oklch(var(--bc) / 0.12)"
                 strokeWidth={1}
               />
               <text
@@ -160,7 +171,7 @@ export function TrendChart({ days }: { days: DayPoint[] }) {
                 y={y + 3.5}
                 textAnchor="end"
                 fontSize={10}
-                fill="hsl(var(--bc) / 0.45)"
+                fill="oklch(var(--bc) / 0.45)"
               >
                 {value}
               </text>
@@ -203,7 +214,7 @@ export function TrendChart({ days }: { days: DayPoint[] }) {
                   cy={p.y}
                   r={2.8}
                   fill={series.color}
-                  stroke="hsl(var(--b1))"
+                  stroke="oklch(var(--b1))"
                   strokeWidth={1.2}
                 />
               ))}
@@ -217,7 +228,7 @@ export function TrendChart({ days }: { days: DayPoint[] }) {
             y={VIEW_H - 6}
             textAnchor="middle"
             fontSize={10}
-            fill="hsl(var(--bc) / 0.45)"
+            fill="oklch(var(--bc) / 0.45)"
           >
             {shortDate(days[index].date)}
           </text>
@@ -271,8 +282,8 @@ export function SleepChart({ days }: { days: DayPoint[] }) {
             x2="0"
             y2={PAD.top + plotH}
           >
-            <stop offset="0%" stopColor="hsl(var(--a))" stopOpacity={0.95} />
-            <stop offset="100%" stopColor="hsl(var(--p))" stopOpacity={0.55} />
+            <stop offset="0%" stopColor="oklch(var(--a))" stopOpacity={0.95} />
+            <stop offset="100%" stopColor="oklch(var(--p))" stopOpacity={0.55} />
           </linearGradient>
         </defs>
 
@@ -285,7 +296,7 @@ export function SleepChart({ days }: { days: DayPoint[] }) {
                 x2={VIEW_W - PAD.right}
                 y1={y}
                 y2={y}
-                stroke="hsl(var(--bc) / 0.12)"
+                stroke="oklch(var(--bc) / 0.12)"
                 strokeWidth={1}
               />
               <text
@@ -293,7 +304,7 @@ export function SleepChart({ days }: { days: DayPoint[] }) {
                 y={y + 3.5}
                 textAnchor="end"
                 fontSize={10}
-                fill="hsl(var(--bc) / 0.45)"
+                fill="oklch(var(--bc) / 0.45)"
               >
                 {Math.round(minutes / 60)}
               </text>
@@ -326,7 +337,7 @@ export function SleepChart({ days }: { days: DayPoint[] }) {
             y={VIEW_H - 6}
             textAnchor="middle"
             fontSize={10}
-            fill="hsl(var(--bc) / 0.45)"
+            fill="oklch(var(--bc) / 0.45)"
           >
             {shortDate(days[index].date)}
           </text>
@@ -368,8 +379,8 @@ export function Sparkline({ days, className }: { days: DayPoint[]; className?: s
     <svg viewBox={`0 0 ${W} ${H}`} className={className} role="img" aria-label="Recent mood trend">
       <defs>
         <linearGradient id={`${ID}-spark`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="hsl(var(--p))" stopOpacity={0.3} />
-          <stop offset="100%" stopColor="hsl(var(--p))" stopOpacity={0} />
+          <stop offset="0%" stopColor="oklch(var(--p))" stopOpacity={0.3} />
+          <stop offset="100%" stopColor="oklch(var(--p))" stopOpacity={0} />
         </linearGradient>
       </defs>
 
@@ -390,13 +401,13 @@ export function Sparkline({ days, className }: { days: DayPoint[]; className?: s
           key={i}
           points={segment.map((p) => `${p.x},${p.y}`).join(' ')}
           fill="none"
-          stroke="hsl(var(--p))"
+          stroke="oklch(var(--p))"
           strokeWidth={1.6}
           strokeLinecap="round"
           strokeLinejoin="round"
         />
       ))}
-      <circle cx={last.x} cy={last.y} r={2.2} fill="hsl(var(--p))" />
+      <circle cx={last.x} cy={last.y} r={2.2} fill="oklch(var(--p))" />
     </svg>
   );
 }
