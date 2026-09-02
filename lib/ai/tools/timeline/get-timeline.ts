@@ -17,6 +17,9 @@ export const getTimelineTool = {
   description: [
     'Look up dates on the timeline: what happened in a year or period, dates about one person, or what is coming up.',
     'Use for "коли...", "що було у 2022", "чий день народження скоро". Scheduling questions go to getEvents.',
+    'Each date carries a "url": the note it was read out of, which is where its details are. Link only that',
+    'value — [Назва](/resources/abc123) — and when it is null the user typed the date straight onto the axis,',
+    'so there is no note to point at: name the date instead of writing a link.',
   ].join('\n'),
   inputSchema: z.object({
     upcomingDays: z
@@ -62,6 +65,7 @@ export const getTimelineTool = {
           // Present only when the original year is known, which is what makes
           // "виповнюється 7" safe to say and its absence a reason not to.
           years: o.years,
+          url: noteUrl(o.event.resourceId),
         })),
         url: '/timeline',
       };
@@ -90,8 +94,26 @@ export const getTimelineTool = {
         kind: event.kind,
         note: event.note,
         recurring: event.recurrence === 'annual',
+        url: noteUrl(event.resourceId),
       })),
       url: '/timeline',
     };
   },
 } as const;
+
+/**
+ * Where the details of a date actually live.
+ *
+ * A date is stored twice — this row keeps the day, the note keeps the wording —
+ * so "деталі" is always the note, and the timeline page links it exactly this
+ * way (`TimelineAxis` → `/resources/<id>`). Handing back only the envelope's
+ * `/timeline` left the model pointing at something it had no address for, and
+ * asked to link it anyway it wrote one that goes nowhere:
+ * `https://your-link-to-the-resource/`. An invented link is worse than none —
+ * it looks like the saved thing and opens onto nothing — which is why a date
+ * the user typed straight onto the axis returns null here rather than a
+ * plausible-looking guess.
+ */
+function noteUrl(resourceId: string | null): string | null {
+  return resourceId ? `/resources/${resourceId}` : null;
+}

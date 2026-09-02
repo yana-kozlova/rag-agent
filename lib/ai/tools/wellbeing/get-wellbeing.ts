@@ -30,6 +30,7 @@ export const getWellbeingTool = {
         range: `${report.from} … ${report.to}`,
         daysLogged: 0,
         message: 'No check-ins recorded in this range.',
+        url: '/health',
       };
     }
 
@@ -38,6 +39,9 @@ export const getWellbeingTool = {
     return {
       success: true,
       range: `${report.from} … ${report.to}`,
+      // Where the charts are. A tool that reports on saved data and hands back
+      // no address is one the model has to guess an address for.
+      url: '/health',
       daysLogged: summary.daysLogged,
       checkIns: summary.entryCount,
       average: {

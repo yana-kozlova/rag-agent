@@ -179,6 +179,11 @@ export const analyzeFileTool = {
     return {
       success: true,
       message: 'File analyzed successfully',
+      // The page this file opens on. It was missing while `resource.id` sat one
+      // line up: asked to point at the thing it had just read, the model had no
+      // address and invented one.
+      resourceId: resource.id,
+      url: `/resources/${resource.id}`,
       summary: {
         title: extracted.structuredContent.title,
         summary: extracted.structuredContent.summary,
