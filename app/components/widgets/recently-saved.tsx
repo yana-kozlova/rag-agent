@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import type { Resource } from '@/app/resources/ResourcesClient';
+import { relativeTime } from '@/lib/utils/relative-time';
 import { useResourceList } from './use-resource-list';
 
 const TYPE_ICON: Record<string, string> = {
@@ -31,19 +32,6 @@ function label(r: Resource): string {
   return firstLine || 'Untitled';
 }
 
-function relativeTime(value: string | Date): string {
-  const then = new Date(value).getTime();
-  if (Number.isNaN(then)) return '';
-  const diff = Math.max(0, Date.now() - then);
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(value).toLocaleDateString([], { day: 'numeric', month: 'short' });
-}
 
 export default function RecentlySaved() {
   const { items, loading } = useResourceList('limit=6');
