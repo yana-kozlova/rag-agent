@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
-import { detectRepeatingRow, type ScannedRow } from '@/lib/quick-actions/detect';
+import { covers, detectRepeatingRow, labelFor, type ScannedRow } from '@/lib/quick-actions/detect';
+import { MAX_LABEL_LENGTH } from '@/lib/quick-actions/quick-actions';
 import type { ColumnLike } from '@/lib/utils/table-columns';
 
 /**
@@ -165,16 +166,16 @@ describe('two routines in one table', () => {
    */
   it('moves on to the second once the first has a button', () => {
     const first = detectRepeatingRow(columns, rows)!;
-    const second = detectRepeatingRow(columns, rows, [first.signature]);
+    const second = detectRepeatingRow(columns, rows, [first.fields]);
 
     expect(second!.values).toEqual(['Яна', 'вітаміни', '1 таб']);
   });
 
   it('goes quiet when both have buttons', () => {
     const first = detectRepeatingRow(columns, rows)!;
-    const second = detectRepeatingRow(columns, rows, [first.signature])!;
+    const second = detectRepeatingRow(columns, rows, [first.fields])!;
 
-    expect(detectRepeatingRow(columns, rows, [first.signature, second.signature])).toBeNull();
+    expect(detectRepeatingRow(columns, rows, [first.fields, second.fields])).toBeNull();
   });
 });
 
@@ -201,17 +202,72 @@ describe('a date column that is not a stamp', () => {
   });
 });
 
-describe('the signature', () => {
-  it('is stable for the same habit and different when its values change', () => {
-    const a = detectRepeatingRow(columns, [dose(0), dose(1), dose(2)]);
-    const b = detectRepeatingRow(columns, [dose(3), dose(4), dose(5)]);
-    const changed = detectRepeatingRow(columns, [
-      dose(0, { dose: '20 мг' }),
-      dose(1, { dose: '20 мг' }),
-      dose(2, { dose: '20 мг' }),
-    ]);
+/**
+ * The offer is editable before it is accepted, so the button that comes back is
+ * not always the template that was offered — a column dropped, a value reworded
+ * to something shorter. Compared field for field, none of those would count as
+ * covering the routine they came from, and the page would go on offering a
+ * habit that has had a button on it since Tuesday.
+ */
+describe('what an accepted button covers', () => {
+  const rows = [dose(0), dose(1), dose(2), dose(3)];
+  const offered = detectRepeatingRow(columns, rows)!;
 
-    expect(a!.signature).toBe(b!.signature);
-    expect(changed!.signature).not.toBe(a!.signature);
+  it('covers the routine it was made from', () => {
+    expect(detectRepeatingRow(columns, rows, [offered.fields])).toBeNull();
+  });
+
+  it('covers it still when the user dropped a column from the offer', () => {
+    const trimmed = offered.fields.filter((f) => f.columnId !== 'dose');
+
+    expect(detectRepeatingRow(columns, rows, [trimmed])).toBeNull();
+  });
+
+  it('covers it still when the user reworded one of its values', () => {
+    const reworded = offered.fields.map((f) =>
+      f.columnId === 'what' ? { ...f, value: 'ліки (апоквель)' } : f
+    );
+
+    expect(detectRepeatingRow(columns, rows, [reworded])).toBeNull();
+  });
+
+  it('covers nothing when the button has no value of its own', () => {
+    expect(covers([{ columnId: 'day', kind: 'today' }], offered.fields)).toBe(false);
+  });
+
+  it('does not cover a routine that differs in a value', () => {
+    const evening = offered.fields.map((f) =>
+      f.columnId === 'what' ? { ...f, value: 'вітаміни' } : f
+    );
+
+    expect(covers(evening, offered.fields)).toBe(false);
+  });
+});
+
+/**
+ * The face is the first thing about the button anyone sees, and it was a
+ * `slice`: three repeating values joined and cut at forty characters, which
+ * produced "вранці — апоквель — у відповідності з пр" — a name for nothing.
+ */
+describe('the name on the button', () => {
+  it('is built from the values that read as names, not the prose beside them', () => {
+    expect(labelFor(['вранці', 'апоквель', 'у відповідності з призначенням'])).toBe(
+      'вранці — апоквель'
+    );
+  });
+
+  it('keeps short values as they are', () => {
+    expect(labelFor(['Арчі', 'ліки', '10 мг'])).toBe('Арчі — ліки — 10 мг');
+  });
+
+  it('carries three of them at most, however many repeat', () => {
+    expect(labelFor(['Арчі', 'ліки', '10 мг', 'вранці'])).toBe('Арчі — ліки — 10 мг');
+  });
+
+  it('cuts where a word ends when there is nothing shorter to use', () => {
+    const label = labelFor(['у відповідності з призначенням лікаря щоранку натще']);
+
+    expect(label.length).toBeLessThanOrEqual(MAX_LABEL_LENGTH);
+    expect(label).toBe('у відповідності з призначенням лікаря…');
   });
 });

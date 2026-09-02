@@ -3,7 +3,7 @@ import { auth } from '@/app/api/auth/auth';
 import { db } from '@/lib/db';
 import { userTables, userTablesData, quickActions } from '@/lib/db/schema';
 import { eq, desc } from 'drizzle-orm';
-import { detectRepeatingRow, signatureOf } from '@/lib/quick-actions/detect';
+import { detectRepeatingRow } from '@/lib/quick-actions/detect';
 import type { QuickField } from '@/lib/quick-actions/quick-actions';
 import EditTableClient, { type UserTable } from './EditTableClient';
 
@@ -76,7 +76,7 @@ export default async function EditTablePage({
       rowData: (r.rowData ?? {}) as Record<string, unknown>,
       createdAt: r.createdAt ?? new Date(),
     })),
-    buttons.map((row) => signatureOf((row.fields ?? []) as QuickField[]))
+    buttons.map((row) => (row.fields ?? []) as QuickField[])
   );
 
   return (

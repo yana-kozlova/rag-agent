@@ -79,6 +79,24 @@ const MAX_SUGGESTED_ASKS = 1;
  */
 const STAMP_RATIO = 0.6;
 
+/**
+ * The length past which a repeating value is prose rather than a name.
+ *
+ * The values that repeat are not equally worth putting on a button. "апоквель"
+ * and "вранці" say which routine this is; "у відповідності з призначенням" is a
+ * notes column that happens to hold the same sentence every day — it separates
+ * this routine from nothing, and it is what pushed the face past its width and
+ * had it cut to "вранці — апоквель — у відповідності з пр", which is the name
+ * of nothing at all.
+ */
+const NAME_LENGTH = 16;
+
+/** How many values one face carries. Three is already a mouthful to read. */
+const MAX_LABEL_PARTS = 3;
+
+/** What joins them. Wider than a comma, because the parts are not a list. */
+const LABEL_SEPARATOR = ' — ';
+
 /** One stored row, as both callers already have it. */
 export type ScannedRow = {
   rowData: Record<string, unknown>;
@@ -96,13 +114,6 @@ export type RepeatingRow = {
   occurrences: number;
   /** Distinct days those rows fall on — what makes it a routine. */
   days: number;
-  /**
-   * Stable identity of this routine. Two detections of the same habit produce
-   * the same string, and a habit whose values change produces a different one —
-   * which is what lets a dismissal be remembered without silencing the next,
-   * genuinely different, suggestion.
-   */
-  signature: string;
 };
 
 function isEmpty(value: unknown): boolean {
@@ -164,26 +175,98 @@ function isDayStamp(columnId: string, group: ScannedRow[]): boolean {
 }
 
 /**
- * The identity of a template: which columns it fills, how, and with what.
+ * Whether a button already records this routine.
  *
- * Shared with the callers so "this routine already has a button" is decided by
- * the same string on both sides. Comparing labels would not do it — the user
- * renames a button — and comparing field arrays by hand is how two callers end
- * up disagreeing about whether a `null` value equals a missing one.
+ * Not equality, and not a comparison of labels — the user renames a button, and
+ * since the offer became editable they also reword its values and drop the
+ * columns they did not want written. A button compared field for field against
+ * the rows it was built from stops matching the moment they do either, and the
+ * page goes back to offering a routine that has had a button on it since
+ * Tuesday. What a button has to cover is what it *writes*: every field it fills
+ * matches the routine's, and the columns it leaves out are the ones the user
+ * chose not to keep.
+ *
+ * A fixed value matches loosely — case, spacing, and either value containing
+ * the other once both are long enough for that to mean anything — because
+ * "апоквель" reworded on the face as "апоквель 10мг" is the same medicine.
+ * "вранці" and "ввечері" contain nothing of each other, so a table recording a
+ * morning routine and an evening one still gets two offers.
+ *
+ * A button with no fixed value of its own covers nothing: a date stamp and a
+ * question describe every routine in the table equally well.
  */
-export function signatureOf(fields: QuickField[]): string {
-  return JSON.stringify(
-    [...fields]
-      .sort((a, b) => a.columnId.localeCompare(b.columnId))
-      .map((f) => [f.columnId, f.kind, f.kind === 'fixed' ? (f.value ?? null) : null])
-  );
+export function covers(button: QuickField[], routine: QuickField[]): boolean {
+  if (!button.some((field) => field.kind === 'fixed')) return false;
+
+  const byColumn = new Map(routine.map((field) => [field.columnId, field]));
+  return button.every((field) => {
+    const repeated = byColumn.get(field.columnId);
+    if (!repeated || repeated.kind !== field.kind) return false;
+    return field.kind !== 'fixed' || sameValue(field.value, repeated.value);
+  });
+}
+
+/** Shortest containment worth trusting — under it, "1" is inside "10 мг". */
+const MIN_CONTAINED_LENGTH = 3;
+
+function sameValue(written: unknown, repeated: unknown): boolean {
+  const a = normalizeValue(written);
+  const b = normalizeValue(repeated);
+  if (a === b) return true;
+  if (a.length < MIN_CONTAINED_LENGTH || b.length < MIN_CONTAINED_LENGTH) return false;
+  return a.includes(b) || b.includes(a);
+}
+
+function normalizeValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The name to put on the button, built from what repeats.
+ *
+ * Two rules, both learned from one offer. Only the values that read as names
+ * are used, because a routine's identity is "вранці", "апоквель" and not the
+ * standing instruction sitting in the notes column; and what still does not fit
+ * is dropped whole rather than cut, because a face ending mid-word is not a
+ * shorter name, it is a broken one.
+ *
+ * The face is also the identity — `UNIQUE (user_id, lower(btrim(label)))` — so
+ * a shorter name is likelier to land on one already saved. That is refused with
+ * the reason said out loud rather than silently, and it is the other half of
+ * why the offer lets the name be edited before it is accepted.
+ */
+export function labelFor(values: string[]): string {
+  const clean = values.map(sanitizeLabel).filter(Boolean);
+  if (clean.length === 0) return '';
+
+  const names = clean.filter((value) => value.length <= NAME_LENGTH);
+  const parts = (names.length > 0 ? names : [clean[0]]).slice(0, MAX_LABEL_PARTS);
+
+  // Dropped from the end: column order runs from what the row is about towards
+  // how it went, so the last part is the one least missed.
+  while (parts.length > 1 && parts.join(LABEL_SEPARATOR).length > MAX_LABEL_LENGTH) parts.pop();
+
+  return clipWords(parts.join(LABEL_SEPARATOR), MAX_LABEL_LENGTH);
+}
+
+/** `text` at no more than `max` characters, cut where a word ends. */
+function clipWords(text: string, max: number): string {
+  if (text.length <= max) return text;
+
+  const cut = text.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  // A word boundary so early that nothing readable survives is worse than a
+  // hard cut, so it is only taken in the back half of what fits.
+  const kept = space > max / 2 ? cut.slice(0, space) : cut;
+  return `${kept.replace(/[\s—-]+$/, '')}…`;
 }
 
 /**
  * The routine a table is recording that has no button yet.
  *
- * `taken` is the signature of every quick action already on this table, and it
- * is passed *in* rather than used to filter the answer afterwards, because the
+ * `buttons` is the fields of every quick action already on this table, and they
+ * are passed *in* rather than used to filter the answer afterwards, because the
  * two are not the same thing. A table records more than one routine — the
  * morning dose and the evening one, the dog's medicine and the user's vitamins
  * — and the busiest group is the busiest group every day from now on. Answering
@@ -195,7 +278,7 @@ export function signatureOf(fields: QuickField[]): string {
 export function detectRepeatingRow(
   columns: ColumnLike[],
   rows: ScannedRow[],
-  taken: Iterable<string> = []
+  buttons: QuickField[][] = []
 ): RepeatingRow | null {
   const scanned = [...rows]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -227,12 +310,10 @@ export function detectRepeatingRow(
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
 
-  const covered = new Set(taken);
-
   for (const group of [...groups.values()].sort((a, b) => b.length - a.length)) {
     if (group.length < MIN_OCCURRENCES) continue;
     const template = templateFor(columns, dateIds, varying, group);
-    if (template && !covered.has(template.signature)) return template;
+    if (template && !buttons.some((button) => covers(button, template.fields))) return template;
   }
 
   return null;
@@ -295,14 +376,11 @@ function templateFor(
   if (asks.length > MAX_SUGGESTED_ASKS || asks.length > values.length) return null;
   if (asksMoreThanItKnows(fields)) return null;
 
-  const label = sanitizeLabel(values.join(' — ')).slice(0, MAX_LABEL_LENGTH).trim();
-
   return {
     fields,
-    label,
+    label: labelFor(values),
     values,
     occurrences: group.length,
     days: days.size,
-    signature: signatureOf(fields),
   };
 }

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getSessionOrNull } from '@/lib/utils/auth';
-import { detectRepeatingRow, signatureOf } from '@/lib/quick-actions/detect';
+import { detectRepeatingRow } from '@/lib/quick-actions/detect';
 import { quickActions } from '@/lib/db/schema';
 import type { QuickField } from '@/lib/quick-actions/quick-actions';
 import { db } from '@/lib/db';
@@ -237,7 +237,7 @@ async function detectRoutine(tableId: string, columns: TableColumn[]) {
         rowData: (r.rowData ?? {}) as Record<string, unknown>,
         createdAt: r.createdAt ?? new Date(),
       })),
-      existing.map((row) => signatureOf((row.fields ?? []) as QuickField[]))
+      existing.map((row) => (row.fields ?? []) as QuickField[])
     );
   } catch (error) {
     console.error('[addTableRows] routine detection failed (non-fatal):', error);

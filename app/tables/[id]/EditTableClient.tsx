@@ -379,6 +379,7 @@ export default function EditTableClient({
           occurrences={routine.occurrences}
           days={routine.days}
           fields={routine.fields}
+          columns={table.columns}
         />
       )}
 
