@@ -333,6 +333,13 @@ function templateFor(
   let statedDays: Set<string> | null = null;
 
   for (const column of columns) {
+    // An attachment is never part of a routine. A button writes without asking
+    // and a Telegram reply is text, so the best a file column could do here is
+    // become a question nobody can answer or a literal repeating one scan on
+    // every press. Skipped rather than refused: the rest of the row is still a
+    // routine worth one tap.
+    if (column.type === 'file') continue;
+
     if (dateIds.has(column.id)) {
       if (!isDayStamp(column.id, group)) continue;
       fields.push({ columnId: column.id, kind: 'today' });

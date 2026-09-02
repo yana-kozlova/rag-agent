@@ -13,9 +13,55 @@
  * `lib/wellbeing/scale.ts`. Nothing here imports anything.
  */
 
-export const TABLE_COLUMN_TYPES = ['text', 'number', 'date', 'boolean', 'email', 'url'] as const;
+export const TABLE_COLUMN_TYPES = [
+  'text',
+  'number',
+  'date',
+  'boolean',
+  'email',
+  'url',
+  'file',
+] as const;
+
+/** What each type is called in a picker. Here so the list stays one list. */
+export const TABLE_COLUMN_TYPE_LABELS: Record<TableColumnType, string> = {
+  text: 'Text',
+  number: 'Number',
+  date: 'Date',
+  boolean: 'Boolean',
+  email: 'Email',
+  url: 'URL',
+  file: 'File',
+};
 
 export type TableColumnType = (typeof TABLE_COLUMN_TYPES)[number];
+
+/**
+ * What a `file` cell holds: a resource, by id, plus the name to print.
+ *
+ * The cell is a *resource*, not a blob URL, and that is the whole design. An
+ * upload already becomes a resource — extracted to text by `unpdf`/`mammoth`,
+ * described by a vision model when it is a photo, chunked and embedded — so a
+ * file attached to a row is findable by `getInformation` the same day, and the
+ * bytes are stored by exactly one path in this app. Storing a bare URL in the
+ * cell instead would give a file that nothing can search, which is the mistake
+ * "images are stored as text" exists to prevent.
+ *
+ * The name is kept beside the id rather than looked up: a table renders without
+ * a join, `convertRowToText` embeds "аналіз крові.pdf" rather than an id that
+ * means nothing to a search, and a resource later deleted from the Knowledge
+ * Base leaves a cell that still says what was attached instead of an empty one.
+ */
+export type TableFile = {
+  resourceId: string;
+  name: string;
+};
+
+export function isTableFile(value: unknown): value is TableFile {
+  if (typeof value !== 'object' || value === null) return false;
+  const file = value as Partial<TableFile>;
+  return typeof file.resourceId === 'string' && file.resourceId !== '' && typeof file.name === 'string';
+}
 
 /**
  * The part of a column definition anything outside the editor needs: which
@@ -64,6 +110,15 @@ export function coerceValue(value: unknown, type: TableColumnType): unknown {
       const d = new Date(raw);
       return isNaN(d.getTime()) ? raw : d.toISOString();
     }
+    // Only an actual attachment. Everything else that writes a row — the
+    // model through `addTableRows`, a quick action, the add-row form — arrives
+    // as text, and text is not a file: a string here would render as a link to
+    // a resource that does not exist. Rejecting it is what makes a `file`
+    // column safe to expose to `createTable` at all, since a model can describe
+    // an attachment and can never make one.
+    case 'file':
+      return isTableFile(value) ? { resourceId: value.resourceId, name: value.name } : null;
+
     default:
       return String(value);
   }
@@ -160,6 +215,13 @@ export function formatCellValue(value: unknown, type: TableColumnType): string {
   if (type === 'boolean') {
     const read = coerceValue(value, 'boolean');
     return read === null ? String(value) : read ? 'Yes' : 'No';
+  }
+
+  // The name, which is the part worth reading — and the part worth embedding:
+  // `convertRowToText` runs through here, so a row with an attachment is found
+  // by its file name rather than by an id nobody will ever search for.
+  if (type === 'file') {
+    return isTableFile(value) ? value.name : '';
   }
 
   if (type === 'date') {

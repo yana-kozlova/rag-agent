@@ -61,6 +61,8 @@ export const addTableRowsTool = {
 
     Where the values come from matters. Copying rows out of another table means reading it with getTableRows first; never retype rows out of a getInformation result or out of the conversation. A search returns whatever is semantically near the question — that is how a note about the user's own headache pill was written into the dog's medication table as a row that had never existed.
 
+    A "file" column holds an attachment the user uploads on /tables/<id>. You cannot write one — anything you send for it is discarded — so leave it out and say the file is attached there, never that you attached it.
+
     The result reports rows that repeat one the table already had. Pass that on rather than reporting a clean save.`,
   inputSchema: z.object({
     tableId: z.string().optional().describe('The ID of the target table (preferred if known)'),

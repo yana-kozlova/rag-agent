@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createUserTable } from '@/lib/actions/user-tables';
 import Link from 'next/link';
 import type { TableColumn } from '@/lib/db/schema/user-tables';
+import { TABLE_COLUMN_TYPES, TABLE_COLUMN_TYPE_LABELS } from '@/lib/utils/table-columns';
 
 export default function NewTablePage() {
   const router = useRouter();
@@ -154,12 +155,11 @@ export default function NewTablePage() {
                       value={column.type}
                       onChange={(e) => updateColumn(column.id, { type: e.target.value as TableColumn['type'] })}
                     >
-                      <option value="text">Text</option>
-                      <option value="number">Number</option>
-                      <option value="date">Date</option>
-                      <option value="boolean">Boolean</option>
-                      <option value="email">Email</option>
-                      <option value="url">URL</option>
+                      {TABLE_COLUMN_TYPES.map((type) => (
+                        <option key={type} value={type}>
+                          {TABLE_COLUMN_TYPE_LABELS[type]}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div className="col-span-2">

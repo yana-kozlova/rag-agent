@@ -1,8 +1,11 @@
 import { z } from 'zod';
 import { getSessionOrNull } from '@/lib/utils/auth';
 import { createUserTable } from '@/lib/actions/user-tables';
-
-const COLUMN_TYPES = ['text', 'number', 'date', 'boolean', 'email', 'url'] as const;
+// The one list. This file kept a hand-written copy of it, which is the drift
+// `lib/utils/table-columns.ts` was created to end and which reappeared here the
+// moment a type was added: a `file` column the user can make and the model
+// cannot would have been invisible to `createTable` for no reason anyone chose.
+import { TABLE_COLUMN_TYPES } from '@/lib/utils/table-columns';
 
 function slugify(name: string): string {
   return name
@@ -33,7 +36,11 @@ export const createTableTool = {
       .array(
         z.object({
           name: z.string().min(1).describe('Human-readable column name (e.g. "Author", "Due Date")'),
-          type: z.enum(COLUMN_TYPES).describe('Column data type'),
+          type: z
+            .enum(TABLE_COLUMN_TYPES)
+            .describe(
+              'Column data type. "file" holds an attachment the user uploads on the table page — a scan, a PDF, a photo of a prescription. Create one when the table is about documents, but never try to fill it: you cannot upload, and any text written into a file column is discarded.'
+            ),
           required: z.boolean().optional().describe('Whether this column is required'),
         })
       )
@@ -47,7 +54,7 @@ export const createTableTool = {
   }: {
     title: string;
     description?: string;
-    columns: Array<{ name: string; type: typeof COLUMN_TYPES[number]; required?: boolean }>;
+    columns: Array<{ name: string; type: (typeof TABLE_COLUMN_TYPES)[number]; required?: boolean }>;
   }) => {
     const session = await getSessionOrNull();
     if (!session?.user?.id) {

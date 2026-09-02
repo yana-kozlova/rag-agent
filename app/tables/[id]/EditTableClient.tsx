@@ -435,6 +435,12 @@ export default function EditTableClient({
             <tr className="bg-base-200">
               {table.columns.map((col) => (
                 <td key={col.id}>
+                  {/* An attachment needs a row to hang on, and this row does not
+                      exist yet. Rather than a text box whose contents `coerceValue`
+                      would drop on the floor, the cell says where the file goes. */}
+                  {col.type === 'file' ? (
+                    <span className="text-xs text-base-content/40">Attach after adding</span>
+                  ) : (
                   <input
                     type={col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}
                     className="input input-bordered input-sm w-full"
@@ -449,6 +455,7 @@ export default function EditTableClient({
                     }}
                     required={col.required}
                   />
+                  )}
                 </td>
               ))}
               <td>

@@ -271,3 +271,27 @@ describe('the name on the button', () => {
     expect(label).toBe('у відповідності з призначенням лікаря…');
   });
 });
+
+describe('attachments are never part of a routine', () => {
+  it('leaves a file column out of the template it offers', () => {
+    const columns = [
+      { id: 'date', name: 'Дата', type: 'date' as const },
+      { id: 'med', name: 'Ліки', type: 'text' as const },
+      { id: 'scan', name: 'Скан', type: 'file' as const },
+    ];
+
+    const rows = ['2026-09-01', '2026-09-02', '2026-09-03'].map((day) => ({
+      rowData: {
+        date: day,
+        med: 'апоквель',
+        scan: { resourceId: `res-${day}`, name: `${day}.pdf` },
+      },
+      createdAt: new Date(`${day}T09:00:00Z`),
+    }));
+
+    const found = detectRepeatingRow(columns, rows);
+
+    expect(found).not.toBeNull();
+    expect(found!.fields.map((f) => f.columnId)).toEqual(['date', 'med']);
+  });
+});

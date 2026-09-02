@@ -17,6 +17,7 @@ import {
 } from '@/lib/db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import { generateEmbeddings } from '@/lib/ai/embedding';
+import { formatCellValue } from '@/lib/utils/table-columns';
 import { embeddingCache } from '@/lib/ai/embedding-cache';
 import { embeddings as embeddingsTable } from '@/lib/db/schema/embeddings';
 import { resources } from '@/lib/db/schema/resources';
@@ -168,7 +169,11 @@ const convertRowToText = (rowData: Record<string, any>, columns: TableColumn[]):
   for (const column of columns) {
     const value = rowData[column.id];
     if (value !== null && value !== undefined && value !== '') {
-      const valueStr = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      // Through the column's own formatter, so an attachment is embedded as
+      // "аналіз крові.pdf" and not as `{"resourceId":"abc",...}`. A cell whose
+      // JSON was embedded put an id into the vectors and the file name nowhere,
+      // which is the row failing to be findable by the one word it is about.
+      const valueStr = formatCellValue(value, column.type) || String(value);
       parts.push(`${column.name}: ${valueStr}`);
     }
   }

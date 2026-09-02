@@ -100,3 +100,39 @@ describe('formatCellValue', () => {
     expect(formatCellValue(coerceValue('37,2', 'number'), 'number')).toBe('37.2');
   });
 });
+
+/**
+ * A file cell holds a resource, and only ever a resource.
+ *
+ * Every other write path in this app arrives as text — the model through
+ * `addTableRows`, a quick-action press, the add-row form — and a string here
+ * would render as a link to a resource that does not exist. That is what makes
+ * a `file` column safe to offer to `createTable`: the model can create one and
+ * cannot forge a value for it.
+ */
+describe('file cells', () => {
+  const attached = { resourceId: 'res-1', name: 'аналіз крові.pdf' };
+
+  it('keeps an attachment', () => {
+    expect(coerceValue(attached, 'file')).toEqual(attached);
+  });
+
+  it('drops anything a model or a form could type into one', () => {
+    expect(coerceValue('аналіз крові.pdf', 'file')).toBeNull();
+    expect(coerceValue({ name: 'no id' }, 'file')).toBeNull();
+    expect(coerceValue({ resourceId: '', name: 'empty id' }, 'file')).toBeNull();
+    expect(coerceValue(42, 'file')).toBeNull();
+  });
+
+  it('keeps only the two fields the cell is, whatever else was sent', () => {
+    expect(coerceValue({ ...attached, secret: 'x' }, 'file')).toEqual(attached);
+  });
+
+  // What `convertRowToText` embeds. An id in the vectors and the file name
+  // nowhere is the row failing to be findable by the one word it is about.
+  it('reads back as the file name, which is what gets embedded', () => {
+    expect(formatCellValue(attached, 'file')).toBe('аналіз крові.pdf');
+    expect(formatCellValue(null, 'file')).toBe('');
+    expect(formatCellValue('not a file', 'file')).toBe('');
+  });
+});
