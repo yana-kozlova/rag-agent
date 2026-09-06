@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { accounts, users } from '@/lib/db/schema/auth';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { OAuth2Client } from 'google-auth-library';
 import { GoogleCalendarService } from '@/lib/services/calendar';
 import { classifyGoogleTokenFailure, type GoogleTokenResult } from '@/lib/auth/google-access';
@@ -19,46 +19,79 @@ import { DEFAULT_TIMEZONE, isValidTimezone } from './timezone';
  * `getAccessTokenForUser` below and gets the token or nothing.
  */
 export async function getAccessTokenResult(userId: string): Promise<GoogleTokenResult> {
-  try {
-    const accountRows = await db
-      .select()
-      .from(accounts)
-      .where(and(eq(accounts.userId, userId), eq(accounts.provider, 'google')))
-      .limit(1);
+  // Every linked Google account, freshest first. One user can have more than one
+  // `google` row — two Google identities behind one login is ordinary — and a
+  // sign-in only ever refreshes the one that signed in. Taking `limit(1)` off an
+  // unordered read picked between them arbitrarily, so an account whose
+  // permission had been re-granted still lost its briefing whenever the planner
+  // handed back the other row. See the same fix in `lib/auth/google-token.ts`.
+  const rows = await db
+    .select()
+    .from(accounts)
+    .where(and(eq(accounts.userId, userId), eq(accounts.provider, 'google')))
+    .orderBy(sql`${accounts.expires_at} desc nulls last`);
 
-    const account = accountRows[0];
-    if (!account?.refresh_token) return { ok: false, reason: 'missing' };
+  const candidates = rows.filter((row) => !!row.refresh_token);
+  if (candidates.length === 0) return { ok: false, reason: 'missing' };
 
+  const now = Math.floor(Date.now() / 1000);
+  // Only "every account refused us" proves the permission is gone; one dead
+  // grant beside one Google outage must be reported as "wait", never as "grant
+  // access again". Same rule as the web path.
+  let sawUnavailable = false;
+
+  for (const account of candidates) {
     // Reuse the stored token while it has more than 5 minutes left.
-    const now = Math.floor(Date.now() / 1000);
     if (account.access_token && account.expires_at && account.expires_at > now + 300) {
       return { ok: true, token: account.access_token };
     }
 
-    const oauth2Client = new OAuth2Client(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      'postmessage'
-    );
-    oauth2Client.setCredentials({ refresh_token: account.refresh_token });
+    try {
+      const oauth2Client = new OAuth2Client(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET,
+        'postmessage'
+      );
+      oauth2Client.setCredentials({ refresh_token: account.refresh_token as string });
 
-    const tokenResponse = await oauth2Client.getAccessToken();
-    if (!tokenResponse.token) return { ok: false, reason: 'unavailable' };
+      const tokenResponse = await oauth2Client.getAccessToken();
+      if (!tokenResponse.token) {
+        sawUnavailable = true;
+        continue;
+      }
 
-    const expiresAt = tokenResponse.res?.data?.expires_in
-      ? now + tokenResponse.res.data.expires_in
-      : now + 3600;
+      const expiresAt = tokenResponse.res?.data?.expires_in
+        ? now + tokenResponse.res.data.expires_in
+        : now + 3600;
 
-    await db
-      .update(accounts)
-      .set({ access_token: tokenResponse.token, expires_at: expiresAt })
-      .where(and(eq(accounts.userId, userId), eq(accounts.provider, 'google')));
+      // Scoped to the account the token was actually minted from. Without the
+      // `providerAccountId` this wrote it to *every* google row the user has, so
+      // a dead account was stamped with a live token and a fresh expiry — and
+      // then satisfied the reuse branch above on the next run, handing out a
+      // token minted for a different Google identity as if it were its own.
+      await db
+        .update(accounts)
+        .set({ access_token: tokenResponse.token, expires_at: expiresAt })
+        .where(
+          and(
+            eq(accounts.userId, userId),
+            eq(accounts.provider, 'google'),
+            eq(accounts.providerAccountId, account.providerAccountId)
+          )
+        );
 
-    return { ok: true, token: tokenResponse.token };
-  } catch (error) {
-    console.error(`[push/google-token] Error for user ${userId}:`, error);
-    return { ok: false, reason: classifyGoogleTokenFailure(error) };
+      return { ok: true, token: tokenResponse.token };
+    } catch (error) {
+      const reason = classifyGoogleTokenFailure(error);
+      console.error(
+        `[push/google-token] Error for user ${userId}, google:${account.providerAccountId} (${reason}):`,
+        error
+      );
+      if (reason === 'unavailable') sawUnavailable = true;
+    }
   }
+
+  return { ok: false, reason: sawUnavailable ? 'unavailable' : 'expired' };
 }
 
 export async function getAccessTokenForUser(userId: string): Promise<string | null> {

@@ -1,5 +1,5 @@
 import { OAuth2Client } from 'google-auth-library';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { accounts } from '@/lib/db/schema';
 import { env } from '@/lib/env.mjs';
@@ -41,7 +41,7 @@ export async function persistGoogleAccount(params: {
   scope?: string | null;
 }): Promise<void> {
   try {
-    await db
+    const written = await db
       .update(accounts)
       .set({
         // Google returns a refresh token only when it re-prompts for consent.
@@ -57,7 +57,19 @@ export async function persistGoogleAccount(params: {
           eq(accounts.provider, 'google'),
           eq(accounts.providerAccountId, params.providerAccountId),
         ),
+      )
+      .returning({ id: accounts.providerAccountId });
+
+    // An UPDATE that matches nothing is not an error to Postgres, so without
+    // this a missing account row is completely silent: the user re-consents, the
+    // web app works off the session cookie, and Telegram and cron go on failing
+    // forever with nothing anywhere connecting the two.
+    if (written.length === 0) {
+      console.warn(
+        `[google-token] no account row for google:${params.providerAccountId} — ` +
+          'session-less callers (Telegram, cron) will have no refresh token'
       );
+    }
 
     // A fresh sign-in invalidates whatever we minted from the previous one.
     cache.clear();
@@ -92,46 +104,83 @@ export async function mintGoogleAccessToken(userId: string): Promise<GoogleToken
     return { ok: true, token: cached.token };
   }
 
+  // Every Google account linked to this user, freshest first — not one row and
+  // whatever Postgres felt like returning.
+  //
+  // A user can have more than one `google` account row: two Google identities
+  // linked to one login is ordinary, and `persistGoogleAccount` only ever
+  // refreshes the one that just signed in. Read with `limit(1)` and no ordering,
+  // this picked between them arbitrarily, so re-granting access fixed the web
+  // (which holds its token in the session cookie) and left Telegram and cron
+  // minting from whichever row the planner happened to hand back — the dead one
+  // half the time, permanently, with the user having done everything right.
   const rows = await db
-    .select({ refreshToken: accounts.refresh_token })
+    .select({
+      providerAccountId: accounts.providerAccountId,
+      refreshToken: accounts.refresh_token,
+    })
     .from(accounts)
     .where(and(eq(accounts.userId, userId), eq(accounts.provider, 'google')))
-    .limit(1);
+    .orderBy(sql`${accounts.expires_at} desc nulls last`);
 
-  const refreshToken = rows[0]?.refreshToken;
-  if (!refreshToken) {
+  const candidates = rows.filter(
+    (row): row is { providerAccountId: string; refreshToken: string } => !!row.refreshToken
+  );
+
+  if (candidates.length === 0) {
     // Signed up before `access_type: offline` was set, or revoked access.
     // Re-consenting on the web writes a new account row and fixes it.
     console.warn(`[google-token] no refresh token stored for user ${userId}`);
     return { ok: false, reason: 'missing' };
   }
 
-  try {
-    const client = new OAuth2Client(
-      env.GOOGLE_CLIENT_ID,
-      env.GOOGLE_CLIENT_SECRET,
-      'postmessage',
-    );
-    client.setCredentials({ refresh_token: refreshToken });
+  // Whether any account failed for a reason that is not about the user's
+  // permission. One dead grant beside one Google outage must not be reported as
+  // "grant access again": that is the message this codebase spends every time it
+  // goes out over something the user cannot affect, and after two of those it is
+  // not read at all. Only "every account refused us" is proof the permission
+  // is gone.
+  let sawUnavailable = false;
 
-    const response = await client.getAccessToken();
-    const token = response.token;
-    // Google answered without refusing and without a token: not the user's
-    // permission, so not something they can repair by re-consenting.
-    if (!token) return { ok: false, reason: 'unavailable' };
+  for (const candidate of candidates) {
+    try {
+      const client = new OAuth2Client(
+        env.GOOGLE_CLIENT_ID,
+        env.GOOGLE_CLIENT_SECRET,
+        'postmessage',
+      );
+      client.setCredentials({ refresh_token: candidate.refreshToken });
 
-    const expiresIn = response.res?.data?.expires_in;
-    cache.set(userId, {
-      token,
-      expiresAt: Date.now() + (typeof expiresIn === 'number' ? expiresIn * 1000 : 3600_000),
-    });
+      const response = await client.getAccessToken();
+      const token = response.token;
+      // Google answered without refusing and without a token: not the user's
+      // permission, so not something they can repair by re-consenting.
+      if (!token) {
+        sawUnavailable = true;
+        continue;
+      }
 
-    return { ok: true, token };
-  } catch (error) {
-    console.error('[google-token] refresh failed:', error);
-    cache.delete(userId);
-    return { ok: false, reason: classifyGoogleTokenFailure(error) };
+      const expiresIn = response.res?.data?.expires_in;
+      cache.set(userId, {
+        token,
+        expiresAt: Date.now() + (typeof expiresIn === 'number' ? expiresIn * 1000 : 3600_000),
+      });
+
+      return { ok: true, token };
+    } catch (error) {
+      const reason = classifyGoogleTokenFailure(error);
+      // Named, because "refresh failed" for a user with two linked accounts says
+      // nothing about which one to go and repair.
+      console.error(
+        `[google-token] refresh failed for google:${candidate.providerAccountId} (${reason}):`,
+        error
+      );
+      if (reason === 'unavailable') sawUnavailable = true;
+    }
   }
+
+  cache.delete(userId);
+  return { ok: false, reason: sawUnavailable ? 'unavailable' : 'expired' };
 }
 
 export async function getGoogleAccessToken(userId: string): Promise<string | null> {
