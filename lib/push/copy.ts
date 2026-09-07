@@ -84,6 +84,12 @@ export type NotificationCopy = {
     late: (days: number) => string;
     dueToday: string;
     dueTomorrow: string;
+    /** A task the user committed to today, printed only when it is nowhere else. */
+    committedToday: string;
+    /** Tail of the list: open tasks carrying no deadline and no day of work. */
+    someday: (count: number) => string;
+    /** Needs the extractor read out of notes and nobody has accepted or dismissed. */
+    fromNotes: (count: number) => string;
     /** Asked when a deadline has passed and nothing has moved it. */
     overdueQuestion: string;
     done: string;
@@ -138,6 +144,9 @@ const UK: NotificationCopy = {
     late: (d) => `на ${d} ${pluralUk(d, 'день', 'дні', 'днів')} пізніше`,
     dueToday: 'сьогодні останній день',
     dueTomorrow: 'завтра останній день',
+    committedToday: 'заплановано на сьогодні',
+    someday: (n) => `+ ${n} без дати`,
+    fromNotes: (n) => `📝 Схоже на задачі в нотатках: ${n}`,
     overdueQuestion: 'Що з простроченим?',
     done: '✓ Зроблено',
     tomorrow: '→ Завтра',
@@ -196,6 +205,9 @@ const EN: NotificationCopy = {
     late: (d) => `${d} ${d === 1 ? 'day' : 'days'} late`,
     dueToday: 'due today',
     dueTomorrow: 'due tomorrow',
+    committedToday: 'planned for today',
+    someday: (n) => `+ ${n} without a date`,
+    fromNotes: (n) => `📝 Looks like tasks in your notes: ${n}`,
     overdueQuestion: 'What about the overdue ones?',
     done: '✓ Done',
     tomorrow: '→ Tomorrow',

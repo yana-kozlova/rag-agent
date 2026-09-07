@@ -27,6 +27,28 @@ export type BriefingTask = {
   daysLate: number;
   /** Whether the deadline is today or tomorrow, when it has not passed yet. */
   due: 'today' | 'tomorrow' | null;
+  /**
+   * A day of work the user committed to today, as opposed to a deadline.
+   *
+   * Carried only when the task is not already in the schedule above — see
+   * `outstandingTasksForBriefing`. Disjoint from `daysLate` and `due` by
+   * construction, since `bucketTasks` files an overdue task as overdue whatever
+   * day it was committed to.
+   */
+  committed?: boolean;
+};
+
+/**
+ * The two parts of the morning that are worth a number rather than a list.
+ *
+ * Both are piles that do not move day to day, so lines would be wallpaper
+ * within a week while a count still says whether the pile is growing.
+ */
+export type BriefingCounts = {
+  /** Open tasks with no deadline and no day of work. */
+  someday?: number;
+  /** Undecided needs the extractor found in notes. */
+  fromNotes?: number;
 };
 
 export type Briefing = {
@@ -147,22 +169,30 @@ const MAX_TASK_LINES = 5;
  * more here than anywhere: a briefing that says a deadline passed two days ago
  * when it passed five is worse than one that says nothing.
  *
- * A task already committed to today is deliberately absent. It has a calendar
- * event, so it is already in the schedule above, and printing it again would
- * make the same commitment appear twice under two different headings.
+ * A task committed to today is normally absent: it has a calendar event, so it
+ * is already in the schedule above, and printing it again would make one
+ * commitment appear twice under two headings. Normally — the caller decides,
+ * because that reasoning holds only while there *is* a schedule to be in.
  */
-function taskLines(tasks: BriefingTask[], copy: NotificationCopy): string {
-  if (tasks.length === 0) return '';
+function taskLines(
+  tasks: BriefingTask[],
+  /** Open tasks with no deadline and no day of work — a count, never lines. */
+  someday: number,
+  copy: NotificationCopy
+): string {
+  if (tasks.length === 0 && someday === 0) return '';
 
   const lines = tasks.slice(0, MAX_TASK_LINES).map((task) => {
     const when =
       task.daysLate > 0
         ? copy.tasks.late(task.daysLate)
-        : task.due === 'today'
-          ? copy.tasks.dueToday
-          : task.due === 'tomorrow'
-            ? copy.tasks.dueTomorrow
-            : null;
+        : task.committed
+          ? copy.tasks.committedToday
+          : task.due === 'today'
+            ? copy.tasks.dueToday
+            : task.due === 'tomorrow'
+              ? copy.tasks.dueTomorrow
+              : null;
 
     return `• ${truncate(task.title)}${when ? ` — ${when}` : ''}`;
   });
@@ -170,7 +200,31 @@ function taskLines(tasks: BriefingTask[], copy: NotificationCopy): string {
   const hidden = tasks.length - Math.min(tasks.length, MAX_TASK_LINES);
   if (hidden > 0) lines.push(copy.briefing.more(hidden));
 
+  // A tail rather than lines of its own: nothing in it is due, so naming them
+  // every morning would be a list that never changes and stops being read. The
+  // number is there to say the pile exists and is growing.
+  if (someday > 0) lines.push(copy.tasks.someday(someday));
+
   return `${copy.tasks.header}:\n${lines.join('\n')}`;
+}
+
+/**
+ * Needs the extractor read out of notes that nobody has accepted or dismissed.
+ *
+ * A count and never the titles, deliberately. The number is a fact — that many
+ * undecided readings exist, and `/tasks` will show exactly them — while *which*
+ * of them is really a task is a model's guess, liberal by the same design that
+ * puts a greeting in the entity graph. Everything else in this briefing is
+ * assembled from facts, and printing "подати заяву до 17.08" beside
+ * "хочу колись вивчити React" as though the two were alike would put a guess in
+ * among them wearing the same clothes.
+ *
+ * Its own block rather than a tail of the task list, because it is not the task
+ * list: these are notes, and the block still goes out on a morning when nothing
+ * at all is due.
+ */
+function suggestionLine(count: number, copy: NotificationCopy): string {
+  return count > 0 ? copy.tasks.fromNotes(count) : '';
 }
 
 function truncate(title: string): string {
@@ -222,11 +276,14 @@ export async function generateBriefing(
   /** Overdue tasks and deadlines landing today or tomorrow. */
   taskList: BriefingTask[] = [],
   /** Only consulted when `events` is null — why it is. */
-  problem: CalendarProblem = 'unreadable'
+  problem: CalendarProblem = 'unreadable',
+  /** Two things worth a number and not a list. Absent means none. */
+  counts: BriefingCounts = {}
 ): Promise<Briefing> {
   const copy = copyFor(locale);
   const datesBlock = dateLines(dates, copy);
-  const tasksBlock = taskLines(taskList, copy);
+  const tasksBlock = taskLines(taskList, counts.someday ?? 0, copy);
+  const notesBlock = suggestionLine(counts.fromNotes ?? 0, copy);
 
   /** Blank-line-separated, skipping the blocks that had nothing to say. */
   const join = (...blocks: string[]) => blocks.filter(Boolean).join('\n\n');
@@ -246,7 +303,7 @@ export async function generateBriefing(
 
     return {
       title: copy.briefing.morningTitle,
-      body: join(why, datesBlock, tasksBlock),
+      body: join(why, datesBlock, tasksBlock, notesBlock),
       eventCount: 0,
     };
   }
@@ -258,12 +315,12 @@ export async function generateBriefing(
   if (eventCount === 0) {
     return {
       title: copy.briefing.morningTitle,
-      body: join(copy.briefing.nothingScheduled, datesBlock, tasksBlock),
+      body: join(copy.briefing.nothingScheduled, datesBlock, tasksBlock, notesBlock),
       eventCount: 0,
     };
   }
 
-  const schedule = join(scheduleLines(events, tz, copy), datesBlock, tasksBlock);
+  const schedule = join(scheduleLines(events, tz, copy), datesBlock, tasksBlock, notesBlock);
 
   return { title: copy.briefing.thingsToday(eventCount), body: schedule, eventCount };
 }

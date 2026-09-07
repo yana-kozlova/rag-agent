@@ -703,6 +703,7 @@ export async function briefingTasks(userId: string, horizonDays: number): Promis
   overdue: Task[];
   due: Task[];
   scheduled: Task[];
+  someday: Task[];
 }> {
   const { today } = await todayFor(userId);
   const open = await listTasks(userId);
@@ -717,5 +718,8 @@ export async function briefingTasks(userId: string, horizonDays: number): Promis
     // day yet — the ones still needing a decision.
     due: buckets.upcoming.filter((t) => t.dueOn !== null && t.dueOn <= horizon && !t.scheduledFor),
     scheduled: buckets.today,
+    // Open, and carrying neither a deadline nor a day of work. Nothing about
+    // them is urgent, which is why they are a count and never lines.
+    someday: buckets.someday,
   };
 }

@@ -11,11 +11,12 @@ import {
   fetchTodayEvents,
   type BriefingDate,
   type BriefingEvent,
+  type BriefingCounts,
   type BriefingTask,
   type CalendarProblem,
 } from '@/lib/push/briefing';
 import { upcomingTimeline } from '@/lib/actions/timeline';
-import { briefingTasks } from '@/lib/actions/tasks';
+import { briefingTasks, listTaskSuggestions } from '@/lib/actions/tasks';
 import { BRIEFING_HORIZON_DAYS } from '@/lib/timeline/timeline';
 import { BRIEFING_HORIZON_DAYS as TASK_HORIZON_DAYS, daysLate } from '@/lib/tasks/tasks';
 import { fetchDayNotes } from '@/lib/push/day-notes';
@@ -52,21 +53,48 @@ async function upcomingDatesForBriefing(userId: string): Promise<BriefingDate[]>
  * Same contract as `upcomingDatesForBriefing` and for the same reason: a failure
  * reading tasks costs the tasks block, never the briefing.
  *
- * Only overdue tasks and deadlines landing inside the horizon are carried.
- * Anything already committed to today has a calendar event and is therefore
- * already in the schedule above — listing it here as well would print one
- * commitment twice under two headings.
+ * Overdue tasks and deadlines landing inside the horizon always. A task the user
+ * committed to *today* is normally left out, because committing writes a Google
+ * event and it is therefore already in the schedule above — printing it here as
+ * well would show one commitment twice under two headings.
+ *
+ * `inSchedule` is what makes that conditional rather than absolute, and it had
+ * to be. The exclusion assumes there is a schedule for the task to be in, and
+ * twice there is not: when the calendar could not be read at all, and when the
+ * task carries no `google_event_id` because writing the event failed. In both
+ * cases the day's committed work was printed *nowhere* — dropped from the tasks
+ * block as a duplicate of a list that did not exist. That is the exact failure
+ * this block was added to prevent, one step in: tasks live in our own table
+ * precisely so a broken calendar cannot swallow them, and then a broken calendar
+ * swallowed them anyway.
  */
-async function outstandingTasksForBriefing(userId: string): Promise<BriefingTask[]> {
+async function outstandingTasksForBriefing(
+  userId: string,
+  /** Whether today's schedule was actually readable and will be printed. */
+  inSchedule: boolean
+): Promise<{ tasks: BriefingTask[]; someday: number }> {
   try {
-    const { today, overdue, due } = await briefingTasks(userId, TASK_HORIZON_DAYS);
+    const { today, overdue, due, scheduled, someday } = await briefingTasks(
+      userId,
+      TASK_HORIZON_DAYS
+    );
 
-    return [
+    // A commitment nothing else will show this morning.
+    const unlisted = scheduled.filter((task) => !inSchedule || !task.googleEventId);
+
+    const tasks: BriefingTask[] = [
       ...overdue.map((task) => ({
         id: task.id,
         title: task.title,
         daysLate: daysLate(task.dueOn, today),
         due: null,
+      })),
+      ...unlisted.map((task) => ({
+        id: task.id,
+        title: task.title,
+        daysLate: 0,
+        due: null,
+        committed: true,
       })),
       ...due.map((task) => ({
         id: task.id,
@@ -75,9 +103,28 @@ async function outstandingTasksForBriefing(userId: string): Promise<BriefingTask
         due: (task.dueOn === today ? 'today' : 'tomorrow') as 'today' | 'tomorrow',
       })),
     ];
+
+    return { tasks, someday: someday.length };
   } catch (error) {
     console.error('[push/briefing] Reading tasks failed (non-fatal):', error);
-    return [];
+    return { tasks: [], someday: 0 };
+  }
+}
+
+/**
+ * How many needs are sitting in notes undecided, or none.
+ *
+ * The same number `/tasks` offers, because it is the same call with the same
+ * default limit — a briefing quoting a count the page then contradicts is worse
+ * than no count. Degrades to zero on its own, like the two reads above it: a
+ * failure here must cost one line and never the morning.
+ */
+async function suggestionCountForBriefing(userId: string): Promise<number> {
+  try {
+    return (await listTaskSuggestions(userId)).length;
+  } catch (error) {
+    console.error('[push/briefing] Reading task suggestions failed (non-fatal):', error);
+    return 0;
   }
 }
 
@@ -175,9 +222,27 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
 
   // Outstanding work, from our own table rather than Google — so a broken
   // calendar costs the schedule and never the deadline that passed yesterday.
-  const outstanding = await outstandingTasksForBriefing(userId);
+  // `events !== null` is what tells it whether today's committed work is already
+  // being printed above or has to be carried here.
+  const outstanding = await outstandingTasksForBriefing(userId, events !== null);
 
-  const briefing = await generateBriefing(events, tz, u.locale, dates, outstanding, problem);
+  // What the knowledge base has been quietly accumulating. `metadata.needs` is
+  // extracted from every note and lands nowhere until somebody opens `/tasks`,
+  // so without a line here the pile is invisible by construction.
+  const counts: BriefingCounts = {
+    someday: outstanding.someday,
+    fromNotes: await suggestionCountForBriefing(userId),
+  };
+
+  const briefing = await generateBriefing(
+    events,
+    tz,
+    u.locale,
+    dates,
+    outstanding.tasks,
+    problem,
+    counts
+  );
 
   const delivered = await deliverToUser(
     userId,
@@ -197,7 +262,7 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
   // briefing above them are a bot talking to itself.
   if (delivered === 'sent' && u.telegramChatId) {
     try {
-      await askAboutOverdue(u.telegramChatId, outstanding, u.locale);
+      await askAboutOverdue(u.telegramChatId, outstanding.tasks, u.locale);
     } catch (error) {
       console.error('[push/briefing] Asking about overdue tasks failed (non-fatal):', error);
     }

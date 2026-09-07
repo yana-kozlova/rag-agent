@@ -126,4 +126,86 @@ describe('the tasks block', () => {
     expect(briefing.body).toContain('To do:');
     expect(briefing.body).toContain('1 day late');
   });
+
+  it('labels a commitment as planned rather than as a deadline', async () => {
+    const briefing = await generateBriefing([], TZ, 'uk', [], [
+      task({ title: 'Подати заяву', committed: true }),
+    ]);
+
+    const line = briefing.body.split('\n').find((l) => l.startsWith('• '))!;
+    expect(line).toBe('• Подати заяву — заплановано на сьогодні');
+  });
+
+  it('lets lateness win over a commitment, since only one of them is urgent', async () => {
+    // Disjoint in practice — `bucketTasks` files an overdue task as overdue
+    // whatever day it was committed to — but the line must not print both.
+    const briefing = await generateBriefing([], TZ, 'uk', [], [
+      task({ daysLate: 2, committed: true }),
+    ]);
+
+    const line = briefing.body.split('\n').find((l) => l.startsWith('• '))!;
+    expect(line).toContain('на 2 дні пізніше');
+    expect(line).not.toContain('заплановано');
+  });
+
+  it('writes the commitment in English for an English locale', async () => {
+    const briefing = await generateBriefing([], TZ, 'en', [], [
+      task({ title: 'File the form', committed: true }),
+    ]);
+
+    expect(briefing.body).toContain('• File the form — planned for today');
+  });
+
+  it('counts the undated pile instead of listing it', async () => {
+    const briefing = await generateBriefing([], TZ, 'uk', [], [task()], 'unreadable', {
+      someday: 7,
+    });
+
+    expect(briefing.body).toContain('+ 7 без дати');
+    // A tail of the task list, under the same header — not a block of its own.
+    expect(briefing.body).toContain('Треба зробити:');
+    expect(briefing.body.trim().endsWith('+ 7 без дати')).toBe(true);
+  });
+
+  it('still names the undated pile on a morning with nothing due', async () => {
+    // The block would otherwise be empty and vanish, which is exactly the
+    // morning the number is worth reading.
+    const briefing = await generateBriefing([], TZ, 'uk', [], [], 'unreadable', { someday: 3 });
+    expect(briefing.body).toContain('+ 3 без дати');
+  });
+
+  it('says nothing about an empty pile', async () => {
+    const briefing = await generateBriefing([], TZ, 'uk', [], [task()], 'unreadable', {
+      someday: 0,
+      fromNotes: 0,
+    });
+
+    expect(briefing.body).not.toContain('без дати');
+    expect(briefing.body).not.toContain('нотатках');
+  });
+
+  it('gives the notes count a block of its own, below the tasks', async () => {
+    const briefing = await generateBriefing([], TZ, 'uk', [], [task()], 'unreadable', {
+      fromNotes: 3,
+    });
+
+    const [tasksBlock, notesBlock] = briefing.body.split('\n\n').slice(-2);
+    expect(tasksBlock).toContain('Треба зробити:');
+    expect(notesBlock).toBe('📝 Схоже на задачі в нотатках: 3');
+  });
+
+  it('goes out even when nothing at all is due, since notes are not the task list', async () => {
+    const briefing = await generateBriefing([], TZ, 'uk', [], [], 'unreadable', { fromNotes: 2 });
+    expect(briefing.body).toContain('📝 Схоже на задачі в нотатках: 2');
+  });
+
+  it('writes both counts in English for an English locale', async () => {
+    const briefing = await generateBriefing([], TZ, 'en', [], [task()], 'unreadable', {
+      someday: 4,
+      fromNotes: 1,
+    });
+
+    expect(briefing.body).toContain('+ 4 without a date');
+    expect(briefing.body).toContain('📝 Looks like tasks in your notes: 1');
+  });
 });
