@@ -1,0 +1,19 @@
+---
+paths:
+  - "lib/ai/embedding*.ts"
+  - "lib/ai/retrieval.ts"
+  - "lib/ai/tools/information/**"
+  - "lib/actions/resources.ts"
+  - "test/*retrieval*"
+  - "test/*embedding*"
+---
+
+# Retrieval and embedding
+
+**Fusion has to survive all the way to the model.** Every ranking decision retrieval makes — the two retrievers, reciprocal rank fusion, the recency tiebreak, the several phrasings `expandQuery` produces — is expressed as one number, `score`, on each row. `getInformation` used to sort its results by `similarity` and throw that number away, so the final order the model saw was pure cosine and the lexical half could only ever change which chunks were *available* for cosine to sort. It also filtered on `similarity > MIN_SIMILARITY`, which deletes a lexical-only hit by construction: a chunk holding an invoice number, a surname or a version scores low against the question because the rest of it is about something else — that is precisely why the embedding did not rank it and precisely why full-text search exists. So `similarity` stays what its name says and rides alongside `score`; `aggregateResults` keys on the chunk id and *adds* the scores each phrasing awarded, because agreement between phrasings is evidence and can only count if it accumulates; and `isRelevant` admits a lexical hit whatever its cosine. Results are then spread across sources (`MAX_PER_SOURCE`), since a long document is many chunks about one subject and ranking alone hands it every slot while the note that answers the question sits sixth.
+
+**A lexical query must not be a query for everything.** `ts_rank_cd` has no IDF — a term in every chunk is not discounted — and the terms are OR'd, so one function word puts the whole base in the candidate list ranked by how often each chunk happens to say "за", and the `LIMIT` then cuts off the chunk that actually matched. The prefix wildcard made it worse: `за:*` also matches "завтра", "заняття", "записати". `STOPWORDS` in `lib/ai/retrieval.ts` is therefore shared with `heuristicVariations` so that "not a content word" means one thing here, and `:*` is only attached where truncation actually happened — a token at or under `MIN_PREFIX_LENGTH` loses nothing to truncation, so a wildcard on it cannot reach a single inflected form ("рука:*" finds "рукав", never "руки") and adds only noise. A question with no content words left returns null, which skips the lexical retriever: there is no exact match to look for in a sentence made of grammar, and a list ranked by stopword frequency entering fusion at rank 1 is worse than no list.
+
+**`hnsw.ef_search` is the recall knob, and pgvector's default is narrower than what this asks for.** The index cannot return more rows than it looked at, so requesting `topK × 4` candidates at the default 40 draws the answer from a list barely wider than the answer. It is set per-query via `set_config(..., is_local => true)` inside a transaction, so a pooled connection is left as it was found, with the plain query standing behind it — a database whose pgvector predates the setting must lose the widening, not the whole vector half.
+
+**Embed first, write second.** `createResource` and `updateResource` generate embeddings *before* touching any row, and swap text and vectors in one transaction. The old order wrote the row, deleted the old vectors and then called OpenAI; a failure at that last step left a note that reads correctly on its page and appears in no search, permanently, with nothing retrying it. Since folding a fact into an existing dossier is now the ordinary way a note is saved, that window was not rare — and worse, `addResource` reads a failed update as "save it as a new note instead", so a merge that got that far wrote the merged content into the dossier *and* created a second note saying the same thing. Generating first is what makes that fallback correct.

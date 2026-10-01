@@ -14,3 +14,10 @@ credentials.json
 /.idea
 tsconfig.tsbuildinfo
 .vercel
+
+# Claude Code: the path-scoped rules are project documentation and are tracked;
+# everything else under .claude/ (local settings, worktrees) stays out. The
+# first line is needed because a global gitignore commonly excludes .claude/.
+!/.claude/
+/.claude/*
+!/.claude/rules/
