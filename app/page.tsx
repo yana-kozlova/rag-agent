@@ -47,6 +47,10 @@ const WeekDigest = dynamic(() => import('@/app/components/widgets/week-digest'),
   ssr: false,
   loading: () => panelSkeleton,
 });
+const UpcomingDates = dynamic(() => import('@/app/components/widgets/upcoming-dates'), {
+  ssr: false,
+  loading: () => panelSkeleton,
+});
 const RecentlySaved = dynamic(() => import('@/app/components/widgets/recently-saved'), {
   ssr: false,
   loading: () => panelSkeleton,
@@ -84,6 +88,9 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-4">
           <Panel>
             <WeekDigest />
+          </Panel>
+          <Panel>
+            <UpcomingDates />
           </Panel>
         </div>
       </div>
