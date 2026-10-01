@@ -29,6 +29,8 @@ export async function POST(req: Request) {
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     const title = formData.get('title') as string | null;
+    // The ink pad says what it is sending; nothing else sets this.
+    const handwriting = formData.get('origin') === 'ink';
 
     if (!file) {
       return NextResponse.json(
@@ -59,7 +61,8 @@ export async function POST(req: Request) {
         mimeType,
         userId,
         title,
-        caller: 'upload',
+        caller: handwriting ? 'ink' : 'upload',
+        hint: handwriting ? 'handwriting' : undefined,
       });
 
       if (!saved.ok) {
@@ -71,6 +74,9 @@ export async function POST(req: Request) {
         message: 'Image uploaded and saved successfully',
         resourceId: saved.resourceId,
         imageUrl: saved.imageUrl,
+        // What was read, so a surface can show it back while the original is
+        // still in front of the user — the Telegram photo path does the same.
+        description: saved.description,
         fileName,
         fileSize,
         mimeType,

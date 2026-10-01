@@ -1,5 +1,5 @@
 import { createResource } from '@/lib/actions/resources';
-import { describeImage } from '@/lib/ai/vision';
+import { describeImage, type ImageHint } from '@/lib/ai/vision';
 import { storeImage } from '@/lib/storage/images';
 import { getFileExtension } from '@/lib/utils/file-extraction';
 
@@ -28,6 +28,12 @@ export type SaveImageInput = {
   caption?: string | null;
   /** Tagged onto telemetry so per-surface cost stays separable. */
   caller: string;
+  /**
+   * Set when the surface knows what it is sending. A note drawn on the ink pad
+   * is transcribed rather than described, and is titled by its own first line —
+   * every one of them is otherwise called `ink-<date>.png`.
+   */
+  hint?: ImageHint;
 };
 
 export type SaveImageResult =
@@ -48,8 +54,9 @@ export async function saveImageResource({
   title,
   caption,
   caller,
+  hint,
 }: SaveImageInput): Promise<SaveImageResult> {
-  const description = await describeImage(bytes, mimeType, caller);
+  const description = await describeImage(bytes, mimeType, caller, hint);
   if (!description.ok) {
     return { ok: false, error: description.error };
   }
@@ -58,7 +65,11 @@ export async function saveImageResource({
 
   const result = await createResource({
     content: buildContent(description.text, caption),
-    title: title?.trim() || caption?.trim() || fileName,
+    title:
+      title?.trim() ||
+      caption?.trim() ||
+      (hint === 'handwriting' ? firstLine(description.text) : null) ||
+      fileName,
     metadata: {
       type: 'image',
       fileName,
@@ -67,6 +78,7 @@ export async function saveImageResource({
       fileExtension: getFileExtension(fileName),
       ...(stored ? { imageUrl: stored.url, imagePathname: stored.pathname } : {}),
       ...(caption?.trim() ? { caption: caption.trim() } : {}),
+      ...(hint === 'handwriting' ? { origin: 'ink' } : {}),
     },
   });
 
@@ -80,6 +92,18 @@ export async function saveImageResource({
     description: description.text,
     imageUrl: stored?.url ?? null,
   };
+}
+
+const MAX_INK_TITLE = 80;
+
+/** The first written line, cut at a word, for a note that has no other name. */
+function firstLine(text: string): string | null {
+  const line = text.split('\n').map((l) => l.trim()).find(Boolean);
+  if (!line) return null;
+  if (line.length <= MAX_INK_TITLE) return line;
+  const cut = line.slice(0, MAX_INK_TITLE);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > 20 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
 /**

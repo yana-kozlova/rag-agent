@@ -51,6 +51,10 @@ const UpcomingDates = dynamic(() => import('@/app/components/widgets/upcoming-da
   ssr: false,
   loading: () => panelSkeleton,
 });
+const Capture = dynamic(() => import('@/app/components/widgets/capture'), {
+  ssr: false,
+  loading: () => panelSkeleton,
+});
 const RecentlySaved = dynamic(() => import('@/app/components/widgets/recently-saved'), {
   ssr: false,
   loading: () => panelSkeleton,
@@ -67,10 +71,10 @@ function Panel({ children, className = '' }: { children: React.ReactNode; classN
 }
 
 /**
- * Three tiers, by how soon each thing matters: the day (what to do now), the
- * week beside it (what is coming), and underneath, the ways into everything
- * else. The earlier grid gave all of these equal cards, so a list of tables sat
- * level with the day's schedule.
+ * Tiers, by how soon each thing matters: the day (what to do now), the week
+ * and the dates beside it (what is coming), a place to write something down,
+ * and underneath, the ways into everything else. The earlier grid gave all of
+ * these equal cards, so a list of tables sat level with the day's schedule.
  */
 export default function DashboardPage() {
   return (
@@ -93,6 +97,12 @@ export default function DashboardPage() {
             <UpcomingDates />
           </Panel>
         </div>
+      </div>
+
+      <div className="mt-4">
+        <Panel>
+          <Capture />
+        </Panel>
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">

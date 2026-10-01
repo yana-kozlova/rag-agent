@@ -121,4 +121,22 @@ describe('saveImageResource', () => {
 
     expect(await saveImageResource(input())).toEqual({ ok: false, error: 'db down' });
   });
+
+  it('reads a note from the ink pad as handwriting and names it by its first line', async () => {
+    describeImage.mockResolvedValue({ ok: true, text: 'Купити корм Арчі\nзателефонувати ветеринару' });
+
+    await saveImageResource(input({ fileName: 'ink-2026-10-01.png', mimeType: 'image/png', hint: 'handwriting' }));
+
+    expect(describeImage).toHaveBeenCalledWith(BYTES, 'image/png', 'test', 'handwriting');
+    const resource = savedResource();
+    expect(resource.title).toBe('Купити корм Арчі');
+    expect(resource.metadata.origin).toBe('ink');
+  });
+
+  it('keeps the filename as the title of an ordinary photo', async () => {
+    await saveImageResource(input());
+
+    expect(savedResource().title).toBe('receipt.jpg');
+    expect(savedResource().metadata).not.toHaveProperty('origin');
+  });
 });

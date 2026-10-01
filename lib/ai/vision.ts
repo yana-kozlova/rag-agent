@@ -55,6 +55,28 @@ const PROMPT = [
   'Do not speculate about anything you cannot see. Do not add a preamble.',
 ].join('\n');
 
+/**
+ * Handwriting is read, not described.
+ *
+ * The general prompt opens with "one sentence naming what the image is", which
+ * for a note written with a stylus produces "A handwritten note on a white
+ * background" ahead of the words — and that sentence then leads the resource,
+ * its title and its first chunk. Someone who wrote a note wants the note back.
+ * A sketch has no words to return, so it still gets a description.
+ */
+const HANDWRITING_PROMPT = [
+  'This is a note written by hand with a stylus. Return what it says.',
+  '',
+  'Transcribe the handwriting verbatim, keeping the line breaks and the language it is written in.',
+  'Keep numbers, dates and names exactly as written. Mark a word you cannot read as [?] rather than guessing it.',
+  'If part of it is a drawing or a diagram, add one line describing it, in the language of the note.',
+  'If there is no writing at all, describe the drawing in one or two sentences in Ukrainian.',
+  'Return only the transcription. No preamble, no commentary, no quotation marks around it.',
+].join('\n');
+
+/** What kind of image is being read, when the caller knows. */
+export type ImageHint = 'handwriting';
+
 export type ImageDescription =
   | { ok: true; text: string }
   | { ok: false; error: string };
@@ -69,7 +91,8 @@ export async function describeImage(
   bytes: Buffer,
   mimeType: string,
   /** Tagged onto telemetry so per-surface cost stays separable. */
-  caller: string
+  caller: string,
+  hint?: ImageHint
 ): Promise<ImageDescription> {
   if (!isSupportedImageMimeType(mimeType)) {
     return {
@@ -88,7 +111,7 @@ export async function describeImage(
         {
           role: 'user',
           content: [
-            { type: 'text', text: PROMPT },
+            { type: 'text', text: hint === 'handwriting' ? HANDWRITING_PROMPT : PROMPT },
             { type: 'image', image: new Uint8Array(bytes), mediaType: mimeType },
           ],
         },
