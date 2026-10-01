@@ -3,6 +3,7 @@ import type { ModelMessage } from 'ai';
 import { db } from '@/lib/db';
 import { messages } from '@/lib/db/schema/chat';
 import { getOrCreateConversation } from '@/lib/chat/conversation';
+import { unlinkUnreachable } from '@/lib/utils/links';
 
 /**
  * Chat history for the Telegram surface.
@@ -45,7 +46,13 @@ export async function loadRecentTurns(
   return rows
     .reverse()
     .filter((row) => row.role === 'user' || row.role === 'assistant')
-    .map((row) => ({ role: row.role as 'user' | 'assistant', content: row.content }));
+    .map((row) => ({
+      role: row.role as 'user' | 'assistant',
+      // Replies saved before links were grounded still carry stand-ins like
+      // `https://your-link-to-the-resource/`, and replayed as the assistant's
+      // own words each one is an example to follow.
+      content: row.role === 'assistant' ? unlinkUnreachable(row.content) : row.content,
+    }));
 }
 
 export async function persistTurn(

@@ -174,6 +174,7 @@ export const extractToTableTool = {
         return {
           resourceId: r.id,
           title: r.title ?? null,
+          url: `/resources/${r.id}`,
           createdAt: r.createdAt,
           similarity: best.similarity,
           bestChunk: best.bestChunk,
@@ -187,6 +188,7 @@ export const extractToTableTool = {
       success: true,
       tableId: table.id,
       tableTitle: table.title,
+      url: `/tables/${table.id}`,
       // Strip widths/defaults — model only needs name, id, type, required for mapping
       columns: (table.columns as TableColumn[]).map((c) => ({
         id: c.id,

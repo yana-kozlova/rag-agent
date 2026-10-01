@@ -3,6 +3,7 @@ import { generateText, stepCountIs, type ModelMessage } from 'ai';
 import { tools } from '@/lib/ai/tools';
 import { env } from '@/lib/env.mjs';
 import { SYSTEM_PROMPT } from '@/app/prompts/system';
+import { groundLinks, groundsFrom } from '@/lib/ai/grounded-links';
 import { logLlmUsage } from '@/lib/ai/telemetry';
 import { getUser, type UserContext } from '@/lib/auth/context';
 import { listDirectives } from '@/lib/actions/directives';
@@ -106,8 +107,15 @@ type RunAgentOptions = {
  * For callers that cannot stream — Telegram sends whole messages, so there is
  * nothing to progressively render. Must run inside `runWithUser` unless a
  * NextAuth session is available, or every tool will fail to resolve the user.
+ *
+ * The answer's links are grounded here, as the web chat's are in its stream:
+ * one that no tool and nothing the user said supplied is reduced to its label.
  */
-export async function runAgent({ messages, caller, abortSignal }: RunAgentOptions) {
+export async function runAgent({
+  messages,
+  caller,
+  abortSignal,
+}: RunAgentOptions): Promise<{ text: string }> {
   const startedAt = Date.now();
 
   const result = await generateText({
@@ -131,5 +139,7 @@ export async function runAgent({ messages, caller, abortSignal }: RunAgentOption
     note: result.finishReason ? `finish=${result.finishReason}` : undefined,
   });
 
-  return result;
+  return {
+    text: groundLinks(result.text, groundsFrom([...messages, ...result.response.messages])),
+  };
 }

@@ -42,7 +42,7 @@ describe('renderSimpleMarkdown', () => {
   });
 
   it('opens an external link in a new tab, with the internal one left alone', () => {
-    const external = renderToStaticMarkup(renderSimpleMarkdown('[docs](https://example.com/a)'));
+    const external = renderToStaticMarkup(renderSimpleMarkdown('[docs](https://nextjs.org/docs)'));
     expect(external).toContain('target="_blank"');
     expect(external).toContain('rel="noopener noreferrer"');
 
@@ -71,9 +71,23 @@ describe('renderSimpleMarkdown', () => {
   });
 
   it('links a bare URL without swallowing the sentence it ends', () => {
-    const html = renderToStaticMarkup(renderSimpleMarkdown('Дивись https://example.com/a, там усе.'));
-    expect(html).toContain('href="https://example.com/a"');
+    const html = renderToStaticMarkup(renderSimpleMarkdown('Дивись https://nextjs.org/docs, там усе.'));
+    expect(html).toContain('href="https://nextjs.org/docs"');
     expect(html).toContain(', там усе.');
+  });
+
+  // Five replies saved before links were grounded carry exactly this, and the
+  // chat history still renders them.
+  it('does not link an address whose host cannot exist', () => {
+    for (const href of [
+      'https://your-link-to-the-resource/',
+      'https://your-link-to-the-table/',
+      'https://example.com/resources/abc',
+    ]) {
+      const html = renderToStaticMarkup(renderSimpleMarkdown(`[Деталі тут](${href})`));
+      expect(html).not.toContain('<a');
+      expect(html).toContain('Деталі тут');
+    }
   });
 
   it('renders links inside list items and alongside bold text', () => {

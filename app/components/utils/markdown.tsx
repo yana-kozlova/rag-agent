@@ -1,23 +1,26 @@
 import React from 'react';
 import Link from 'next/link';
+import { isAppPath, isReachableUrl } from '@/lib/utils/links';
 
 // Lightweight markdown renderer for headings (###), lists (- ), **bold** and links.
 
 /**
  * A destination worth turning into a link, or null.
  *
- * Three shapes qualify: an in-app path, an absolute http(s) URL, and mailto.
- * Everything else renders as its label alone — `javascript:` because it is an
- * attack, and `#<id>` because that is what the model invents when it wants to
- * point at a note and has not been given the note's real address. A link that
- * silently goes nowhere is worse than plain text: it looks clickable.
+ * Three shapes qualify: an in-app path, an absolute http(s) URL whose host can
+ * exist, and mailto. Everything else renders as its label alone — `javascript:`
+ * because it is an attack, and `#<id>` or `https://your-link-to-the-resource/`
+ * because that is what the model invents when it wants to point at a note and
+ * has not been given the note's real address. New replies are grounded before
+ * they get here (`lib/ai/grounded-links.ts`); this is for the ones saved
+ * before that, and for anything that ever slips past it. A link that silently
+ * goes nowhere is worse than plain text: it looks clickable.
  */
 function safeHref(raw: string): string | null {
   const href = raw.trim();
-  if (/^https?:\/\//i.test(href)) return href;
+  if (/^https?:\/\//i.test(href)) return isReachableUrl(href) ? href : null;
   if (/^mailto:\S+$/i.test(href)) return href;
-  // A single leading slash: an app path. `//host` is protocol-relative and off-site.
-  if (/^\/(?!\/)/.test(href)) return href;
+  if (isAppPath(href)) return href;
   return null;
 }
 

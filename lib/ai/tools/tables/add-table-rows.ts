@@ -199,6 +199,9 @@ export const addTableRowsTool = {
         : `Added ${result.count} row(s) to "${table.title}".${warning}`,
       tableId: table.id,
       tableTitle: table.title,
+      // With no address here the model pointed at the table with
+      // `https://your-link-to-the-table/`.
+      url: `/tables/${table.id}`,
       addedCount: result.count,
       skipped: rows.length - nonEmptyRows.length,
       duplicatedCount: duplicates.length,

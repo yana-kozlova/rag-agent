@@ -157,6 +157,8 @@ export const createQuickActionTool = {
       quickActionId: result.id,
       label: result.label,
       tableTitle: result.tableTitle,
+      // The button lives on its table's page.
+      url: `/tables/${table.id}`,
       asksFor: asks.map((f) => f.prompt),
     };
   },

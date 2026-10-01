@@ -86,6 +86,7 @@ export const createTableTool = {
       message: `Table "${title}" created with ${columnsWithIds.length} column(s).`,
       tableId: result.id,
       title,
+      url: `/tables/${result.id}`,
       columns: columnsWithIds.map((c) => ({ id: c.id, name: c.name, type: c.type })),
     };
   },

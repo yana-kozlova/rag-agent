@@ -136,7 +136,9 @@ export const getTableRowsTool = {
       success: true,
       tableId: table.id,
       tableTitle: table.title,
-      tableUrl: `/tables/${table.id}`,
+      // Named `url` like every other tool's address, which is the one field
+      // the prompt tells the model to link.
+      url: `/tables/${table.id}`,
       columns: columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
       // The number that answers "how many". Exact, and never the length of the
       // array beside it — reading a count off a page is the whole bug this tool

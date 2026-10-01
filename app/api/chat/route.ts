@@ -5,6 +5,7 @@ import {
 } from 'ai';
 import { z } from 'zod';
 import { agentModelName, agentOptions } from '@/lib/ai/agent';
+import { groundLinksTransform, groundsFrom } from '@/lib/ai/grounded-links';
 import { getUser } from '@/lib/auth/context';
 import { saveUserMessage } from '@/lib/middleware/save-user-message';
 import { logLlmUsage } from '@/lib/ai/telemetry';
@@ -141,11 +142,15 @@ export async function POST(req: Request) {
 
     const modelName = agentModelName();
     const streamStartedAt = Date.now();
+    const modelMessages = convertToModelMessages(processedMessages);
     const result = streamText({
       // Model, prompt, tools and step budget are shared with the Telegram
       // entry point — see lib/ai/agent.ts.
       ...(await agentOptions()),
-      messages: convertToModelMessages(processedMessages),
+      messages: modelMessages,
+      // A link survives only if the user or a tool supplied its address; the
+      // Telegram path applies the same check in `runAgent`.
+      experimental_transform: groundLinksTransform(groundsFrom(modelMessages)),
       abortSignal: (req as any).signal,
       onFinish: ({ usage, finishReason }: any) => {
         logLlmUsage({

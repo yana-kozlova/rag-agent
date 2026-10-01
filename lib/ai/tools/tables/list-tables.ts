@@ -90,6 +90,7 @@ export const listTablesTool = {
       tables: rows.map((r) => ({
         id: r.id,
         title: r.title,
+        url: `/tables/${r.id}`,
         description: r.description,
         rowCount: stats.get(r.id)?.rowCount ?? 0,
         columns: (r.columns as TableColumn[]).map((c) => ({
