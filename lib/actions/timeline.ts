@@ -95,14 +95,14 @@ type WritableRow = TimelineCandidate & {
 async function insertRows(rows: WritableRow[]): Promise<number> {
   if (rows.length === 0) return 0;
 
-  // Conflicts are the identity index: the same day, subject, kind and wording
-  // already recorded from somewhere else. Doing nothing keeps whichever row got
+  // Conflicts are the identity index: the same day, subject and wording already
+  // recorded from somewhere else, whatever kind either was filed under. Doing nothing keeps whichever row got
   // there first, which is the one with the older evidence behind it.
   //
   // The row therefore points at one note while two may support it, and deleting
   // that note takes the date with it. A `timeline_mentions` table would fix that
   // the way `entity_mentions` does for the graph; it is not here because the
-  // case needs two notes to state the same day, kind, subject *and* wording, and
+  // case needs two notes to state the same day, subject *and* wording, and
   // an unused join table is its own kind of debt. Worth revisiting if a real
   // base ever produces one.
   const written = await db
@@ -237,7 +237,6 @@ export async function recordTimelineEvent(params: {
       and(
         eq(timelineEvents.userId, params.userId),
         eq(timelineEvents.occurredOn, row.occurredOn),
-        eq(timelineEvents.kind, row.kind),
         eq(timelineEvents.subjectKey, row.subjectKey),
         sql`lower(btrim(${timelineEvents.title})) = lower(btrim(${row.title}))`
       )
@@ -475,7 +474,7 @@ export async function updateTimelineEvent(params: {
       .where(and(eq(timelineEvents.id, params.eventId), eq(timelineEvents.userId, params.userId)))
       .returning();
   } catch (error) {
-    // Edited onto the same day, kind, subject and wording as another row. The
+    // Edited onto the same day, subject and wording as another row. The
     // insert path can answer this with `onConflictDoNothing` and hand back the
     // row that was already there; an update cannot, because the user is looking
     // at a row that must either change or say why it did not.
