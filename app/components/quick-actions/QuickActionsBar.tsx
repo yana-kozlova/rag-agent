@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 
 import {
   MAX_ANSWER_LENGTH,
@@ -126,7 +125,7 @@ export default function QuickActionsBar({
         // the model, which is the other caller of that layer. The form knows
         // what it asked for, so it says it here instead.
         setToast({
-          text: blanks.length > 0 ? `Не вистачає: ${blanks.join(', ')}` : data?.error || 'Не вдалось записати',
+          text: blanks.length > 0 ? `Missing: ${blanks.join(', ')}` : data?.error || 'Could not save',
           tone: 'error',
         });
         return;
@@ -135,7 +134,7 @@ export default function QuickActionsBar({
       setOpenId(null);
       setAnswers({});
       setMissing([]);
-      // Reflect the press without a round-trip: the button's own "вже сьогодні"
+      // Reflect the press without a round-trip: the button's own "done today"
       // is the thing the user is looking at when they press it.
       setActions((prev) =>
         prev.map((a) =>
@@ -145,14 +144,14 @@ export default function QuickActionsBar({
         )
       );
       setToast({
-        text: data.summary ? `${action.label} · ${data.summary}` : `Записала: ${action.label}`,
+        text: data.summary ? `${action.label} · ${data.summary}` : `Saved: ${action.label}`,
         tone: 'success',
         undo: { actionId: action.id, rowId: data.rowId },
       });
       onWrote?.();
       window.dispatchEvent(new CustomEvent('dashboard:resources-changed'));
     } catch {
-      setToast({ text: 'Не вдалось записати', tone: 'error' });
+      setToast({ text: 'Could not save', tone: 'error' });
     } finally {
       setBusyId(null);
     }
@@ -179,8 +178,8 @@ export default function QuickActionsBar({
     const data = await res.json();
     setToast(
       data?.ok
-        ? { text: 'Скасувала', tone: 'success' }
-        : { text: data?.error || 'Не вдалось скасувати', tone: 'error' }
+        ? { text: 'Undone', tone: 'success' }
+        : { text: data?.error || 'Could not undo', tone: 'error' }
     );
     if (data?.ok) {
       load();
@@ -190,14 +189,14 @@ export default function QuickActionsBar({
   };
 
   const remove = async (action: QuickActionView) => {
-    if (!confirm(`Прибрати кнопку «${action.label}»? Записи, які вона зробила, лишаться.`)) return;
+    if (!confirm(`Remove the "${action.label}" button? The rows it wrote will stay.`)) return;
     const res = await fetch(`/api/quick-actions/${action.id}`, { method: 'DELETE' });
     const data = await res.json();
     if (data?.ok) {
       setActions((prev) => prev.filter((a) => a.id !== action.id));
-      setToast({ text: `Кнопку «${action.label}» прибрано`, tone: 'success' });
+      setToast({ text: `Removed "${action.label}"`, tone: 'success' });
     } else {
-      setToast({ text: data?.error || 'Не вдалось прибрати', tone: 'error' });
+      setToast({ text: data?.error || 'Could not remove', tone: 'error' });
     }
   };
 
@@ -215,8 +214,8 @@ export default function QuickActionsBar({
     if (!emptyHint) return null;
     return (
       <p className="text-sm text-base-content/50">
-        Швидких записів ще немає. Попроси в чаті — «зроби кнопку: Арчі щодня приймає ліки» — і вона
-        зʼявиться тут.
+        No quick actions yet. Ask in the chat — “make a button for Archie’s daily pill” — and it will
+        appear here.
       </p>
     );
   }
@@ -237,7 +236,7 @@ export default function QuickActionsBar({
                 type="button"
                 onClick={() => press(action)}
                 disabled={busyId === action.id}
-                title={`${action.tableTitle}${asks.length ? ` — спитає: ${asks.map((f) => promptFor(f, action.columns)).join(', ')}` : ''}`}
+                title={`${action.tableTitle}${asks.length ? ` — will ask: ${asks.map((f) => promptFor(f, action.columns)).join(', ')}` : ''}`}
                 className={`btn btn-sm h-auto min-h-9 gap-1.5 rounded-full py-1.5 normal-case ${
                   open ? 'btn-primary' : done ? 'btn-outline btn-success' : 'btn-outline'
                 }`}
@@ -248,7 +247,7 @@ export default function QuickActionsBar({
                 {/* The question a person actually has in front of a daily
                     button: did I already do this today? */}
                 {done && (
-                  <span className="opacity-70" aria-label="вже сьогодні">
+                  <span className="opacity-70" aria-label="done today">
                     ✓
                   </span>
                 )}
@@ -258,7 +257,7 @@ export default function QuickActionsBar({
                 <button
                   type="button"
                   onClick={() => remove(action)}
-                  aria-label={`Прибрати ${action.label}`}
+                  aria-label={`Remove ${action.label}`}
                   className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-base-300 text-[10px] leading-4 text-base-content/70 hover:bg-error hover:text-error-content"
                 >
                   ×
@@ -315,10 +314,10 @@ export default function QuickActionsBar({
                 );
               })}
               <button type="submit" className="btn btn-primary btn-sm" disabled={busyId === action.id}>
-                {busyId === action.id ? 'Записую…' : 'Записати'}
+                {busyId === action.id ? 'Saving…' : 'Save'}
               </button>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpenId(null)}>
-                Скасувати
+                Cancel
               </button>
             </form>
           );
@@ -334,7 +333,7 @@ export default function QuickActionsBar({
               className="btn btn-ghost btn-xs"
               onClick={() => undo(toast.undo!.actionId, toast.undo!.rowId)}
             >
-              Скасувати
+              Undo
             </button>
           )}
         </div>
@@ -343,19 +342,14 @@ export default function QuickActionsBar({
   );
 }
 
-/** The dashboard panel: the bar plus somewhere to go when it is empty. */
+/**
+ * The dashboard's row of buttons. No heading and no card: the buttons are
+ * self-explanatory, and the frame around them cost a panel's worth of height
+ * above the day's schedule. Managing them lives on each table's page.
+ */
 export function QuickActionsPanel() {
   return (
-    <section className="w-full">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[15px] font-semibold text-base-content">Швидкі записи</h2>
-        <Link
-          href="/tables"
-          className="text-[13px] font-medium text-base-content/50 transition-colors hover:text-primary"
-        >
-          Таблиці →
-        </Link>
-      </div>
+    <section className="w-full" aria-label="Quick actions">
       <QuickActionsBar />
     </section>
   );
