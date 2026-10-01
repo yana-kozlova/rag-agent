@@ -256,7 +256,13 @@ export default function Today() {
                     entry={entry}
                     busy={busy === entry.taskId}
                     onComplete={complete}
-                    meta={entry.overdue ? <span className="text-error">overdue</span> : undefined}
+                    meta={
+                      entry.overdue ? (
+                        <span className="text-error">overdue</span>
+                      ) : entry.dueToday ? (
+                        <span className="text-warning">due today</span>
+                      ) : undefined
+                    }
                   />
                 ))}
               </ul>

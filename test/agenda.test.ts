@@ -115,4 +115,22 @@ describe('buildAgenda', () => {
 
     expect(agenda.soon.map((e) => e.taskId)).toEqual(['soon']);
   });
+
+  it('puts a deadline that falls today in the day, not under coming up', () => {
+    const agenda = buildAgenda({
+      events: [],
+      tasks: {
+        ...empty,
+        upcoming: [task({ id: 'meter', dueOn: today }), task({ id: 'soon', dueOn: '2026-09-29' })],
+      },
+      today,
+      dayStart,
+      dayEnd,
+      now,
+    });
+
+    expect(agenda.day).toHaveLength(1);
+    expect(agenda.day[0]).toMatchObject({ taskId: 'meter', dueToday: true, start: null });
+    expect(agenda.soon.map((e) => e.taskId)).toEqual(['soon']);
+  });
 });

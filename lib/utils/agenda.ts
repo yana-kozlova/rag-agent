@@ -59,6 +59,8 @@ export type AgendaEntry = {
   taskId?: string;
   /** Deadline passed — kept on the entry even when it also sits in the day. */
   overdue?: boolean;
+  /** In the day because its deadline is today, not because a day was committed. */
+  dueToday?: boolean;
   /** Timed and already over. Shown dimmed rather than hidden. */
   past?: boolean;
 };
@@ -68,7 +70,7 @@ export type Agenda = {
   overdue: (AgendaEntry & { dueOn: string })[];
   /** All-day entries first, then the timed ones in order. */
   day: AgendaEntry[];
-  /** Deadlines and plans within `WIDGET_HORIZON_DAYS`, not today. */
+  /** Deadlines and plans within `WIDGET_HORIZON_DAYS`, after today. */
   soon: (AgendaEntry & { dueOn: string | null; scheduledFor: string | null })[];
 };
 
@@ -165,6 +167,16 @@ export function buildAgenda(params: {
     }
   }
 
+  // A deadline that falls today belongs to the day. `bucketTasks` files it as
+  // `upcoming` because nothing committed a day of work to it, and listing it
+  // from there put "due today" under "Coming up", beneath a line saying nothing
+  // was planned for today and a count of zero.
+  const dueToday = tasks.upcoming.filter((t) => t.dueOn === today);
+  for (const task of dueToday) {
+    allDay.push({ key: `task:${task.id}`, title: task.title, start: null, end: null, taskId: task.id, dueToday: true });
+  }
+  const ahead = tasks.upcoming.filter((t) => t.dueOn !== today);
+
   timed.sort((a, b) => new Date(a.start!).getTime() - new Date(b.start!).getTime());
 
   return {
@@ -180,7 +192,7 @@ export function buildAgenda(params: {
         dueOn: t.dueOn as string,
       })),
     day: [...allDay, ...timed],
-    soon: withinHorizon(tasks.upcoming, today, horizonDays).map((t) => ({
+    soon: withinHorizon(ahead, today, horizonDays).map((t) => ({
       key: `task:${t.id}`,
       title: t.title,
       start: null,
