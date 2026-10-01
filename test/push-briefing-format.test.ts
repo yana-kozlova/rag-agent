@@ -15,7 +15,7 @@ vi.mock('@/lib/env.mjs', () => ({
   },
 }));
 
-import { generateBriefing, type BriefingEvent } from '@/lib/push/briefing';
+import { aheadEvents, generateBriefing, type BriefingEvent } from '@/lib/push/briefing';
 import { renderNotification, splitNotification } from '@/lib/push/deliver';
 
 const TZ = 'Europe/Kyiv';
@@ -193,5 +193,102 @@ describe('the whole message', () => {
     const rendered = renderNotification({ title: briefing.title, body: briefing.body });
 
     expect(rendered.length).toBeLessThan(4096);
+  });
+});
+
+/**
+ * The user's own birthday is said to them rather than reported to them — and
+ * only on the day, since a greeting three days early is a miscount.
+ */
+describe('the account holder’s own birthday', () => {
+  const own = { title: 'Яна народилась', kind: 'birth', years: 34, self: true };
+
+  it('is a greeting on the day, in place of its line', async () => {
+    const uk = await generateBriefing([], TZ, 'uk', [{ ...own, daysAway: 0 }]);
+    const en = await generateBriefing([], TZ, 'en', [{ ...own, daysAway: 0 }]);
+
+    expect(uk.body.startsWith('🎉 З днем народження!')).toBe(true);
+    expect(uk.body).not.toContain('Яна народилась');
+    expect(uk.body).not.toContain('Дати');
+    expect(en.body.startsWith('🎉 Happy birthday!')).toBe(true);
+  });
+
+  it('stays an ordinary line in the days before', async () => {
+    const briefing = await generateBriefing([], TZ, 'uk', [{ ...own, daysAway: 3 }]);
+
+    expect(briefing.body).not.toContain('З днем народження');
+    expect(briefing.body).toContain('🎂 Яна народилась — через 3 дні');
+  });
+
+  it('leaves everyone else’s date on the same day listed', async () => {
+    const briefing = await generateBriefing([ev('Daily', '10:00')], TZ, 'uk', [
+      { ...own, daysAway: 0 },
+      { title: 'Андрій', kind: 'birth', daysAway: 0, years: 41 },
+    ]);
+
+    expect(briefing.body.startsWith('🎉 З днем народження!')).toBe(true);
+    expect(briefing.body).toContain('🎂 Андрій — сьогодні');
+  });
+
+  it('survives an unreadable calendar', async () => {
+    const briefing = await generateBriefing(null, TZ, 'uk', [{ ...own, daysAway: 0 }]);
+
+    expect(briefing.body.startsWith('🎉 З днем народження!')).toBe(true);
+    expect(briefing.body).toContain('Не вдалося прочитати календар');
+  });
+});
+
+/**
+ * The days after today. A repeated title is a routine and gets no notice —
+ * otherwise a daily stand-up is five of the six lines every morning.
+ */
+describe('the days ahead', () => {
+  const NOW = new Date('2026-07-21T05:00:00Z');
+  const on = (title: string, day: string, time: string) =>
+    ({ ...ev(title, time), start: `${day}T${time}:00+03:00` }) as BriefingEvent;
+
+  it('names the day and the time, computed here', async () => {
+    const ahead = aheadEvents(
+      [on('Стоматолог', '2026-07-22', '14:30'), on('Батьківські збори', '2026-07-24', '18:00')],
+      [],
+      NOW,
+      TZ
+    );
+    const briefing = await generateBriefing([], TZ, 'uk', [], [], 'unreadable', {}, ahead);
+
+    expect(briefing.body).toContain('Далі на тижні:\nзавтра · 14:30 Стоматолог');
+    expect(briefing.body).toContain('пт, 24.07 · 18:00 Батьківські збори');
+  });
+
+  it('gives a repeating title one line, and none when it is on today', () => {
+    const ahead = aheadEvents(
+      [
+        on('Daily', '2026-07-22', '10:00'),
+        on('Йога', '2026-07-22', '19:00'),
+        on('Daily', '2026-07-23', '10:00'),
+        on('Йога', '2026-07-24', '19:00'),
+      ],
+      [ev('Daily', '10:00')],
+      NOW,
+      TZ
+    );
+
+    expect(ahead.map((e) => `${e.day} ${e.title}`)).toEqual(['2026-07-22 Йога']);
+  });
+
+  it('keeps an all-day event on its own date and drops one already under way', () => {
+    const allDay = (title: string, day: string) =>
+      ({ ...ev(title, '00:00'), start: day, allDay: true }) as BriefingEvent;
+
+    const ahead = aheadEvents(
+      [allDay('Відпустка', '2026-07-20'), allDay('День народження Олі', '2026-07-23')],
+      [],
+      NOW,
+      TZ
+    );
+
+    expect(ahead).toEqual([
+      { title: 'День народження Олі', day: '2026-07-23', daysAway: 2, time: null },
+    ]);
   });
 });

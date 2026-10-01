@@ -175,8 +175,18 @@ const SELF_WORDS = new Set([
 export function resolveSelfName(name: string, selfName: string | null | undefined): string {
   if (!selfName) return name;
 
-  const normalized = normalizeName(name);
-  if (SELF_WORDS.has(normalized)) return selfName;
+  return isSelfName(name, selfName) ? selfName : name;
+}
 
-  return matchNames(name, selfName) ? selfName : name;
+/**
+ * Whether a written name is the account holder.
+ *
+ * The same test `resolveSelfName` applies, asked as a question — the briefing
+ * needs to know whose birthday it is without wanting the name rewritten. A
+ * placeholder word is the user even when no signed-in name is on record.
+ */
+export function isSelfName(name: string, selfName: string | null | undefined): boolean {
+  if (SELF_WORDS.has(normalizeName(name))) return true;
+
+  return !!selfName && matchNames(name, selfName) !== null;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fold, matchNames, normalizeName, planRename, resolveSelfName } from '@/lib/actions/entity-identity';
+import { fold, matchNames, normalizeName, planRename, resolveSelfName, isSelfName } from '@/lib/actions/entity-identity';
 
 describe('folding a name', () => {
   /** The pair that split the first real graph in two. */
@@ -57,6 +57,13 @@ describe('the account holder', () => {
     expect(resolveSelfName('користувач', 'Yana Kozlova')).toBe('Yana Kozlova');
     expect(resolveSelfName('Яна', 'Yana Kozlova')).toBe('Yana Kozlova');
     expect(resolveSelfName('Yana', 'Yana Kozlova')).toBe('Yana Kozlova');
+  });
+
+  it('is recognised by a placeholder word even with no name on record', () => {
+    expect(isSelfName('користувач', null)).toBe(true);
+    expect(isSelfName('Яна', 'Yana Kozlova')).toBe(true);
+    expect(isSelfName('Яна', null)).toBe(false);
+    expect(isSelfName('Андрій', 'Yana Kozlova')).toBe(false);
   });
 
   it('leaves everyone else alone', () => {

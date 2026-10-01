@@ -1,5 +1,5 @@
 import { GoogleCalendarService } from '@/lib/services/calendar';
-import { timelineKindIcon } from '@/lib/timeline/timeline';
+import { daysBetween, timelineKindIcon } from '@/lib/timeline/timeline';
 import { copyFor, type NotificationCopy } from './copy';
 import {
   type CalendarEvent,
@@ -7,6 +7,7 @@ import {
   formatEventTime,
   localDayBounds,
 } from './calendar-window';
+import { addLocalDays, formatUtcOffset, getLocalDateKey } from './timezone';
 
 export type BriefingEvent = CalendarEvent;
 
@@ -17,6 +18,19 @@ export type BriefingDate = {
   daysAway: number;
   /** Years being completed. Null when the original year was never recorded. */
   years: number | null;
+  /** The account holder's own birthday — greeted on the day rather than listed. */
+  self?: boolean;
+};
+
+/** A calendar event on one of the days after today, as `aheadEvents` shapes it. */
+export type BriefingAhead = {
+  title: string;
+  /** The local calendar day it starts on, `YYYY-MM-DD`. */
+  day: string;
+  /** Whole days from today. Never zero — today is the schedule's. */
+  daysAway: number;
+  /** `HH:MM` in the user's zone, or null for an all-day event. */
+  time: string | null;
 };
 
 /** An outstanding task worth a line this morning, as `briefingTasks` groups them. */
@@ -81,6 +95,79 @@ export async function fetchTodayEvents(
 }
 
 /**
+ * How far past today the briefing looks at the calendar. The same week the
+ * saved dates get, so the two blocks describe one stretch of time.
+ */
+export const AHEAD_HORIZON_DAYS = 7;
+
+/** Everything on the user's calendars from tomorrow to the end of the horizon. */
+export async function fetchAheadEvents(
+  calendarService: GoogleCalendarService,
+  userId: string,
+  now: Date,
+  tz: string
+): Promise<BriefingEvent[]> {
+  const offset = formatUtcOffset(now, tz);
+  const timeMin = `${addLocalDays(now, tz, 1)}T00:00:00${offset}`;
+  const timeMax = `${addLocalDays(now, tz, AHEAD_HORIZON_DAYS)}T23:59:59${offset}`;
+  return fetchEventsBetween(calendarService, userId, timeMin, timeMax, 50);
+}
+
+const titleKey = (title: string) => title.trim().toLowerCase();
+
+/**
+ * The days after today, reduced to what is worth being told about in advance.
+ *
+ * A title is given one line, at its first occurrence, and none at all when it
+ * is also on today's schedule. Without that the block is the calendar: a daily
+ * stand-up is five of the lines, every morning, and the dentist on Thursday —
+ * the reason to look ahead at all — falls off the end of the cap. A repeated
+ * title is a routine, and a routine needs no notice. The cost is a genuinely
+ * separate second meeting under the same name, which still appears on the
+ * morning of its own day.
+ *
+ * The day is computed here and printed, never left to be derived from a
+ * timestamp — the rule `weekdayOf` exists for.
+ */
+export function aheadEvents(
+  ahead: BriefingEvent[],
+  today: BriefingEvent[],
+  now: Date,
+  tz: string
+): BriefingAhead[] {
+  const todayKey = getLocalDateKey(now, tz);
+  const seen = new Set(today.map((event) => titleKey(event.title)));
+  const result: BriefingAhead[] = [];
+
+  for (const event of ahead) {
+    // An all-day start is already a calendar date; parsing it through `Date`
+    // makes it UTC midnight, which west of Greenwich is the day before.
+    const day = event.allDay
+      ? event.start.slice(0, 10)
+      : getLocalDateKey(new Date(event.start), tz);
+
+    const daysAway = daysBetween(todayKey, day);
+    // A multi-day event that began today or earlier overlaps the window too.
+    if (daysAway < 1) continue;
+
+    const key = titleKey(event.title);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    result.push({
+      title: event.title,
+      day,
+      daysAway,
+      time: event.allDay ? null : formatEventTime(event, tz),
+    });
+  }
+
+  return result.sort(
+    (a, b) => a.day.localeCompare(b.day) || (a.time ?? '').localeCompare(b.time ?? '')
+  );
+}
+
+/**
  * How many events get a line of their own before the rest collapse into a
  * count. Past this the briefing stops being scannable and becomes the calendar.
  */
@@ -119,6 +206,36 @@ function scheduleLines(
   if (hidden > 0) lines.push(copy.briefing.more(hidden));
 
   return lines.join('\n');
+}
+
+/** Fewer than today gets: this block is notice, not a plan for the day. */
+const MAX_AHEAD_LINES = 6;
+
+/** What is on the calendar in the days after today, one line per event. */
+function aheadLines(ahead: BriefingAhead[], copy: NotificationCopy): string {
+  if (ahead.length === 0) return '';
+
+  const dayFormat = new Intl.DateTimeFormat(copy.intlTag, {
+    timeZone: 'UTC',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'numeric',
+  });
+
+  const shown = ahead.slice(0, MAX_AHEAD_LINES);
+  const lines = shown.map((event) => {
+    const when =
+      event.daysAway === 1
+        ? copy.dates.tomorrow
+        : dayFormat.format(new Date(`${event.day}T00:00:00Z`));
+
+    return `${when} · ${event.time ?? copy.briefing.allDay} ${truncate(event.title)}`;
+  });
+
+  const hidden = ahead.length - shown.length;
+  if (hidden > 0) lines.push(copy.briefing.more(hidden));
+
+  return `${copy.ahead.header}:\n${lines.join('\n')}`;
 }
 
 /**
@@ -278,10 +395,24 @@ export async function generateBriefing(
   /** Only consulted when `events` is null — why it is. */
   problem: CalendarProblem = 'unreadable',
   /** Two things worth a number and not a list. Absent means none. */
-  counts: BriefingCounts = {}
+  counts: BriefingCounts = {},
+  /** The calendar past today. Empty when it could not be read, like `events`. */
+  ahead: BriefingAhead[] = []
 ): Promise<Briefing> {
   const copy = copyFor(locale);
-  const datesBlock = dateLines(dates, copy);
+
+  // The user's own birthday is said to them, not reported to them: "🎂 Яна —
+  // сьогодні, виповнюється 34" is a reminder to congratulate somebody, and the
+  // somebody is the reader. Only on the day — in the days before it stays an
+  // ordinary line, since a greeting three days early is a miscount.
+  const isOwnBirthday = (date: BriefingDate) => !!date.self && date.daysAway === 0;
+  const greeting = dates.some(isOwnBirthday) ? copy.dates.happyBirthday : '';
+
+  const datesBlock = dateLines(
+    dates.filter((date) => !isOwnBirthday(date)),
+    copy
+  );
+  const aheadBlock = aheadLines(ahead, copy);
   const tasksBlock = taskLines(taskList, counts.someday ?? 0, copy);
   const notesBlock = suggestionLine(counts.fromNotes ?? 0, copy);
 
@@ -303,7 +434,7 @@ export async function generateBriefing(
 
     return {
       title: copy.briefing.morningTitle,
-      body: join(why, datesBlock, tasksBlock, notesBlock),
+      body: join(greeting, why, datesBlock, tasksBlock, notesBlock),
       eventCount: 0,
     };
   }
@@ -315,12 +446,19 @@ export async function generateBriefing(
   if (eventCount === 0) {
     return {
       title: copy.briefing.morningTitle,
-      body: join(copy.briefing.nothingScheduled, datesBlock, tasksBlock, notesBlock),
+      body: join(greeting, copy.briefing.nothingScheduled, aheadBlock, datesBlock, tasksBlock, notesBlock),
       eventCount: 0,
     };
   }
 
-  const schedule = join(scheduleLines(events, tz, copy), datesBlock, tasksBlock, notesBlock);
+  const schedule = join(
+    greeting,
+    scheduleLines(events, tz, copy),
+    aheadBlock,
+    datesBlock,
+    tasksBlock,
+    notesBlock
+  );
 
   return { title: copy.briefing.thingsToday(eventCount), body: schedule, eventCount };
 }

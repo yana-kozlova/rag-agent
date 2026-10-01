@@ -68,6 +68,8 @@ export type NotificationCopy = {
     more: (count: number) => string;
     allDay: string;
   };
+  /** Calendar events on the days after today. */
+  ahead: { header: string };
   /** Anniversaries and saved dates falling in the week ahead. */
   dates: {
     header: string;
@@ -76,6 +78,8 @@ export type NotificationCopy = {
     inDays: (days: number) => string;
     /** "виповнюється 7" — only ever said when the original year is known. */
     turning: (years: number) => string;
+    /** Said to the account holder on their own birthday, in place of its line. */
+    happyBirthday: string;
   };
   /** Outstanding tasks: what is late, and what is due within the horizon. */
   tasks: {
@@ -132,12 +136,14 @@ const UK: NotificationCopy = {
     more: (n) => `+ще ${n}`,
     allDay: 'увесь день',
   },
+  ahead: { header: 'Далі на тижні' },
   dates: {
     header: 'Дати',
     today: 'сьогодні',
     tomorrow: 'завтра',
     inDays: (d) => `через ${d} ${pluralUk(d, 'день', 'дні', 'днів')}`,
     turning: (y) => `виповнюється ${y}`,
+    happyBirthday: '🎉 З днем народження!',
   },
   tasks: {
     header: 'Треба зробити',
@@ -193,12 +199,14 @@ const EN: NotificationCopy = {
     more: (n) => `+${n} more`,
     allDay: 'all day',
   },
+  ahead: { header: 'Later this week' },
   dates: {
     header: 'Dates',
     today: 'today',
     tomorrow: 'tomorrow',
     inDays: (d) => `in ${d} days`,
     turning: (y) => `turns ${y}`,
+    happyBirthday: '🎉 Happy birthday!',
   },
   tasks: {
     header: 'To do',

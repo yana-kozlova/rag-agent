@@ -9,6 +9,9 @@ import { claimNotification } from '@/lib/push/dedupe';
 import {
   generateBriefing,
   fetchTodayEvents,
+  fetchAheadEvents,
+  aheadEvents,
+  type BriefingAhead,
   type BriefingDate,
   type BriefingEvent,
   type BriefingCounts,
@@ -16,6 +19,7 @@ import {
   type CalendarProblem,
 } from '@/lib/push/briefing';
 import { upcomingTimeline } from '@/lib/actions/timeline';
+import { isSelfName } from '@/lib/actions/entity-identity';
 import { briefingTasks, listTaskSuggestions } from '@/lib/actions/tasks';
 import { BRIEFING_HORIZON_DAYS } from '@/lib/timeline/timeline';
 import { BRIEFING_HORIZON_DAYS as TASK_HORIZON_DAYS, daysLate } from '@/lib/tasks/tasks';
@@ -32,7 +36,11 @@ import { askAboutOverdue } from '@/lib/telegram/tasks';
  * retrieval by the time this runs, and a failure here must cost the birthday
  * line rather than the whole morning.
  */
-async function upcomingDatesForBriefing(userId: string): Promise<BriefingDate[]> {
+async function upcomingDatesForBriefing(
+  userId: string,
+  /** The signed-in name, which is how the user's own birthday is told from the rest. */
+  selfName: string | null
+): Promise<BriefingDate[]> {
   try {
     const { occurrences } = await upcomingTimeline(userId, BRIEFING_HORIZON_DAYS);
     return occurrences.map((occurrence) => ({
@@ -40,6 +48,12 @@ async function upcomingDatesForBriefing(userId: string): Promise<BriefingDate[]>
       kind: occurrence.event.kind,
       daysAway: occurrence.daysAway,
       years: occurrence.years,
+      // Only a birth with a named subject: a date about no one in particular
+      // may well be the user's, but greeting on a guess is worse than a line.
+      self:
+        occurrence.event.kind === 'birth' &&
+        !!occurrence.event.subject &&
+        isSelfName(occurrence.event.subject, selfName),
     }));
   } catch (error) {
     console.error('[push/briefing] Reading the timeline failed (non-fatal):', error);
@@ -146,6 +160,7 @@ export type BriefingRunResult =
 export async function runBriefingForUser(userId: string, now: Date): Promise<BriefingRunResult> {
   const [u] = await db
     .select({
+      name: users.name,
       timezone: users.timezone,
       briefingHour: users.briefingHour,
       briefingEnabled: users.briefingEnabled,
@@ -190,6 +205,10 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
   // merely down is a morning that teaches them to skip the line.
   let problem: CalendarProblem = 'unreadable';
 
+  // The days after today. Its own read, failing on its own: losing the look
+  // ahead must not turn a readable today into an unreadable calendar.
+  let ahead: BriefingAhead[] = [];
+
   if (!accessToken) {
     if (!token.ok && needsReconnect(token.reason)) problem = 'google-access';
     console.error(
@@ -198,15 +217,20 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
       }); calendar unreadable`
     );
   } else {
+    const calendar = new GoogleCalendarService(accessToken, userId);
+
     try {
-      events = await fetchTodayEvents(
-        new GoogleCalendarService(accessToken, userId),
-        userId,
-        now,
-        tz
-      );
+      events = await fetchTodayEvents(calendar, userId, now, tz);
     } catch (error) {
       console.error(`[push/briefing] Calendar read failed for ${userId}:`, error);
+    }
+
+    if (events !== null) {
+      try {
+        ahead = aheadEvents(await fetchAheadEvents(calendar, userId, now, tz), events, now, tz);
+      } catch (error) {
+        console.error(`[push/briefing] Reading the days ahead failed (non-fatal):`, error);
+      }
     }
   }
 
@@ -218,7 +242,7 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
   // Saved dates falling within the week. Read from the timeline rather than the
   // calendar because that is where they are: a birthday nobody created a
   // calendar event for is exactly the thing this is meant to catch.
-  const dates = await upcomingDatesForBriefing(userId);
+  const dates = await upcomingDatesForBriefing(userId, u.name);
 
   // Outstanding work, from our own table rather than Google — so a broken
   // calendar costs the schedule and never the deadline that passed yesterday.
@@ -241,7 +265,8 @@ export async function runBriefingForUser(userId: string, now: Date): Promise<Bri
     dates,
     outstanding.tasks,
     problem,
-    counts
+    counts,
+    ahead
   );
 
   const delivered = await deliverToUser(
