@@ -270,6 +270,19 @@ describe('turning what extraction returned into rows', () => {
     expect(candidates).toHaveLength(1);
   });
 
+  /**
+   * `kind` is the model's classification, not something the note said. With it
+   * in the key, one birthday filed as `birth` and again as `milestone` was two
+   * rows — the same line twice in "Coming up", under two icons.
+   */
+  it('reads the same date under two kinds as one date', () => {
+    const candidates = toTimelineCandidates([
+      { date: '--10-14', title: 'День народження Артема', subject: 'Артем', kind: 'milestone' },
+      { date: '--10-14', title: 'день народження Артема', subject: 'Артем', kind: 'birth' },
+    ]);
+    expect(candidates).toHaveLength(1);
+  });
+
   it('keeps two different things that happened on one day', () => {
     const candidates = toTimelineCandidates([
       { date: '2022-06-01', title: 'переїзд', kind: 'move' },

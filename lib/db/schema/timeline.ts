@@ -125,7 +125,8 @@ export const timelineEvents = pgTable(
     // ⚠️ `timeline_events_identity_unique` — the index every `onConflictDoNothing`
     // in `lib/actions/timeline.ts` relies on — is NOT declared here. It is an
     // expression index (`lower(btrim(title))`) that Drizzle cannot express, so it
-    // lives only in migration 0022. `drizzle-kit push` compares this file against
+    // lives only in migrations 0022 and 0029 (which took `kind` out of it).
+    // `drizzle-kit push` compares this file against
     // the database and drops what it does not find: pushing would silently remove
     // it, and dedupe would stop working with nothing raising. Use `db:generate` +
     // `db:migrate` on this table, never `db:push`.

@@ -452,10 +452,12 @@ export function groupByYear<T extends { occurredOn: string; precision: DatePreci
 /**
  * How a date is keyed for "have I already got this one?".
  *
- * Same day, same subject, same kind is the same event however it was worded —
- * this is the analogue of `(user_id, normalized_name, type)` on entities, and it
- * exists for the same reason: two notes mentioning that Artem was born on the
- * same day must not put two births on the axis.
+ * Same day, same subject, same words is the same event — this is the analogue
+ * of `(user_id, normalized_name, type)` on entities, and it exists for the same
+ * reason: two notes mentioning that Artem was born on the same day must not put
+ * two births on the axis. `kind` is deliberately not part of it: it is a glyph
+ * the model chooses afresh on each read, and with it in the key one birthday
+ * typed by hand and later read off a note became two rows under two icons.
  */
 export function subjectKey(subject: string | null | undefined): string {
   return (subject ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -547,10 +549,10 @@ export function toTimelineCandidates(dates: ExtractedDate[]): TimelineCandidate[
       subjectKey: subjectKey(subject),
     };
 
-    unique.set(
-      `${candidate.occurredOn}::${candidate.kind}::${candidate.subjectKey}::${title.toLowerCase()}`,
-      candidate
-    );
+    // Not keyed on `kind`, as the identity index is not: it is the model's
+    // classification rather than anything the note said, and the same birthday
+    // filed once as `birth` and once as `milestone` is one birthday.
+    unique.set(`${candidate.occurredOn}::${candidate.subjectKey}::${title.toLowerCase()}`, candidate);
   }
 
   return [...unique.values()].slice(0, MAX_DATES_PER_NOTE);
