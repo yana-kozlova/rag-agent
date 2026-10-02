@@ -15,7 +15,12 @@ vi.mock('@/lib/env.mjs', () => ({
   },
 }));
 
-import { aheadEvents, generateBriefing, type BriefingEvent } from '@/lib/push/briefing';
+import {
+  aheadEvents,
+  aheadHorizonDays,
+  generateBriefing,
+  type BriefingEvent,
+} from '@/lib/push/briefing';
 import { renderNotification, splitNotification } from '@/lib/push/deliver';
 
 const TZ = 'Europe/Kyiv';
@@ -258,6 +263,13 @@ describe('the days ahead', () => {
 
     expect(briefing.body).toContain('Далі на тижні:\nзавтра · 14:30 Стоматолог');
     expect(briefing.body).toContain('пт, 24.07 · 18:00 Батьківські збори');
+  });
+
+  it('looks no further than the Sunday of the current week', () => {
+    // 2026-10-02 is a Friday in Kyiv; 21:30Z on Saturday is already Sunday there.
+    expect(aheadHorizonDays(new Date('2026-10-02T05:00:00Z'), TZ)).toBe(2);
+    expect(aheadHorizonDays(new Date('2026-10-05T05:00:00Z'), TZ)).toBe(6);
+    expect(aheadHorizonDays(new Date('2026-10-03T21:30:00Z'), TZ)).toBe(0);
   });
 
   it('gives a repeating title one line, and none when it is on today', () => {

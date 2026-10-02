@@ -7,7 +7,7 @@ import {
   formatEventTime,
   localDayBounds,
 } from './calendar-window';
-import { addLocalDays, formatUtcOffset, getLocalDateKey } from './timezone';
+import { addLocalDays, formatUtcOffset, getLocalDateKey, getLocalDayOfWeek } from './timezone';
 
 export type BriefingEvent = CalendarEvent;
 
@@ -95,21 +95,29 @@ export async function fetchTodayEvents(
 }
 
 /**
- * How far past today the briefing looks at the calendar. The same week the
- * saved dates get, so the two blocks describe one stretch of time.
+ * How many days past today the briefing looks at the calendar: up to and
+ * including the Sunday of the user's current week, so zero on a Sunday.
+ *
+ * The block is headed "later this week", and a rolling seven days made that
+ * untrue from Tuesday on — a Friday briefing listed next Wednesday under it.
  */
-export const AHEAD_HORIZON_DAYS = 7;
+export function aheadHorizonDays(now: Date, tz: string): number {
+  return (7 - getLocalDayOfWeek(now, tz)) % 7;
+}
 
-/** Everything on the user's calendars from tomorrow to the end of the horizon. */
+/** Everything on the user's calendars from tomorrow to the end of the week. */
 export async function fetchAheadEvents(
   calendarService: GoogleCalendarService,
   userId: string,
   now: Date,
   tz: string
 ): Promise<BriefingEvent[]> {
+  const horizon = aheadHorizonDays(now, tz);
+  if (horizon === 0) return [];
+
   const offset = formatUtcOffset(now, tz);
   const timeMin = `${addLocalDays(now, tz, 1)}T00:00:00${offset}`;
-  const timeMax = `${addLocalDays(now, tz, AHEAD_HORIZON_DAYS)}T23:59:59${offset}`;
+  const timeMax = `${addLocalDays(now, tz, horizon)}T23:59:59${offset}`;
   return fetchEventsBetween(calendarService, userId, timeMin, timeMax, 50);
 }
 
